@@ -205,7 +205,6 @@ export class SupertabConnect {
    * Handle the request, report an event to Supertab Connect and return a response
    */
   private async baseHandleRequest(
-      request: Request,
       token: string,
       url: string,
       user_agent: string,
@@ -218,8 +217,8 @@ export class SupertabConnect {
     // Record event helper
     async function recordEvent(stc: SupertabConnect, eventName: string, ctx: any) {
       const eventProperties = {
-        page_url: request.url,
-        user_agent: request.headers.get("User-Agent") || null,
+        page_url: url,
+        user_agent: user_agent,
         verification_status: verification.valid ? "valid" : "invalid",
         verification_reason: verification.reason || "success",
       };
@@ -249,33 +248,35 @@ export class SupertabConnect {
     });
   }
 
-  async cloudflareHandleRequest(request: Request, ctx: any = null): Promise<Response> {
-    // 1. Parse token
+  private extractDataFromRequest(request: Request): { token: string; url: string; user_agent: string } {
+    // Parse token
     const auth = request.headers.get("Authorization") || "";
     const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
 
-    // 2. Extract URL and user agent
+    // Extract URL and user agent
     const url = request.url;
     const user_agent = request.headers.get("User-Agent") || "unknown";
 
-    // 3. In the future: handle bot detection here
+    return { token, url, user_agent };
+  }
 
-    // 4. Call the base handle request method and return the result
-    return this.baseHandleRequest(request, token, url, user_agent, ctx);
+  async cloudflareHandleRequest(request: Request, ctx: any = null): Promise<Response> {
+    // 1. Extract token, URL, and user agent from the request
+    const { token, url, user_agent } = this.extractDataFromRequest(request);
+
+    // 2. In the future: handle bot detection here
+
+    // 3. Call the base handle request method and return the result
+    return this.baseHandleRequest(token, url, user_agent, ctx);
   }
 
   async fastlyHandleRequest(request: Request, ctx: any = null): Promise<Response> {
-    // 1. Parse token
-    const auth = request.headers.get("Authorization") || "";
-    const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+    // 1. Extract token, URL, and user agent from the request
+    const { token, url, user_agent } = this.extractDataFromRequest(request);
 
-    // 2. Extract URL and user agent
-    const url = request.url;
-    const user_agent = request.headers.get("User-Agent") || "unknown";
+    // 2. In the future: handle bot detection here
 
-    // 3. In the future: handle bot detection here
-
-    // 4. Call the base handle request method and return the result
-    return this.baseHandleRequest(request, token, url, user_agent, ctx);
+    // 3. Call the base handle request method and return the result
+    return this.baseHandleRequest(token, url, user_agent, ctx);
   }
 }

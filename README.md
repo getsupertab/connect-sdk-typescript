@@ -56,11 +56,12 @@ The SDK is configured using the `SupertabConnectConfig` object
 | `apiKey` | string | Yes | - | Your Supertab merchant API key
 | `merchantSystemId` | string | Yes | - | Your merchant system identifier
 
-## API Reference
+## Public API Reference
 
-### `handleRequest(request: Request, ctx: any = null): Promise<Response>`
+### `fastlyHandleRequest(request: Request, ctx: any = null): Promise<Response>`
 
-Handles the Supertab Connect part for each incoming HTTP request: verifies the JWT token and records the event.
+Handles the Supertab Connect part for each incoming HTTP request within Fastly CDN: it verifies the JWT token and records the event.
+
 For examples see the [Fastly Compute Example](#fastly-compute-example) section above.
 
 **Parameters:**
@@ -71,6 +72,12 @@ For examples see the [Fastly Compute Example](#fastly-compute-example) section a
 - `Promise<Response>`: Result of bot detection, verification and event recording
   - If the requester is not a bot to be blocked, or if the token is present and valid, returns 200 OK
   - If token is invalid or missing, returns 403 Forbidden with either INVALID_TOKEN or MISSING_TOKEN as a reason
+
+### `cloudflareHandleRequest(request: Request, ctx: any = null): Promise<Response>`
+
+Handles the Supertab Connect part for each incoming HTTP request within CloudFlare CDN: it verifies the JWT token and records the event.
+
+Parameters and return values are the same as `fastlyHandleRequest`.
 
 ### `verifyToken(token: string): Promise<TokenVerificationResult>`
 
