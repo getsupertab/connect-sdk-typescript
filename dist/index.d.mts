@@ -14,7 +14,6 @@ declare class SupertabConnect {
     private apiKey;
     private baseUrl;
     private merchantSystemId;
-    private debug;
     constructor(config: SupertabConnectConfig);
     /**
      * Get the JWKS for a given issuer, using cache if available
@@ -35,6 +34,13 @@ declare class SupertabConnect {
      * @returns Promise that resolves when the event is recorded
      */
     recordEvent(eventName: string, customerToken?: string, properties?: Record<string, any>): Promise<void>;
+    /**
+     * Handle the request, report an event to Supertab Connect and return a response
+     */
+    private baseHandleRequest;
+    private extractDataFromRequest;
+    cloudflareHandleRequest(request: Request, ctx?: any): Promise<Response>;
+    fastlyHandleRequest(request: Request, ctx?: any): Promise<Response>;
 }
 
 export { SupertabConnect };
