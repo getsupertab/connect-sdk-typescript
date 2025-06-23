@@ -1,2 +1,23 @@
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE-related stuff and datafiles
+.vscode/
 .idea/
+*.db
+.DS_Store
+*.txt
+
+# Dependency directories and stuff
 node_modules/
+jspm_packages/
+/bin
+/pkg
+*.gz
+*.wasm
