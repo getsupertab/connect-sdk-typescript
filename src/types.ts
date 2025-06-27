@@ -1,8 +1,18 @@
 export interface SupertabConnectConfig {
   apiKey: string;
   merchantSystemId: string;
-  baseUrl?: string;
-  debug?: boolean;
+}
+
+/**
+ * Defines the shape for environment variables (used in CloudFlare integration).
+ * These are used to identify and authenticate the Merchant System with the Supertab Connect API.
+ */
+export interface Env {
+	/** The unique identifier for the merchant system. */
+	MERCHANT_SYSTEM_ID: string;
+	/** The API key for authenticating with the Supertab Connect. */
+	MERCHANT_API_KEY: string;
+	[key: string]: string;
 }
 
 export interface EventPayload {

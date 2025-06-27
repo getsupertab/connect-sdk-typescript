@@ -1,8 +1,17 @@
 interface SupertabConnectConfig {
     apiKey: string;
     merchantSystemId: string;
-    baseUrl?: string;
-    debug?: boolean;
+}
+/**
+ * Defines the shape for environment variables (used in CloudFlare integration).
+ * These are used to identify and authenticate the Merchant System with the Supertab Connect API.
+ */
+interface Env {
+    /** The unique identifier for the merchant system. */
+    MERCHANT_SYSTEM_ID: string;
+    /** The API key for authenticating with the Supertab Connect. */
+    MERCHANT_API_KEY: string;
+    [key: string]: string;
 }
 interface TokenVerificationResult {
     valid: boolean;
@@ -10,11 +19,19 @@ interface TokenVerificationResult {
     payload?: any;
 }
 
+/**
+ * SupertabConnect class provides higher level methods
+ * for using Supertab Connect within supported CDN integrations
+ * as well as more specialized methods to customarily verify JWT tokens and record events.
+ */
 declare class SupertabConnect {
-    private apiKey;
-    private baseUrl;
-    private merchantSystemId;
-    constructor(config: SupertabConnectConfig);
+    private apiKey?;
+    private baseUrl?;
+    private merchantSystemId?;
+    readonly id: number;
+    private static _instance;
+    constructor(config: SupertabConnectConfig, reset?: boolean);
+    static resetInstance(): void;
     /**
      * Get the JWKS for a given issuer, using cache if available
      * @private
@@ -39,8 +56,9 @@ declare class SupertabConnect {
      */
     private baseHandleRequest;
     private extractDataFromRequest;
-    cloudflareHandleRequest(request: Request, ctx?: any): Promise<Response>;
-    fastlyHandleRequest(request: Request, ctx?: any): Promise<Response>;
+    static cloudflareHandleRequests(request: Request, env: Env, ctx: any): Promise<Response>;
+    static fastlyHandleRequests(request: Request, merchantSystemId: string, merchantApiKey: string): Promise<Response>;
+    handleRequest(request: Request, botDetectionHandler?: (request: Request, ctx?: any) => boolean, ctx?: any): Promise<Response>;
 }
 
-export { SupertabConnect };
+export { type Env, SupertabConnect };
