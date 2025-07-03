@@ -28,7 +28,6 @@ declare class SupertabConnect {
     private apiKey?;
     private baseUrl?;
     private merchantSystemId?;
-    readonly id: number;
     private static _instance;
     constructor(config: SupertabConnectConfig, reset?: boolean);
     static resetInstance(): void;
@@ -56,6 +55,7 @@ declare class SupertabConnect {
      */
     private baseHandleRequest;
     private extractDataFromRequest;
+    static checkIfBotRequest(request: Request): boolean;
     static cloudflareHandleRequests(request: Request, env: Env, ctx: any): Promise<Response>;
     static fastlyHandleRequests(request: Request, merchantSystemId: string, merchantApiKey: string): Promise<Response>;
     handleRequest(request: Request, botDetectionHandler?: (request: Request, ctx?: any) => boolean, ctx?: any): Promise<Response>;
