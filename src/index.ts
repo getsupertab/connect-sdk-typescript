@@ -13,7 +13,7 @@ import {
   JWTPayload,
 } from "jose";
 
-export type { Env } from './types';
+export type { Env } from "./types";
 
 // In-memory cache for JWK sets
 const jwksCache = new Map<string, any>();
@@ -34,11 +34,15 @@ export class SupertabConnect {
   public constructor(config: SupertabConnectConfig, reset: boolean = false) {
     if (!reset && SupertabConnect._instance) {
       // If reset was not requested and an instance conflicts with the provided config, throw an error
-      if (!(
+      if (
+        !(
           config.apiKey === SupertabConnect._instance.apiKey &&
           config.merchantSystemId === SupertabConnect._instance.merchantSystemId
-      )) {
-        throw new Error("Cannot create a new instance with different configuration. Use resetInstance to clear the existing instance.");
+        )
+      ) {
+        throw new Error(
+          "Cannot create a new instance with different configuration. Use resetInstance to clear the existing instance."
+        );
       }
 
       // If an instance already exists and reset is not requested, just return the existing instance
@@ -50,9 +54,9 @@ export class SupertabConnect {
     }
 
     if (!config.apiKey || !config.merchantSystemId) {
-        throw new Error(
-            "Missing required configuration: apiKey and merchantSystemId are required"
-        );
+      throw new Error(
+        "Missing required configuration: apiKey and merchantSystemId are required"
+      );
     }
     this.apiKey = config.apiKey;
     this.merchantSystemId = config.merchantSystemId;
@@ -209,7 +213,9 @@ export class SupertabConnect {
     const payload: EventPayload = {
       event_name: eventName,
       customer_system_token: customerToken,
-      merchant_system_identifier: this.merchantSystemId ? this.merchantSystemId : "",
+      merchant_system_identifier: this.merchantSystemId
+        ? this.merchantSystemId
+        : "",
       properties,
     };
 
@@ -239,17 +245,20 @@ export class SupertabConnect {
    * Handle the request, report an event to Supertab Connect and return a response
    */
   private async baseHandleRequest(
-      token: string,
-      url: string,
-      user_agent: string,
-      ctx: any
+    token: string,
+    url: string,
+    user_agent: string,
+    ctx: any
   ): Promise<Response> {
-
     // 1. Verify token
     const verification = await this.verifyToken(token);
 
     // Record event helper
-    async function recordEvent(stc: SupertabConnect, eventName: string, ctx: any) {
+    async function recordEvent(
+      stc: SupertabConnect,
+      eventName: string,
+      ctx: any
+    ) {
       const eventProperties = {
         page_url: url,
         user_agent: user_agent,
@@ -267,11 +276,26 @@ export class SupertabConnect {
 
     // 2. Handle based on verification result
     if (!verification.valid) {
-      await recordEvent(this, verification.reason || "token_verification_failed", ctx);
+      await recordEvent(
+        this,
+        verification.reason || "token_verification_failed",
+        ctx
+      );
       const message =
+        "Payment required, you need to present a valid supertab connect token to access this content.";
+      const details =
         "❌ Content access denied" +
         (verification.reason ? `: ${verification.reason}` : "");
-      return new Response(message, { status: 403, headers: new Headers({ "Content-Type": "application/json" }) });
+      // TODO: replace with content-access.json
+      const responseBody = {
+        message: message,
+        url: "https://customer-connect.sbx.supertab.co/signin",
+        details: details,
+      };
+      return new Response(JSON.stringify(responseBody), {
+        status: 402,
+        headers: new Headers({ "Content-Type": "application/json" }),
+      });
     }
 
     // 3. Success
@@ -282,7 +306,11 @@ export class SupertabConnect {
     });
   }
 
-  private extractDataFromRequest(request: Request): { token: string; url: string; user_agent: string } {
+  private extractDataFromRequest(request: Request): {
+    token: string;
+    url: string;
+    user_agent: string;
+  } {
     // Parse token
     const auth = request.headers.get("Authorization") || "";
     const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
@@ -294,7 +322,62 @@ export class SupertabConnect {
     return { token, url, user_agent };
   }
 
-  static async cloudflareHandleRequests(request: Request, env: Env, ctx: any): Promise<Response> {
+  static checkIfBotRequest(request: Request): boolean {
+    const userAgent = request.headers.get("User-Agent") || "";
+    const accept = request.headers.get("accept") || "";
+    const secChUa = request.headers.get("sec-ch-ua");
+    const acceptLanguage = request.headers.get("accept-language");
+    const referer = request.headers.get("referer");
+    const botScore = (request as any).cf?.botManagement?.score;
+
+    const botList = [
+      "ChatGPT-User",
+      "PerplexityBot",
+      "GPTBot",
+      "anthropic-ai",
+      "CCBot",
+      "Claude-Web",
+      "ClaudeBot",
+      "cohere-ai",
+      "YouBot",
+      "Diffbot",
+      "OAI-SearchBot",
+      "meta-externalagent",
+      "Timpibot",
+      "Amazonbot",
+      "Bytespider",
+      "Perplexity-User",
+      "Googlebot",
+      "bot",
+      "curl",
+      "wget",
+    ];
+    // 1. Basic substring check from known list
+    const botUaMatch = botList.some((bot) =>
+      userAgent.toLowerCase().includes(bot.toLowerCase())
+    );
+
+    // 2. Headless browser detection
+    const headlessIndicators =
+      userAgent.toLowerCase().includes("headless") ||
+      userAgent.toLowerCase().includes("puppeteer") ||
+      !secChUa;
+
+    // 3. Suspicious header gaps — many bots omit these
+    const missingHeaders = !accept || !acceptLanguage || !referer;
+
+    // 4. Cloudflare bot score check (if available)
+    const lowBotScore = typeof botScore === "number" && botScore < 30;
+
+    // Final decision
+    return botUaMatch || headlessIndicators || missingHeaders || lowBotScore;
+  }
+
+  static async cloudflareHandleRequests(
+    request: Request,
+    env: Env,
+    ctx: any
+  ): Promise<Response> {
     // Validate required env variables
     const { MERCHANT_SYSTEM_ID, MERCHANT_API_KEY } = env;
 
@@ -305,10 +388,18 @@ export class SupertabConnect {
     });
 
     // Handle the request, including bot detection, token verification and recording the event
-    return supertabConnect.handleRequest(request, undefined, ctx);
+    return supertabConnect.handleRequest(
+      request,
+      SupertabConnect.checkIfBotRequest,
+      ctx
+    );
   }
 
-  static async fastlyHandleRequests(request: Request, merchantSystemId: string, merchantApiKey: string): Promise<Response> {
+  static async fastlyHandleRequests(
+    request: Request,
+    merchantSystemId: string,
+    merchantApiKey: string
+  ): Promise<Response> {
     // Prepare or get the SupertabConnect instance
     const supertabConnect = new SupertabConnect({
       apiKey: merchantApiKey,
@@ -316,10 +407,18 @@ export class SupertabConnect {
     });
 
     // Handle the request, including bot detection, token verification and recording the event
-    return supertabConnect.handleRequest(request, undefined, null);
+    return supertabConnect.handleRequest(
+      request,
+      SupertabConnect.checkIfBotRequest,
+      null
+    );
   }
 
-  async handleRequest(request: Request, botDetectionHandler?: (request: Request, ctx?: any) => boolean,  ctx?: any): Promise<Response> {
+  async handleRequest(
+    request: Request,
+    botDetectionHandler?: (request: Request, ctx?: any) => boolean,
+    ctx?: any
+  ): Promise<Response> {
     // 1. Extract token, URL, and user agent from the request
     const { token, url, user_agent } = this.extractDataFromRequest(request);
 
