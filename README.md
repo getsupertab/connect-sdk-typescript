@@ -187,3 +187,13 @@ await supertabConnect.recordEvent('page_viewed', token, {
   article_id: '12345'
 });
 ```
+
+### `checkIfBotRequest(request: Request): boolean`
+
+A simple check based on the information passed in request's Headers to decide whether it comes from a crawler/bot/AI agent or not.
+
+**Parameters:**
+- `request` (Request): The incoming HTTP request object
+
+**Returns:**
+- `boolean`: True if the request's Headers fall into the conditions to identify requester as a bot; False otherwise.
