@@ -331,30 +331,31 @@ export class SupertabConnect {
     const botScore = (request as any).cf?.botManagement?.score;
 
     const botList = [
-      "ChatGPT-User",
-      "PerplexityBot",
-      "GPTBot",
+      "chatgpt-user",
+      "perplexitybot",
+      "gptbot",
       "anthropic-ai",
-      "CCBot",
-      "Claude-Web",
-      "ClaudeBot",
+      "ccbot",
+      "claude-web",
+      "claudebot",
       "cohere-ai",
-      "YouBot",
-      "Diffbot",
-      "OAI-SearchBot",
+      "youbot",
+      "diffbot",
+      "oai-searchbot",
       "meta-externalagent",
-      "Timpibot",
-      "Amazonbot",
-      "Bytespider",
-      "Perplexity-User",
-      "Googlebot",
+      "timpibot",
+      "amazonbot",
+      "bytespider",
+      "perplexity-user",
+      "googlebot",
       "bot",
       "curl",
       "wget",
     ];
     // 1. Basic substring check from known list
+    const lowerCaseUserAgent = userAgent.toLowerCase();
     const botUaMatch = botList.some((bot) =>
-      userAgent.toLowerCase().includes(bot.toLowerCase())
+        lowerCaseUserAgent.includes(bot)
     );
 
     // 2. Headless browser detection
