@@ -1,6 +1,6 @@
 export interface SupertabConnectConfig {
   apiKey: string;
-  merchantSystemId: string;
+  merchantSystemUrn: string;
 }
 
 /**
@@ -9,7 +9,7 @@ export interface SupertabConnectConfig {
  */
 export interface Env {
 	/** The unique identifier for the merchant system. */
-	MERCHANT_SYSTEM_ID: string;
+	MERCHANT_SYSTEM_URN: string;
 	/** The API key for authenticating with the Supertab Connect. */
 	MERCHANT_API_KEY: string;
 	[key: string]: string;
@@ -18,7 +18,7 @@ export interface Env {
 export interface EventPayload {
   event_name: string;
   customer_system_token?: string;
-  merchant_system_identifier: string;
+  merchant_system_urn: string;
   properties: Record<string, any>;
 }
 

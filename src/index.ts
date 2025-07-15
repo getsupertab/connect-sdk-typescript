@@ -27,7 +27,7 @@ const debug = false;
 export class SupertabConnect {
   private apiKey?: string;
   private baseUrl?: string;
-  private merchantSystemId?: string;
+  private merchantSystemUrn?: string;
 
   private static _instance: SupertabConnect | null = null;
 
@@ -37,7 +37,7 @@ export class SupertabConnect {
       if (
         !(
           config.apiKey === SupertabConnect._instance.apiKey &&
-          config.merchantSystemId === SupertabConnect._instance.merchantSystemId
+          config.merchantSystemUrn === SupertabConnect._instance.merchantSystemUrn
         )
       ) {
         throw new Error(
@@ -53,13 +53,13 @@ export class SupertabConnect {
       SupertabConnect.resetInstance();
     }
 
-    if (!config.apiKey || !config.merchantSystemId) {
+    if (!config.apiKey || !config.merchantSystemUrn) {
       throw new Error(
-        "Missing required configuration: apiKey and merchantSystemId are required"
+        "Missing required configuration: apiKey and merchantSystemUrn are required"
       );
     }
     this.apiKey = config.apiKey;
-    this.merchantSystemId = config.merchantSystemId;
+    this.merchantSystemUrn = config.merchantSystemUrn;
     this.baseUrl = "https://api-connect.sbx.supertab.co";
 
     // Register this as the singleton instance
@@ -213,9 +213,7 @@ export class SupertabConnect {
     const payload: EventPayload = {
       event_name: eventName,
       customer_system_token: customerToken,
-      merchant_system_identifier: this.merchantSystemId
-        ? this.merchantSystemId
-        : "",
+      merchant_system_urn: this.merchantSystemUrn ? this.merchantSystemUrn : "",
       properties,
     };
 
@@ -380,12 +378,12 @@ export class SupertabConnect {
     ctx: any
   ): Promise<Response> {
     // Validate required env variables
-    const { MERCHANT_SYSTEM_ID, MERCHANT_API_KEY } = env;
+    const { MERCHANT_SYSTEM_URN, MERCHANT_API_KEY } = env;
 
     // Prepare or get the SupertabConnect instance
     const supertabConnect = new SupertabConnect({
       apiKey: MERCHANT_API_KEY,
-      merchantSystemId: MERCHANT_SYSTEM_ID,
+      merchantSystemUrn: MERCHANT_SYSTEM_URN,
     });
 
     // Handle the request, including bot detection, token verification and recording the event
@@ -398,13 +396,13 @@ export class SupertabConnect {
 
   static async fastlyHandleRequests(
     request: Request,
-    merchantSystemId: string,
+    merchantSystemUrn: string,
     merchantApiKey: string
   ): Promise<Response> {
     // Prepare or get the SupertabConnect instance
     const supertabConnect = new SupertabConnect({
       apiKey: merchantApiKey,
-      merchantSystemId: merchantSystemId,
+      merchantSystemUrn: merchantSystemUrn,
     });
 
     // Handle the request, including bot detection, token verification and recording the event

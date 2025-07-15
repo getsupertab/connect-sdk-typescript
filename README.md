@@ -18,7 +18,7 @@ import { SupertabConnect } from '@laterpay/supertab-connect-sdk';
 // Initialize the SDK
 const supertabConnect = new SupertabConnect({
   apiKey: 'stc_live_your_api_key',
-  merchantSystemId: 'your_merchant_system_id',
+  merchantSystemUrn: 'your_merchant_system_urn',
 });
 
 // Verify a token
@@ -41,12 +41,12 @@ import { SupertabConnect } from "@laterpay/supertab-connect-sdk";
 const configDict = new SecretStore("demo");
 const config = {
     apiKey: configDict.get("MERCHANT_API_KEY"),
-    merchantSystemId: configDict.get("MERCHANT_SYSTEM_ID"),
+    merchantSystemUrn: configDict.get("MERCHANT_SYSTEM_URN"),
 };
 
 // The entry point for the request handler.
 addEventListener("fetch", (event) => event.respondWith(
-    SupertabConnect.fastlyHandleRequests(event.request, config.merchantSystemId, config.apiKey)
+    SupertabConnect.fastlyHandleRequests(event.request, config.merchantSystemUrn, config.apiKey)
 ));
 ```
 
@@ -69,7 +69,7 @@ The SDK is configured using the `SupertabConnectConfig` object
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `apiKey` | string | Yes | - | Your Supertab merchant API key
-| `merchantSystemId` | string | Yes | - | Your merchant system identifier
+| `merchantSystemUrn` | string | Yes | - | Your merchant system identifier
 
 ## Public API Reference
 
@@ -83,7 +83,7 @@ import { SupertabConnect } from '@laterpay/supertab-connect-sdk';
 
 const supertabConnect = new SupertabConnect({
   apiKey: 'stc_live_your_api_key',
-  merchantSystemId: 'your_merchant_system_id',
+  merchantSystemUrn: 'your_merchant_system_urn',
 });
 ```
 
@@ -92,7 +92,7 @@ const supertabConnect = new SupertabConnect({
 Resets the singleton instance of SupertabConnect allowing to create an instance with a new config.
 We expect this to not be called in the usual production setup as the SDK is designed to intercept requests using specific public methods.
 
-### `fastlyHandleRequests(request: Request, merchantSystemId: string, merchantApiKey: string): Promise<Response>`
+### `fastlyHandleRequests(request: Request, merchantSystemUrn: string, merchantApiKey: string): Promise<Response>`
 
 Handles the Supertab Connect part for each incoming HTTP request within Fastly CDN: it verifies the JWT token and records the event.
 
@@ -100,7 +100,7 @@ For examples see the [Fastly Compute Example](#fastly-compute-example) section a
 
 **Parameters:**
 - `request` (Request): The incoming HTTP request object
-- `merchantSystemId` (string): Your merchant system identifier (recommended to be stored in a Fastly SecretStore)
+- `merchantSystemUrn` (string): Your merchant system identifier (recommended to be stored in a Fastly SecretStore)
 - `merchantApiKey` (string): Your Supertab merchant API key (recommended to be stored in a Fastly SecretStore)
 
 **Returns:**
@@ -116,7 +116,7 @@ For examples see the [CloudFlare Worker Example](#cloudflare-worker-example) sec
 
 **Parameters:**
 - `request` (Request): The incoming HTTP request object
-- `env` (Env): Environment variables provided for CloudFlare Workers (MERCHANT_API_KEY and MERCHANT_SYSTEM_ID must be present)
+- `env` (Env): Environment variables provided for CloudFlare Workers (MERCHANT_API_KEY and MERCHANT_SYSTEM_URN must be present)
 - `ctx` (ExecutionContext): Execution context passed from `fetch` worker method for awaiting async operations
 
 **Returns:**
