@@ -327,7 +327,6 @@ export class SupertabConnect {
     const accept = request.headers.get("accept") || "";
     const secChUa = request.headers.get("sec-ch-ua");
     const acceptLanguage = request.headers.get("accept-language");
-    const referer = request.headers.get("referer");
     const botScore = (request as any).cf?.botManagement?.score;
 
     const botList = [
@@ -364,7 +363,7 @@ export class SupertabConnect {
       !secChUa;
 
     // 3. Suspicious header gaps — many bots omit these
-    const missingHeaders = !accept || !acceptLanguage || !referer;
+    const missingHeaders = !accept || !acceptLanguage;
 
     // 4. Cloudflare bot score check (if available)
     const lowBotScore = typeof botScore === "number" && botScore < 30;
