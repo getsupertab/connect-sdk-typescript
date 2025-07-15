@@ -18,6 +18,7 @@ export type { Env } from "./types";
 // In-memory cache for JWK sets
 const jwksCache = new Map<string, any>();
 const debug = false;
+const refreshContentAccessTime = 1000 * 60 * 60; // 1 hour
 
 /**
  * SupertabConnect class provides higher level methods
@@ -27,9 +28,11 @@ const debug = false;
 export class SupertabConnect {
   private apiKey?: string;
   private baseUrl?: string;
+  private contentAccess?: any;
   private merchantSystemUrn?: string;
 
   private static _instance: SupertabConnect | null = null;
+  private static lastAccessFetchAt: number = 0;
 
   public constructor(config: SupertabConnectConfig, reset: boolean = false) {
     if (!reset && SupertabConnect._instance) {
@@ -62,6 +65,24 @@ export class SupertabConnect {
     this.apiKey = config.apiKey;
     this.merchantSystemUrn = config.merchantSystemUrn;
     this.baseUrl = "https://api-connect.sbx.supertab.co";
+
+    if (!this.contentAccess || !SupertabConnect.lastAccessFetchAt || Date.now() - SupertabConnect.lastAccessFetchAt > refreshContentAccessTime) {
+      this.contentAccess = this.retrieveContentAccessJson(this.merchantSystemUrn)
+        .then((contentAccess) => {
+          // Handle successful retrieval
+          if (debug) {
+            console.log("Content access retrieved successfully:", contentAccess);
+          }
+          SupertabConnect.lastAccessFetchAt = Date.now();
+          return contentAccess;
+        })
+        .catch((error) => {
+          // Handle error case
+          if (debug) {
+            console.error("Error retrieving content access JSON:", error);
+          }
+        });
+    }
 
     // Register this as the singleton instance
     SupertabConnect._instance = this;
@@ -241,6 +262,37 @@ export class SupertabConnect {
   }
 
   /**
+   * Retrieve the content access JSON for the merchant system
+   */
+  private async retrieveContentAccessJson(merchantSystemUrn: string): Promise<any> {
+    try {
+      const response = await fetch(`${this.baseUrl}/merchants/systems/${merchantSystemUrn}/content-access.json`, {
+        method: "GET",
+        headers: {
+          "Accept": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        if (debug) {
+          console.error(`Failed to fetch content access: ${response.status}`);
+        }
+        return null;
+      }
+
+      const contentAccess = await response.json();
+      if (debug) {
+        console.log("Raw content access response:", contentAccess);
+      }
+      return contentAccess;
+    } catch (error) {
+      if (debug) {
+        console.error("Error fetching content access:", error);
+      }
+    }
+  }
+
+  /**
    * Handle the request, report an event to Supertab Connect and return a response
    */
   private async baseHandleRequest(
@@ -281,16 +333,18 @@ export class SupertabConnect {
         ctx
       );
       const message =
-        "Payment required, you need to present a valid supertab connect token to access this content.";
+        "Payment required: you need to present a valid Supertab Connect token to access this content.";
       const details =
         "❌ Content access denied" +
         (verification.reason ? `: ${verification.reason}` : "");
-      // TODO: replace with content-access.json
+      const contentAccess = await this.contentAccess;
+
       const responseBody = {
+        ...contentAccess,
         message: message,
-        url: "https://customer-connect.sbx.supertab.co/signin",
         details: details,
       };
+
       return new Response(JSON.stringify(responseBody), {
         status: 402,
         headers: new Headers({ "Content-Type": "application/json" }),
