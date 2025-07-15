@@ -1,6 +1,6 @@
 interface SupertabConnectConfig {
     apiKey: string;
-    merchantSystemId: string;
+    merchantSystemUrn: string;
 }
 /**
  * Defines the shape for environment variables (used in CloudFlare integration).
@@ -8,7 +8,7 @@ interface SupertabConnectConfig {
  */
 interface Env {
     /** The unique identifier for the merchant system. */
-    MERCHANT_SYSTEM_ID: string;
+    MERCHANT_SYSTEM_URN: string;
     /** The API key for authenticating with the Supertab Connect. */
     MERCHANT_API_KEY: string;
     [key: string]: string;
@@ -27,7 +27,7 @@ interface TokenVerificationResult {
 declare class SupertabConnect {
     private apiKey?;
     private baseUrl?;
-    private merchantSystemId?;
+    private merchantSystemUrn?;
     private static _instance;
     constructor(config: SupertabConnectConfig, reset?: boolean);
     static resetInstance(): void;
@@ -57,7 +57,7 @@ declare class SupertabConnect {
     private extractDataFromRequest;
     static checkIfBotRequest(request: Request): boolean;
     static cloudflareHandleRequests(request: Request, env: Env, ctx: any): Promise<Response>;
-    static fastlyHandleRequests(request: Request, merchantSystemId: string, merchantApiKey: string): Promise<Response>;
+    static fastlyHandleRequests(request: Request, merchantSystemUrn: string, merchantApiKey: string): Promise<Response>;
     handleRequest(request: Request, botDetectionHandler?: (request: Request, ctx?: any) => boolean, ctx?: any): Promise<Response>;
 }
 
