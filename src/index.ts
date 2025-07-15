@@ -37,7 +37,8 @@ export class SupertabConnect {
       if (
         !(
           config.apiKey === SupertabConnect._instance.apiKey &&
-          config.merchantSystemUrn === SupertabConnect._instance.merchantSystemUrn
+          config.merchantSystemUrn ===
+            SupertabConnect._instance.merchantSystemUrn
         )
       ) {
         throw new Error(
@@ -351,9 +352,7 @@ export class SupertabConnect {
     ];
     // 1. Basic substring check from known list
     const lowerCaseUserAgent = userAgent.toLowerCase();
-    const botUaMatch = botList.some((bot) =>
-        lowerCaseUserAgent.includes(bot)
-    );
+    const botUaMatch = botList.some((bot) => lowerCaseUserAgent.includes(bot));
 
     // 2. Headless browser detection
     const headlessIndicators =
@@ -366,6 +365,13 @@ export class SupertabConnect {
 
     // 4. Cloudflare bot score check (if available)
     const lowBotScore = typeof botScore === "number" && botScore < 30;
+    console.log("Bot Detection Details:", {
+      botUaMatch,
+      headlessIndicators,
+      missingHeaders,
+      lowBotScore,
+      botScore,
+    });
 
     // Final decision
     return botUaMatch || headlessIndicators || missingHeaders || lowBotScore;
