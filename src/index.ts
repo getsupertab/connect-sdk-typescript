@@ -261,12 +261,12 @@ export class SupertabConnect {
 
       if (!response.ok) {
         if (debug) {
-          console.error(`Failed to record event: ${response.status}`);
+          console.log(`Failed to record event: ${response.status}`);
         }
       }
     } catch (error) {
       if (debug) {
-        console.error("Error recording event:", error);
+        console.log("Error recording event:", error);
       }
     }
   }
