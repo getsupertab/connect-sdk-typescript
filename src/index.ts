@@ -17,7 +17,7 @@ export type { Env } from "./types";
 
 // In-memory cache for JWK sets
 const jwksCache = new Map<string, any>();
-const debug = false;
+const debug = true; // Set to true for debugging purposes
 const refreshContentAccessTime = 1000 * 60 * 60; // 1 hour
 
 /**
@@ -66,12 +66,21 @@ export class SupertabConnect {
     this.merchantSystemUrn = config.merchantSystemUrn;
     this.baseUrl = "https://api-connect.sbx.supertab.co";
 
-    if (!this.contentAccess || !SupertabConnect.lastAccessFetchAt || Date.now() - SupertabConnect.lastAccessFetchAt > refreshContentAccessTime) {
-      this.contentAccess = this.retrieveContentAccessJson(this.merchantSystemUrn)
+    if (
+      !this.contentAccess ||
+      !SupertabConnect.lastAccessFetchAt ||
+      Date.now() - SupertabConnect.lastAccessFetchAt > refreshContentAccessTime
+    ) {
+      this.contentAccess = this.retrieveContentAccessJson(
+        this.merchantSystemUrn
+      )
         .then((contentAccess) => {
           // Handle successful retrieval
           if (debug) {
-            console.log("Content access retrieved successfully:", contentAccess);
+            console.log(
+              "Content access retrieved successfully:",
+              contentAccess
+            );
           }
           SupertabConnect.lastAccessFetchAt = Date.now();
           return contentAccess;
@@ -80,6 +89,7 @@ export class SupertabConnect {
           // Handle error case
           if (debug) {
             console.error("Error retrieving content access JSON:", error);
+            console.error(error.json ? error.json() : error.message);
           }
         });
     }
@@ -264,14 +274,19 @@ export class SupertabConnect {
   /**
    * Retrieve the content access JSON for the merchant system
    */
-  private async retrieveContentAccessJson(merchantSystemUrn: string): Promise<any> {
+  private async retrieveContentAccessJson(
+    merchantSystemUrn: string
+  ): Promise<any> {
     try {
-      const response = await fetch(`${this.baseUrl}/merchants/systems/${merchantSystemUrn}/content-access.json`, {
-        method: "GET",
-        headers: {
-          "Accept": "application/json",
-        },
-      });
+      const response = await fetch(
+        `${this.baseUrl}/merchants/systems/${merchantSystemUrn}/content-access.json`,
+        {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+          },
+        }
+      );
 
       if (!response.ok) {
         if (debug) {
@@ -426,6 +441,16 @@ export class SupertabConnect {
       lowBotScore,
       botScore,
     });
+    if (SupertabConnect._instance) {
+      SupertabConnect._instance.recordEvent("debug_bot_detected", undefined, {
+        userAgent,
+        botUaMatch,
+        headlessIndicators,
+        missingHeaders,
+        lowBotScore,
+        botScore,
+      });
+    }
 
     // Final decision
     return botUaMatch || headlessIndicators || missingHeaders || lowBotScore;
