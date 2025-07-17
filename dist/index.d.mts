@@ -27,10 +27,8 @@ interface TokenVerificationResult {
 declare class SupertabConnect {
     private apiKey?;
     private baseUrl?;
-    private contentAccess?;
     private merchantSystemUrn?;
     private static _instance;
-    private static lastAccessFetchAt;
     constructor(config: SupertabConnectConfig, reset?: boolean);
     static resetInstance(): void;
     /**
@@ -52,10 +50,6 @@ declare class SupertabConnect {
      * @returns Promise that resolves when the event is recorded
      */
     recordEvent(eventName: string, customerToken?: string, properties?: Record<string, any>): Promise<void>;
-    /**
-     * Retrieve the content access JSON for the merchant system
-     */
-    private retrieveContentAccessJson;
     /**
      * Handle the request, report an event to Supertab Connect and return a response
      */
