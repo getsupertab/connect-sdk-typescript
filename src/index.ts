@@ -359,6 +359,11 @@ export class SupertabConnect {
       userAgent.toLowerCase().includes("puppeteer") ||
       !secChUa;
 
+    const only_sec_ch_ua_missing =
+      !userAgent.toLowerCase().includes("headless") ||
+      !userAgent.toLowerCase().includes("puppeteer") ||
+      !secChUa;
+
     // 3. Suspicious header gaps — many bots omit these
     const missingHeaders = !accept || !acceptLanguage;
 
@@ -380,6 +385,17 @@ export class SupertabConnect {
         lowBotScore,
         botScore,
       });
+    }
+
+    // Safari and Mozilla special case
+    if (
+      lowerCaseUserAgent.includes("safari")
+      || lowerCaseUserAgent.includes("mozilla")
+    ) {
+      // Safari is not a bot, but it may be headless
+      if (headlessIndicators && only_sec_ch_ua_missing) {
+        return false; // Likely not a bot, but missing a Sec-CH-UA header
+      }
     }
 
     // Final decision
