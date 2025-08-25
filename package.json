@@ -1,6 +1,6 @@
 {
   "name": "@laterpay/supertab-connect-sdk",
-  "version": "0.1.0-beta.16",
+  "version": "0.1.0-beta.17",
   "description": "Supertab Connect SDK (beta)",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
