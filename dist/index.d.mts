@@ -59,6 +59,14 @@ declare class SupertabConnect {
     static cloudflareHandleRequests(request: Request, env: Env, ctx: any): Promise<Response>;
     static fastlyHandleRequests(request: Request, merchantSystemUrn: string, merchantApiKey: string): Promise<Response>;
     handleRequest(request: Request, botDetectionHandler?: (request: Request, ctx?: any) => boolean, ctx?: any): Promise<Response>;
+    /** Generate a customer JWT
+     * @param customerURN The customer's unique resource name (URN).
+     * @param kid The key ID to include in the JWT header.
+     * @param privateKeyPem The private key in PEM format used to sign the JWT.
+     * @param expirationSeconds The token's expiration time in seconds (default is 3600 seconds).
+     * @returns A promise that resolves to the generated JWT as a string.
+     */
+    static generateCustomerJWT(customerURN: string, kid: string, privateKeyPem: string, expirationSeconds?: number): Promise<string>;
 }
 
 export { type Env, SupertabConnect };

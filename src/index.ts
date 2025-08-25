@@ -11,6 +11,8 @@ import {
   decodeJwt,
   JWTHeaderParameters,
   JWTPayload,
+  importPKCS8,
+  SignJWT,
 } from "jose";
 
 export type { Env } from "./types";
@@ -389,8 +391,8 @@ export class SupertabConnect {
 
     // Safari and Mozilla special case
     if (
-      lowerCaseUserAgent.includes("safari")
-      || lowerCaseUserAgent.includes("mozilla")
+      lowerCaseUserAgent.includes("safari") ||
+      lowerCaseUserAgent.includes("mozilla")
     ) {
       // Safari is not a bot, but it may be headless
       if (headlessIndicators && only_sec_ch_ua_missing) {
@@ -461,5 +463,31 @@ export class SupertabConnect {
 
     // 3. Call the base handle request method and return the result
     return this.baseHandleRequest(token, url, user_agent, ctx);
+  }
+
+  /** Generate a customer JWT
+   * @param customerURN The customer's unique resource name (URN).
+   * @param kid The key ID to include in the JWT header.
+   * @param privateKeyPem The private key in PEM format used to sign the JWT.
+   * @param expirationSeconds The token's expiration time in seconds (default is 3600 seconds).
+   * @returns A promise that resolves to the generated JWT as a string.
+   */
+  static async generateCustomerJWT(
+    customerURN: string,
+    kid: string,
+    privateKeyPem: string,
+    expirationSeconds: number = 3600
+  ): Promise<string> {
+    const alg = "RS256";
+    const key = await importPKCS8(privateKeyPem, alg);
+
+    const now = Math.floor(Date.now() / 1000);
+
+    return new SignJWT({})
+      .setProtectedHeader({ alg, kid })
+      .setIssuer(customerURN)
+      .setIssuedAt(now)
+      .setExpirationTime(now + expirationSeconds)
+      .sign(key);
   }
 }
