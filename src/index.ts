@@ -378,16 +378,6 @@ export class SupertabConnect {
       lowBotScore,
       botScore,
     });
-    if (SupertabConnect._instance) {
-      SupertabConnect._instance.recordEvent("debug_bot_detected", undefined, {
-        userAgent,
-        botUaMatch,
-        headlessIndicators,
-        missingHeaders,
-        lowBotScore,
-        botScore,
-      });
-    }
 
     // Safari and Mozilla special case
     if (

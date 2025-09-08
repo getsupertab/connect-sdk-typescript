@@ -1,5 +1,5 @@
 {
-  "name": "@laterpay/supertab-connect-sdk",
+  "name": "@getsupertab/supertab-connect-sdk",
   "version": "0.1.0-beta.17",
   "description": "Supertab Connect SDK (beta)",
   "main": "dist/index.js",
@@ -11,7 +11,8 @@
     "README.md"
   ],
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "prepublishOnly": "npm run build",
   "scripts": {
@@ -22,7 +23,8 @@
     "supertab",
     "events"
   ],
-  "author": "Supertab Team",
+  "author": "Supertab (https://supertab.co)",
+  "homepage": "https://supertab-connect.mintlify.app/introduction/about-supertab-connect",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^18.0.0",

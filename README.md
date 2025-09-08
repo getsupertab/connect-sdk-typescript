@@ -1,11 +1,13 @@
 # Supertab Connect SDK
 
+Check our [documentation](https://supertab-connect.mintlify.app/introduction/about-supertab-connect) for more information on Supertab Connect.
+
 ## Installation
 
 ```
-npm install @laterpay/supertab-connect-sdk
+npm install @getsupertab/supertab-connect-sdk
 # or
-yarn add @laterpay/supertab-connect-sdk
+yarn add @getsupertab/supertab-connect-sdk
 ```
 
 ## Basic Usage
@@ -13,7 +15,7 @@ yarn add @laterpay/supertab-connect-sdk
 ### Manual setup
 
 ```js
-import { SupertabConnect } from "@laterpay/supertab-connect-sdk";
+import { SupertabConnect } from "@getsupertab/supertab-connect-sdk";
 
 // Initialize the SDK
 const supertabConnect = new SupertabConnect({
@@ -36,7 +38,7 @@ await supertabConnect.recordEvent("page_viewed", token, {
 ```js
 /// <reference types="@fastly/js-compute" />
 import { SecretStore } from "fastly:secret-store";
-import { SupertabConnect } from "@laterpay/supertab-connect-sdk";
+import { SupertabConnect } from "@getsupertab/supertab-connect-sdk";
 
 const configDict = new SecretStore("demo");
 const config = {
@@ -59,7 +61,7 @@ addEventListener("fetch", (event) =>
 ### CloudFlare Worker Example
 
 ```ts
-import { SupertabConnect, Env } from "@laterpay/supertab-connect-sdk";
+import { SupertabConnect, Env } from "@getsupertab/supertab-connect-sdk";
 
 export default {
   async fetch(
@@ -89,7 +91,7 @@ Creates a new instance of the SupertabConnect SDK.
 If the SDK was already initialized and the config parameters are different, it will throw an error unless `reset` is set to true.
 
 ```ts
-import { SupertabConnect } from "@laterpay/supertab-connect-sdk";
+import { SupertabConnect } from "@getsupertab/supertab-connect-sdk";
 
 const supertabConnect = new SupertabConnect({
   apiKey: "stc_live_your_api_key",
@@ -237,7 +239,7 @@ Generates a self‑signed RS256 JWT for a Customer with a `kid` header. The `pri
 **Example:**
 
 ```ts
-import { SupertabConnect } from "@laterpay/supertab-connect-sdk";
+import { SupertabConnect } from "@getsupertab/supertab-connect-sdk";
 
 const token = await SupertabConnect.generateCustomerJWT(
   "urn:stc:customer:79fcac58-1966-470a-be40-c34847aecabd",
