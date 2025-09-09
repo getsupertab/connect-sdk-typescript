@@ -84,7 +84,13 @@ export class SupertabConnect {
       }/.well-known/jwks.json/${encodeURIComponent(issuer)}`;
 
       try {
-        const jwksResponse = await fetch(jwksUrl);
+        let options: any = { method: "GET" };
+        // @ts-ignore
+        if (globalThis?.fastly) {
+          options = { ...options, backend: "sbx-backend" };
+        }
+        const jwksResponse = await fetch(jwksUrl, options);
+
         if (!jwksResponse.ok) {
           throw new Error(`Failed to fetch JWKS: ${jwksResponse.status}`);
         }
@@ -221,14 +227,19 @@ export class SupertabConnect {
     };
 
     try {
-      const response = await fetch(`${this.baseUrl}/events`, {
+      let options: any = {
         method: "POST",
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
-      });
+      };
+      // @ts-ignore
+      if (globalThis?.fastly) {
+        options = { ...options, backend: "sbx-backend" };
+      }
+      const response = await fetch(`${this.baseUrl}/events`, options);
 
       if (!response.ok) {
         console.log(`Failed to record event: ${response.status}`);
