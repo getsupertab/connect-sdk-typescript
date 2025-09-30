@@ -72,7 +72,7 @@ declare class SupertabConnect {
      * @param licenseXml XML license document to include in the request payload.
      * @returns Promise resolving to the issued license access token string.
      */
-    static generateLicenseToken(clientId: string, privateKeyPem: string, tokenEndpoint: string, resourceUrl: string, licenseXml: string): Promise<string>;
+    static generateLicenseToken(clientId: string, kid: string, privateKeyPem: string, tokenEndpoint: string, resourceUrl: string, licenseXml: string): Promise<string>;
     /** Generate a customer JWT
      * @param customerURN The customer's unique resource name (URN).
      * @param kid The key ID to include in the JWT header.
