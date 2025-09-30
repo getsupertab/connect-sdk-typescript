@@ -26,16 +26,15 @@ interface TokenVerificationResult {
  */
 declare class SupertabConnect {
     private apiKey?;
-    private baseUrl?;
+    private static baseUrl;
     private merchantSystemUrn?;
     private static _instance;
     constructor(config: SupertabConnectConfig, reset?: boolean);
     static resetInstance(): void;
     /**
-     * Get the JWKS for a given issuer, using cache if available
-     * @private
+     * Override the default base URL for API requests (intended for local development/testing).
      */
-    private getJwksForIssuer;
+    static setBaseUrl(url: string): void;
     /**
      * Verify a JWT token
      * @param token The JWT token to verify
@@ -46,19 +45,34 @@ declare class SupertabConnect {
      * Records an analytics event
      * @param eventName Name of the event to record
      * @param customerToken Optional customer token for the event
+     * @param licenseToken Optional license token for the event
      * @param properties Additional properties to include with the event
      * @returns Promise that resolves when the event is recorded
      */
-    recordEvent(eventName: string, customerToken?: string, properties?: Record<string, any>): Promise<void>;
+    recordEvent(eventName: string, customerToken?: string, licenseToken?: string, properties?: Record<string, any>): Promise<void>;
     /**
      * Handle the request, report an event to Supertab Connect and return a response
      */
     private baseHandleRequest;
+    /**
+     * Handle the request for license tokens, report an event to Supertab Connect and return a response
+     */
+    private baseLicenseHandleRequest;
     private extractDataFromRequest;
     static checkIfBotRequest(request: Request): boolean;
     static cloudflareHandleRequests(request: Request, env: Env, ctx: any): Promise<Response>;
     static fastlyHandleRequests(request: Request, merchantSystemUrn: string, merchantApiKey: string): Promise<Response>;
     handleRequest(request: Request, botDetectionHandler?: (request: Request, ctx?: any) => boolean, ctx?: any): Promise<Response>;
+    /**
+     * Request a license token from the Supertab Connect token endpoint.
+     * @param clientId OAuth client identifier used for the assertion issuer/subject claims.
+     * @param privateKeyPem Private key in PEM format used to sign the client assertion.
+     * @param tokenEndpoint Token endpoint URL.
+     * @param resourceUrl Resource URL attempting to access with a License.
+     * @param licenseXml XML license document to include in the request payload.
+     * @returns Promise resolving to the issued license access token string.
+     */
+    static generateLicenseToken(clientId: string, privateKeyPem: string, tokenEndpoint: string, resourceUrl: string, licenseXml: string): Promise<string>;
     /** Generate a customer JWT
      * @param customerURN The customer's unique resource name (URN).
      * @param kid The key ID to include in the JWT header.

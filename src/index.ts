@@ -11,14 +11,18 @@ import {
   decodeJwt,
   JWTHeaderParameters,
   JWTPayload,
-  importPKCS8,
-  SignJWT,
 } from "jose";
+import {
+  generateLicenseToken as generateLicenseTokenHelper,
+  generateCustomerJWT as generateCustomerJWTHelper,
+} from "./customer";
+import {
+  baseLicenseHandleRequest as baseLicenseHandleRequestHelper,
+} from "./license";
+import { fetchIssuerJwks, fetchPlatformJwks } from "./jwks";
 
 export type { Env } from "./types";
 
-// In-memory cache for JWK sets
-const jwksCache = new Map<string, any>();
 const debug = true; // Set to true for debugging purposes
 
 /**
@@ -28,7 +32,7 @@ const debug = true; // Set to true for debugging purposes
  */
 export class SupertabConnect {
   private apiKey?: string;
-  private baseUrl?: string;
+  private static baseUrl: string = "https://api-connect.sbx.supertab.co";
   private merchantSystemUrn?: string;
 
   private static _instance: SupertabConnect | null = null;
@@ -63,7 +67,6 @@ export class SupertabConnect {
     }
     this.apiKey = config.apiKey;
     this.merchantSystemUrn = config.merchantSystemUrn;
-    this.baseUrl = "https://api-connect.sbx.supertab.co";
 
     // Register this as the singleton instance
     SupertabConnect._instance = this;
@@ -74,38 +77,10 @@ export class SupertabConnect {
   }
 
   /**
-   * Get the JWKS for a given issuer, using cache if available
-   * @private
+   * Override the default base URL for API requests (intended for local development/testing).
    */
-  private async getJwksForIssuer(issuer: string): Promise<any> {
-    if (!jwksCache.has(issuer)) {
-      const jwksUrl = `${
-        this.baseUrl
-      }/.well-known/jwks.json/${encodeURIComponent(issuer)}`;
-
-      try {
-        let options: any = { method: "GET" };
-        // @ts-ignore
-        if (globalThis?.fastly) {
-          options = { ...options, backend: "sbx-backend" };
-        }
-        const jwksResponse = await fetch(jwksUrl, options);
-
-        if (!jwksResponse.ok) {
-          throw new Error(`Failed to fetch JWKS: ${jwksResponse.status}`);
-        }
-
-        const jwksData = await jwksResponse.json();
-        jwksCache.set(issuer, jwksData);
-      } catch (error) {
-        if (debug) {
-          console.error("Error fetching JWKS:", error);
-        }
-        throw error;
-      }
-    }
-
-    return jwksCache.get(issuer);
+  public static setBaseUrl(url: string): void {
+    SupertabConnect.baseUrl = url;
   }
 
   /**
@@ -167,7 +142,11 @@ export class SupertabConnect {
 
     // 4. Verify signature
     try {
-      const jwks = await this.getJwksForIssuer(issuer);
+      const jwks = await fetchIssuerJwks(
+        SupertabConnect.baseUrl,
+        issuer,
+        debug
+      );
 
       // Create a key finder function for verification
       const getKey = async (header: JWTHeaderParameters) => {
@@ -211,17 +190,20 @@ export class SupertabConnect {
    * Records an analytics event
    * @param eventName Name of the event to record
    * @param customerToken Optional customer token for the event
+   * @param licenseToken Optional license token for the event
    * @param properties Additional properties to include with the event
    * @returns Promise that resolves when the event is recorded
    */
   async recordEvent(
     eventName: string,
     customerToken?: string,
+    licenseToken?: string,
     properties: Record<string, any> = {}
   ): Promise<void> {
     const payload: EventPayload = {
       event_name: eventName,
       customer_system_token: customerToken,
+      license_token: licenseToken,
       merchant_system_urn: this.merchantSystemUrn ? this.merchantSystemUrn : "",
       properties,
     };
@@ -239,7 +221,10 @@ export class SupertabConnect {
       if (globalThis?.fastly) {
         options = { ...options, backend: "sbx-backend" };
       }
-      const response = await fetch(`${this.baseUrl}/events`, options);
+      const response = await fetch(
+        `${SupertabConnect.baseUrl}/events`,
+        options
+      );
 
       if (!response.ok) {
         console.log(`Failed to record event: ${response.status}`);
@@ -274,11 +259,21 @@ export class SupertabConnect {
         verification_reason: verification.reason || "success",
       };
       if (ctx) {
-        const eventPromise = stc.recordEvent(eventName, token, eventProperties);
+        const eventPromise = stc.recordEvent(
+          eventName,
+          token,
+          undefined,
+          eventProperties
+        );
         ctx.waitUntil(eventPromise);
         return eventPromise;
       } else {
-        return await stc.recordEvent(eventName, token, eventProperties);
+        return await stc.recordEvent(
+          eventName,
+          token,
+          undefined,
+          eventProperties
+        );
       }
     }
 
@@ -295,7 +290,7 @@ export class SupertabConnect {
       const details =
         "❌ Content access denied" +
         (verification.reason ? `: ${verification.reason}` : "");
-      const contentAccessUrl = `${this.baseUrl}/merchants/systems/${this.merchantSystemUrn}/content-access.json`;
+      const contentAccessUrl = `${SupertabConnect.baseUrl}/merchants/systems/${this.merchantSystemUrn}/content-access.json`;
 
       const responseBody = {
         url: contentAccessUrl,
@@ -317,20 +312,48 @@ export class SupertabConnect {
     });
   }
 
+  /**
+   * Handle the request for license tokens, report an event to Supertab Connect and return a response
+   */
+  private async baseLicenseHandleRequest(
+    licenseToken: string,
+    url: string,
+    user_agent: string,
+    ctx: any
+  ): Promise<Response> {
+    return baseLicenseHandleRequestHelper({
+      licenseToken,
+      url,
+      userAgent: user_agent,
+      ctx,
+      supertabBaseUrl: SupertabConnect.baseUrl,
+      merchantSystemUrn: this.merchantSystemUrn,
+      debug,
+      recordEvent: (
+        eventName: string,
+        customerToken?: string,
+        token?: string,
+        properties?: Record<string, any>
+      ) => this.recordEvent(eventName, customerToken, token, properties),
+    });
+  }
+
   private extractDataFromRequest(request: Request): {
     token: string;
+    licenseToken: string;
     url: string;
     user_agent: string;
   } {
     // Parse token
     const auth = request.headers.get("Authorization") || "";
     const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+    const licenseToken = auth.startsWith("License ") ? auth.slice(8) : "";
 
     // Extract URL and user agent
     const url = request.url;
     const user_agent = request.headers.get("User-Agent") || "unknown";
 
-    return { token, url, user_agent };
+    return { token, licenseToken, url, user_agent };
   }
 
   static checkIfBotRequest(request: Request): boolean {
@@ -451,8 +474,9 @@ export class SupertabConnect {
     botDetectionHandler?: (request: Request, ctx?: any) => boolean,
     ctx?: any
   ): Promise<Response> {
-    // 1. Extract token, URL, and user agent from the request
-    const { token, url, user_agent } = this.extractDataFromRequest(request);
+    // 1. Extract token, license token, URL, and user agent from the request
+    const { token, licenseToken, url, user_agent } =
+      this.extractDataFromRequest(request);
 
     // 2. Handle bot detection if provided
     if (botDetectionHandler && !botDetectionHandler(request, ctx)) {
@@ -462,8 +486,41 @@ export class SupertabConnect {
       });
     }
 
-    // 3. Call the base handle request method and return the result
-    return this.baseHandleRequest(token, url, user_agent, ctx);
+    // 3. Check for bearer token first, then fallback to license token
+    if (token) {
+      return this.baseHandleRequest(token, url, user_agent, ctx);
+    }
+
+    // 4. Call the base licenhandle request method and return the result
+    return this.baseLicenseHandleRequest(licenseToken, url, user_agent, ctx);
+  }
+
+  /**
+   * Request a license token from the Supertab Connect token endpoint.
+   * @param clientId OAuth client identifier used for the assertion issuer/subject claims.
+   * @param privateKeyPem Private key in PEM format used to sign the client assertion.
+   * @param tokenEndpoint Token endpoint URL.
+   * @param resourceUrl Resource URL attempting to access with a License.
+   * @param licenseXml XML license document to include in the request payload.
+   * @returns Promise resolving to the issued license access token string.
+   */
+  static async generateLicenseToken(
+    clientId: string,
+    kid: string,
+    privateKeyPem: string,
+    tokenEndpoint: string,
+    resourceUrl: string,
+    licenseXml: string
+  ): Promise<string> {
+    return generateLicenseTokenHelper({
+      clientId,
+      kid,
+      privateKeyPem,
+      tokenEndpoint,
+      resourceUrl,
+      licenseXml,
+      debug,
+    });
   }
 
   /** Generate a customer JWT
@@ -479,16 +536,11 @@ export class SupertabConnect {
     privateKeyPem: string,
     expirationSeconds: number = 3600
   ): Promise<string> {
-    const alg = "RS256";
-    const key = await importPKCS8(privateKeyPem, alg);
-
-    const now = Math.floor(Date.now() / 1000);
-
-    return new SignJWT({})
-      .setProtectedHeader({ alg, kid })
-      .setIssuer(customerURN)
-      .setIssuedAt(now)
-      .setExpirationTime(now + expirationSeconds)
-      .sign(key);
+    return generateCustomerJWTHelper({
+      customerURN,
+      kid,
+      privateKeyPem,
+      expirationSeconds,
+    });
   }
 }

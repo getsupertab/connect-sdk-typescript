@@ -18,6 +18,7 @@ export interface Env {
 export interface EventPayload {
   event_name: string;
   customer_system_token?: string;
+  license_token?: string;
   merchant_system_urn: string;
   properties: Record<string, any>;
 }
@@ -36,4 +37,21 @@ export enum TokenInvalidReason {
   INVALID_ISSUER = "invalid_issuer",
   SIGNATURE_VERIFICATION_FAILED = "signature_verification_failed",
   EXPIRED = "token_expired",
+}
+
+export interface LicenseTokenVerificationResult {
+  valid: boolean;
+  reason?: string;
+  payload?: any;
+}
+
+export enum LicenseTokenInvalidReason {
+  MISSING_TOKEN = "missing_license_token",
+  INVALID_HEADER = "invalid_license_header",
+  INVALID_ALG = "invalid_license_algorithm",
+  INVALID_PAYLOAD = "invalid_license_payload",
+  INVALID_ISSUER = "invalid_license_issuer",
+  SIGNATURE_VERIFICATION_FAILED = "license_signature_verification_failed",
+  EXPIRED = "license_token_expired",
+  INVALID_AUDIENCE = "invalid_license_audience",
 }
