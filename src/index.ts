@@ -267,7 +267,7 @@ export class SupertabConnect {
       if (ctx) {
         const eventPromise = stc.recordEvent(
           eventName,
-          token,
+          verification.customerSystemId,
           eventProperties
         );
         ctx.waitUntil(eventPromise);
@@ -275,7 +275,7 @@ export class SupertabConnect {
       } else {
         return await stc.recordEvent(
           eventName,
-          token,
+          verification.customerSystemId,
           eventProperties
         );
       }
@@ -501,6 +501,8 @@ export class SupertabConnect {
   /**
    * Request a license token from the Supertab Connect token endpoint.
    * @param clientId OAuth client identifier used for the assertion issuer/subject claims.
+   * @param customerSystemId The unique identifier for the customer system.
+   * @param kid The key ID to include in the JWT header.
    * @param privateKeyPem Private key in PEM format used to sign the client assertion.
    * @param tokenEndpoint Token endpoint URL.
    * @param resourceUrl Resource URL attempting to access with a License.
@@ -509,6 +511,7 @@ export class SupertabConnect {
    */
   static async generateLicenseToken(
     clientId: string,
+    customerSystemId: string,
     kid: string,
     privateKeyPem: string,
     tokenEndpoint: string,
@@ -517,6 +520,7 @@ export class SupertabConnect {
   ): Promise<string> {
     return generateLicenseTokenHelper({
       clientId,
+      customerSystemId,
       kid,
       privateKeyPem,
       tokenEndpoint,
