@@ -46,6 +46,9 @@ export async function verifyLicenseToken({
     };
   }
 
+  // @ts-ignore
+  let customerSystemId: string | undefined = header.customer_system_id;
+
   if (header.alg !== "ES256") {
     if (debug) {
       console.error("Unsupported license JWT alg:", header.alg);
@@ -53,6 +56,7 @@ export async function verifyLicenseToken({
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.INVALID_ALG,
+      customerSystemId,
     };
   }
 
@@ -66,6 +70,7 @@ export async function verifyLicenseToken({
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.INVALID_PAYLOAD,
+      customerSystemId,
     };
   }
 
@@ -77,6 +82,7 @@ export async function verifyLicenseToken({
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.INVALID_ISSUER,
+      customerSystemId,
     };
   }
 
@@ -103,6 +109,7 @@ export async function verifyLicenseToken({
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.INVALID_AUDIENCE,
+      customerSystemId,
     };
   }
 
@@ -125,6 +132,7 @@ export async function verifyLicenseToken({
 
     return {
       valid: true,
+      customerSystemId,
       payload: result.payload,
     };
   } catch (error) {
@@ -136,12 +144,14 @@ export async function verifyLicenseToken({
       return {
         valid: false,
         reason: LicenseTokenInvalidReason.EXPIRED,
+        customerSystemId,
       };
     }
 
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.SIGNATURE_VERIFICATION_FAILED,
+      customerSystemId,
     };
   }
 }
@@ -158,8 +168,7 @@ export function generateLicenseLink({
 
 type RecordEventFn = (
   eventName: string,
-  customerToken?: string,
-  licenseToken?: string,
+  customerSystemId?: string,
   properties?: Record<string, any>
 ) => Promise<void>;
 
@@ -201,8 +210,7 @@ export async function baseLicenseHandleRequest({
 
     const eventPromise = recordEvent(
       eventName,
-      undefined,
-      licenseToken,
+      verification.customerSystemId,
       eventProperties
     );
 

@@ -4,6 +4,7 @@ type SupportedAlg = "RS256" | "ES256";
 
 type GenerateLicenseTokenParams = {
   clientId: string;
+  customerSystemId: string;
   kid: string;
   privateKeyPem: string;
   tokenEndpoint: string;
@@ -14,6 +15,7 @@ type GenerateLicenseTokenParams = {
 
 type GenerateCustomerJwtParams = {
   customerURN: string;
+  customerSystemId: string;
   kid: string;
   privateKeyPem: string;
   expirationSeconds?: number;
@@ -46,6 +48,7 @@ async function importKeyForAlgs(
 
 export async function generateLicenseToken({
   clientId,
+  customerSystemId,
   kid,
   privateKeyPem,
   tokenEndpoint,
@@ -57,7 +60,7 @@ export async function generateLicenseToken({
   const now = Math.floor(Date.now() / 1000);
 
   const clientAssertion = await new SignJWT({})
-    .setProtectedHeader({ alg, kid })
+    .setProtectedHeader({ alg, kid, customer_system_id: customerSystemId })
     .setIssuer(clientId)
     .setSubject(clientId)
     .setIssuedAt(now)
@@ -122,6 +125,7 @@ export async function generateLicenseToken({
 
 export async function generateCustomerJWT({
   customerURN,
+  customerSystemId,
   kid,
   privateKeyPem,
   expirationSeconds = 3600,
@@ -132,7 +136,7 @@ export async function generateCustomerJWT({
   const now = Math.floor(Date.now() / 1000);
 
   return new SignJWT({})
-    .setProtectedHeader({ alg, kid })
+    .setProtectedHeader({ alg, kid, customer_system_id: customerSystemId })
     .setIssuer(customerURN)
     .setIssuedAt(now)
     .setExpirationTime(now + expirationSeconds)
