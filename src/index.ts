@@ -189,22 +189,19 @@ export class SupertabConnect {
   /**
    * Records an analytics event
    * @param eventName Name of the event to record
-   * @param customerToken Optional customer token for the event
-   * @param licenseToken Optional license token for the event
    * @param properties Additional properties to include with the event
+   * @param licenseId Optional license ID associated with the event
    * @returns Promise that resolves when the event is recorded
    */
   async recordEvent(
     eventName: string,
-    customerToken?: string,
-    licenseToken?: string,
-    properties: Record<string, any> = {}
+    properties: Record<string, any> = {},
+    licenseId?: string
   ): Promise<void> {
     const payload: EventPayload = {
       event_name: eventName,
-      customer_system_token: customerToken,
-      license_token: licenseToken,
       merchant_system_urn: this.merchantSystemUrn ? this.merchantSystemUrn : "",
+      license_id: licenseId,
       properties,
     };
 
@@ -261,8 +258,6 @@ export class SupertabConnect {
       if (ctx) {
         const eventPromise = stc.recordEvent(
           eventName,
-          token,
-          undefined,
           eventProperties
         );
         ctx.waitUntil(eventPromise);
@@ -270,8 +265,6 @@ export class SupertabConnect {
       } else {
         return await stc.recordEvent(
           eventName,
-          token,
-          undefined,
           eventProperties
         );
       }
@@ -331,10 +324,9 @@ export class SupertabConnect {
       debug,
       recordEvent: (
         eventName: string,
-        customerToken?: string,
-        token?: string,
-        properties?: Record<string, any>
-      ) => this.recordEvent(eventName, customerToken, token, properties),
+        properties?: Record<string, any>,
+        licenseId?: string,
+      ) => this.recordEvent(eventName, properties, licenseId),
     });
   }
 
@@ -498,6 +490,7 @@ export class SupertabConnect {
   /**
    * Request a license token from the Supertab Connect token endpoint.
    * @param clientId OAuth client identifier used for the assertion issuer/subject claims.
+   * @param kid The key ID to include in the JWT header.
    * @param privateKeyPem Private key in PEM format used to sign the client assertion.
    * @param tokenEndpoint Token endpoint URL.
    * @param resourceUrl Resource URL attempting to access with a License.

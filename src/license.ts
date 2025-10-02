@@ -69,6 +69,9 @@ export async function verifyLicenseToken({
     };
   }
 
+  // @ts-ignore
+  const licenseId: string | undefined = payload.license_id;
+
   const issuer: string | undefined = payload.iss;
   if (!issuer || !issuer.startsWith(supertabBaseUrl)) {
     if (debug) {
@@ -77,6 +80,7 @@ export async function verifyLicenseToken({
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.INVALID_ISSUER,
+      licenseId,
     };
   }
 
@@ -103,6 +107,7 @@ export async function verifyLicenseToken({
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.INVALID_AUDIENCE,
+      licenseId,
     };
   }
 
@@ -125,6 +130,7 @@ export async function verifyLicenseToken({
 
     return {
       valid: true,
+      licenseId,
       payload: result.payload,
     };
   } catch (error) {
@@ -136,12 +142,14 @@ export async function verifyLicenseToken({
       return {
         valid: false,
         reason: LicenseTokenInvalidReason.EXPIRED,
+        licenseId,
       };
     }
 
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.SIGNATURE_VERIFICATION_FAILED,
+      licenseId,
     };
   }
 }
@@ -158,9 +166,8 @@ export function generateLicenseLink({
 
 type RecordEventFn = (
   eventName: string,
-  customerToken?: string,
-  licenseToken?: string,
-  properties?: Record<string, any>
+  properties?: Record<string, any>,
+  licenseId?: string,
 ) => Promise<void>;
 
 type BaseLicenseHandleRequestParams = {
@@ -201,9 +208,8 @@ export async function baseLicenseHandleRequest({
 
     const eventPromise = recordEvent(
       eventName,
-      undefined,
-      licenseToken,
-      eventProperties
+      eventProperties,
+      verification.licenseId,
     );
 
     if (ctx?.waitUntil) {

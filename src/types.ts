@@ -17,8 +17,7 @@ export interface Env {
 
 export interface EventPayload {
   event_name: string;
-  customer_system_token?: string;
-  license_token?: string;
+  license_id?: string;
   merchant_system_urn: string;
   properties: Record<string, any>;
 }
@@ -42,6 +41,7 @@ export enum TokenInvalidReason {
 export interface LicenseTokenVerificationResult {
   valid: boolean;
   reason?: string;
+  licenseId?: string;
   payload?: any;
 }
 
