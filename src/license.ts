@@ -46,9 +46,6 @@ export async function verifyLicenseToken({
     };
   }
 
-  // @ts-ignore
-  let customerSystemId: string | undefined = header.customer_system_id;
-
   if (header.alg !== "ES256") {
     if (debug) {
       console.error("Unsupported license JWT alg:", header.alg);
@@ -56,7 +53,6 @@ export async function verifyLicenseToken({
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.INVALID_ALG,
-      customerSystemId,
     };
   }
 
@@ -70,9 +66,11 @@ export async function verifyLicenseToken({
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.INVALID_PAYLOAD,
-      customerSystemId,
     };
   }
+
+  // @ts-ignore
+  const licenseId: string | undefined = payload.license_id;
 
   const issuer: string | undefined = payload.iss;
   if (!issuer || !issuer.startsWith(supertabBaseUrl)) {
@@ -82,7 +80,7 @@ export async function verifyLicenseToken({
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.INVALID_ISSUER,
-      customerSystemId,
+      licenseId,
     };
   }
 
@@ -109,7 +107,7 @@ export async function verifyLicenseToken({
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.INVALID_AUDIENCE,
-      customerSystemId,
+      licenseId,
     };
   }
 
@@ -132,7 +130,7 @@ export async function verifyLicenseToken({
 
     return {
       valid: true,
-      customerSystemId,
+      licenseId,
       payload: result.payload,
     };
   } catch (error) {
@@ -144,14 +142,14 @@ export async function verifyLicenseToken({
       return {
         valid: false,
         reason: LicenseTokenInvalidReason.EXPIRED,
-        customerSystemId,
+        licenseId,
       };
     }
 
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.SIGNATURE_VERIFICATION_FAILED,
-      customerSystemId,
+      licenseId,
     };
   }
 }
@@ -168,8 +166,8 @@ export function generateLicenseLink({
 
 type RecordEventFn = (
   eventName: string,
-  customerSystemId?: string,
-  properties?: Record<string, any>
+  properties?: Record<string, any>,
+  licenseId?: string,
 ) => Promise<void>;
 
 type BaseLicenseHandleRequestParams = {
@@ -210,8 +208,8 @@ export async function baseLicenseHandleRequest({
 
     const eventPromise = recordEvent(
       eventName,
-      verification.customerSystemId,
-      eventProperties
+      eventProperties,
+      verification.licenseId,
     );
 
     if (ctx?.waitUntil) {

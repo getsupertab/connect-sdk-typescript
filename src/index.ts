@@ -111,14 +111,10 @@ export class SupertabConnect {
       };
     }
 
-    // @ts-ignore
-    let customerSystemId: string | undefined = header.customer_system_id;
-
     if (header.alg !== "RS256") {
       return {
         valid: false,
         reason: TokenInvalidReason.INVALID_ALG,
-        customerSystemId,
       };
     }
 
@@ -133,7 +129,6 @@ export class SupertabConnect {
       return {
         valid: false,
         reason: TokenInvalidReason.INVALID_PAYLOAD,
-        customerSystemId,
       };
     }
 
@@ -142,7 +137,6 @@ export class SupertabConnect {
       return {
         valid: false,
         reason: TokenInvalidReason.INVALID_ISSUER,
-        customerSystemId,
       };
     }
 
@@ -170,7 +164,6 @@ export class SupertabConnect {
       // Success case - token is valid
       return {
         valid: true,
-        customerSystemId,
         payload: result.payload,
       };
     } catch (error: any) {
@@ -183,14 +176,12 @@ export class SupertabConnect {
         return {
           valid: false,
           reason: TokenInvalidReason.EXPIRED,
-          customerSystemId,
         };
       }
 
       return {
         valid: false,
         reason: TokenInvalidReason.SIGNATURE_VERIFICATION_FAILED,
-        customerSystemId,
       };
     }
   }
@@ -198,19 +189,19 @@ export class SupertabConnect {
   /**
    * Records an analytics event
    * @param eventName Name of the event to record
-   * @param customerSystemId ID of a customer system that caused the event
    * @param properties Additional properties to include with the event
+   * @param licenseId Optional license ID associated with the event
    * @returns Promise that resolves when the event is recorded
    */
   async recordEvent(
     eventName: string,
-    customerSystemId?: string,
-    properties: Record<string, any> = {}
+    properties: Record<string, any> = {},
+    licenseId?: string
   ): Promise<void> {
     const payload: EventPayload = {
       event_name: eventName,
-      customer_system_id: customerSystemId,
       merchant_system_urn: this.merchantSystemUrn ? this.merchantSystemUrn : "",
+      license_id: licenseId,
       properties,
     };
 
@@ -267,7 +258,6 @@ export class SupertabConnect {
       if (ctx) {
         const eventPromise = stc.recordEvent(
           eventName,
-          verification.customerSystemId,
           eventProperties
         );
         ctx.waitUntil(eventPromise);
@@ -275,7 +265,6 @@ export class SupertabConnect {
       } else {
         return await stc.recordEvent(
           eventName,
-          verification.customerSystemId,
           eventProperties
         );
       }
@@ -335,9 +324,9 @@ export class SupertabConnect {
       debug,
       recordEvent: (
         eventName: string,
-        customerSystemId?: string,
-        properties?: Record<string, any>
-      ) => this.recordEvent(eventName, customerSystemId, properties),
+        properties?: Record<string, any>,
+        licenseId?: string,
+      ) => this.recordEvent(eventName, properties, licenseId),
     });
   }
 
@@ -501,7 +490,6 @@ export class SupertabConnect {
   /**
    * Request a license token from the Supertab Connect token endpoint.
    * @param clientId OAuth client identifier used for the assertion issuer/subject claims.
-   * @param customerSystemId The unique identifier for the customer system.
    * @param kid The key ID to include in the JWT header.
    * @param privateKeyPem Private key in PEM format used to sign the client assertion.
    * @param tokenEndpoint Token endpoint URL.
@@ -511,7 +499,6 @@ export class SupertabConnect {
    */
   static async generateLicenseToken(
     clientId: string,
-    customerSystemId: string,
     kid: string,
     privateKeyPem: string,
     tokenEndpoint: string,
@@ -520,7 +507,6 @@ export class SupertabConnect {
   ): Promise<string> {
     return generateLicenseTokenHelper({
       clientId,
-      customerSystemId,
       kid,
       privateKeyPem,
       tokenEndpoint,
@@ -532,7 +518,6 @@ export class SupertabConnect {
 
   /** Generate a customer JWT
    * @param customerURN The customer's unique resource name (URN).
-   * @param customerSystemId The unique identifier for the customer system.
    * @param kid The key ID to include in the JWT header.
    * @param privateKeyPem The private key in PEM format used to sign the JWT.
    * @param expirationSeconds The token's expiration time in seconds (default is 3600 seconds).
@@ -540,14 +525,12 @@ export class SupertabConnect {
    */
   static async generateCustomerJWT(
     customerURN: string,
-    customerSystemId: string,
     kid: string,
     privateKeyPem: string,
     expirationSeconds: number = 3600
   ): Promise<string> {
     return generateCustomerJWTHelper({
       customerURN,
-      customerSystemId,
       kid,
       privateKeyPem,
       expirationSeconds,
