@@ -1,0 +1,19 @@
+# This file describes a Fastly Compute package. To learn more visit:
+# https://www.fastly.com/documentation/reference/compute/fastly-toml
+
+authors = ["relgarem@supertab.co"]
+cloned_from = "https://github.com/fastly/compute-starter-kit-javascript-default"
+description = "Demo on fastly to show blocking/allowing bots and reporting events to StC"
+language = "javascript"
+manifest_version = 3
+name = "fastly"
+service_id = "htU7dofxXoIecnLODwYMP0"
+
+[local_server]
+  [local_server.backends]
+    [local_server.backends.sbx-backend]
+      url = "https://api-connect.sbx.supertab.co/"
+
+[scripts]
+  build = "npm run build"
+  post_init = "npm install"
