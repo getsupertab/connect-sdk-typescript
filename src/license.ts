@@ -243,9 +243,12 @@ export async function baseLicenseHandleRequest({
         errorDescription = "The license token is invalid";
         break;
       case LicenseTokenInvalidReason.INVALID_ISSUER:
+        rslError = "invalid_token";
+        errorDescription = "The license token issuer is invalid";
+        break;
       case LicenseTokenInvalidReason.INVALID_AUDIENCE:
-        rslError = "insufficient_scope";
-        errorDescription = "The license token is not valid for this resource";
+        rslError = "invalid_token";
+        errorDescription = "The license token audience is invalid";
         break;
       default:
         rslError = "invalid_request";
