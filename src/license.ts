@@ -237,10 +237,16 @@ export async function baseLicenseHandleRequest({
         errorDescription = "The license token has expired";
         break;
       case LicenseTokenInvalidReason.SIGNATURE_VERIFICATION_FAILED:
+        rslError = "invalid_token";
+        errorDescription = "The license token signature is invalid";
+        break;
       case LicenseTokenInvalidReason.INVALID_HEADER:
+        rslError = "invalid_token";
+        errorDescription = "The license token header is invalid";
+        break;
       case LicenseTokenInvalidReason.INVALID_PAYLOAD:
         rslError = "invalid_token";
-        errorDescription = "The license token is invalid";
+        errorDescription = "The license token payload is invalid";
         break;
       case LicenseTokenInvalidReason.INVALID_ISSUER:
         rslError = "invalid_token";
