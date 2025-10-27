@@ -21,3 +21,5 @@ jspm_packages/
 /pkg
 *.gz
 *.wasm
+.wrangler*
+.dev.vars
