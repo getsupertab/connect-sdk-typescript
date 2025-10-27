@@ -27,7 +27,7 @@ interface TokenVerificationResult {
 declare class SupertabConnect {
     private apiKey?;
     private static baseUrl;
-    private merchantSystemUrn?;
+    private merchantSystemUrn;
     private static _instance;
     constructor(config: SupertabConnectConfig, reset?: boolean);
     static resetInstance(): void;
@@ -60,8 +60,9 @@ declare class SupertabConnect {
     private extractDataFromRequest;
     static checkIfBotRequest(request: Request): boolean;
     static cloudflareHandleRequests(request: Request, env: Env, ctx: any): Promise<Response>;
-    static fastlyHandleRequests(request: Request, merchantSystemUrn: string, merchantApiKey: string): Promise<Response>;
+    static fastlyHandleRequests(request: Request, merchantSystemUrn: string, merchantApiKey: string, enableRSL?: boolean): Promise<Response>;
     handleRequest(request: Request, botDetectionHandler?: (request: Request, ctx?: any) => boolean, ctx?: any): Promise<Response>;
+    hostRSLicenseXML(): Promise<Response>;
     /**
      * Request a license token from the Supertab Connect token endpoint.
      * @param clientId OAuth client identifier used for the assertion issuer/subject claims.
