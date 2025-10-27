@@ -87,8 +87,8 @@ export async function verifyLicenseToken({
   const audienceValues = Array.isArray(payload.aud)
     ? payload.aud.filter((entry): entry is string => typeof entry === "string")
     : typeof payload.aud === "string"
-      ? [payload.aud]
-      : [];
+    ? [payload.aud]
+    : [];
 
   const requestUrlNormalized = stripTrailingSlash(requestUrl);
   const matchesRequestUrl = audienceValues.some((value) => {
@@ -167,7 +167,7 @@ export function generateLicenseLink({
 type RecordEventFn = (
   eventName: string,
   properties?: Record<string, any>,
-  licenseId?: string,
+  licenseId?: string
 ) => Promise<void>;
 
 type BaseLicenseHandleRequestParams = {
@@ -209,7 +209,7 @@ export async function baseLicenseHandleRequest({
     const eventPromise = recordEvent(
       eventName,
       eventProperties,
-      verification.licenseId,
+      verification.licenseId
     );
 
     if (ctx?.waitUntil) {
@@ -285,5 +285,24 @@ export async function baseLicenseHandleRequest({
   return new Response("✅ License Token Access granted", {
     status: 200,
     headers: new Headers({ "Content-Type": "application/json" }),
+  });
+}
+
+export async function hostRSLicenseXML(
+  supertabBaseUrl: string,
+  merchantSystemUrn: string
+): Promise<Response> {
+  const licenseUrl = `${supertabBaseUrl}/merchants/systems/${merchantSystemUrn}/license.xml`;
+  const response = await fetch(licenseUrl);
+
+  if (!response.ok) {
+    return new Response("License not found", { status: 404 });
+  }
+
+  const licenseXml = await response.text();
+
+  return new Response(licenseXml, {
+    status: 200,
+    headers: new Headers({ "Content-Type": "application/xml" }),
   });
 }

@@ -18,6 +18,7 @@ import {
 } from "./customer";
 import {
   baseLicenseHandleRequest as baseLicenseHandleRequestHelper,
+  hostRSLicenseXML as hostRSLicenseXMLHelper,
 } from "./license";
 import { fetchIssuerJwks, fetchPlatformJwks } from "./jwks";
 
@@ -33,7 +34,7 @@ const debug = true; // Set to true for debugging purposes
 export class SupertabConnect {
   private apiKey?: string;
   private static baseUrl: string = "https://api-connect.sbx.supertab.co";
-  private merchantSystemUrn?: string;
+  private merchantSystemUrn!: string;
 
   private static _instance: SupertabConnect | null = null;
 
@@ -256,17 +257,11 @@ export class SupertabConnect {
         verification_reason: verification.reason || "success",
       };
       if (ctx) {
-        const eventPromise = stc.recordEvent(
-          eventName,
-          eventProperties
-        );
+        const eventPromise = stc.recordEvent(eventName, eventProperties);
         ctx.waitUntil(eventPromise);
         return eventPromise;
       } else {
-        return await stc.recordEvent(
-          eventName,
-          eventProperties
-        );
+        return await stc.recordEvent(eventName, eventProperties);
       }
     }
 
@@ -325,7 +320,7 @@ export class SupertabConnect {
       recordEvent: (
         eventName: string,
         properties?: Record<string, any>,
-        licenseId?: string,
+        licenseId?: string
       ) => this.recordEvent(eventName, properties, licenseId),
     });
   }
@@ -445,13 +440,23 @@ export class SupertabConnect {
   static async fastlyHandleRequests(
     request: Request,
     merchantSystemUrn: string,
-    merchantApiKey: string
+    merchantApiKey: string,
+    enableRSL: boolean = false,
   ): Promise<Response> {
     // Prepare or get the SupertabConnect instance
     const supertabConnect = new SupertabConnect({
       apiKey: merchantApiKey,
       merchantSystemUrn: merchantSystemUrn,
     });
+
+    if (enableRSL) {
+      if (new URL(request.url).pathname === "/license.xml") {
+        return await hostRSLicenseXMLHelper(
+          SupertabConnect.baseUrl,
+          merchantSystemUrn
+        );
+      }
+    }
 
     // Handle the request, including bot detection, token verification and recording the event
     return supertabConnect.handleRequest(
@@ -487,6 +492,13 @@ export class SupertabConnect {
     return this.baseLicenseHandleRequest(licenseToken, url, user_agent, ctx);
   }
 
+  async hostRSLicenseXML(): Promise<Response> {
+    return hostRSLicenseXMLHelper(
+      SupertabConnect.baseUrl,
+      this.merchantSystemUrn
+    );
+  }
+
   /**
    * Request a license token from the Supertab Connect token endpoint.
    * @param clientId OAuth client identifier used for the assertion issuer/subject claims.
@@ -515,6 +527,7 @@ export class SupertabConnect {
       debug,
     });
   }
+
 
   /** Generate a customer JWT
    * @param customerURN The customer's unique resource name (URN).
