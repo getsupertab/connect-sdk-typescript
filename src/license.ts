@@ -8,6 +8,8 @@ import {
 import {
   LicenseTokenInvalidReason,
   LicenseTokenVerificationResult,
+  FASTLY_BACKEND,
+  FetchOptions,
 } from "./types";
 import { fetchPlatformJwks } from "./jwks";
 
@@ -155,13 +157,12 @@ export async function verifyLicenseToken({
 }
 
 export function generateLicenseLink({
-  supertabBaseUrl,
-  merchantSystemUrn,
+  requestUrl,
 }: {
-  supertabBaseUrl: string;
-  merchantSystemUrn?: string;
+  requestUrl: string;
 }): string {
-  return `${supertabBaseUrl}/merchants/systems/${merchantSystemUrn}/license.xml`;
+  const baseURL = new URL(requestUrl);
+  return `${baseURL.protocol}//${baseURL.host}/license.xml`;
 }
 
 type RecordEventFn = (
@@ -262,8 +263,7 @@ export async function baseLicenseHandleRequest({
     }
 
     const licenseLink = generateLicenseLink({
-      supertabBaseUrl,
-      merchantSystemUrn,
+      requestUrl: url,
     });
     const errorUri = `${supertabBaseUrl}/docs/errors#${rslError}`;
 
@@ -288,12 +288,21 @@ export async function baseLicenseHandleRequest({
   });
 }
 
+function buildFetchOptions(): FetchOptions {
+  let options: FetchOptions = { method: "GET" };
+  // @ts-ignore - backend is a Fastly-specific extension
+  if (globalThis?.fastly) {
+    options = { ...options, backend: FASTLY_BACKEND };
+  }
+  return options;
+}
+
 export async function hostRSLicenseXML(
   supertabBaseUrl: string,
   merchantSystemUrn: string
 ): Promise<Response> {
   const licenseUrl = `${supertabBaseUrl}/merchants/systems/${merchantSystemUrn}/license.xml`;
-  const response = await fetch(licenseUrl);
+  const response = await fetch(licenseUrl, buildFetchOptions());
 
   if (!response.ok) {
     return new Response("License not found", { status: 404 });

@@ -1,9 +1,8 @@
+import { FASTLY_BACKEND, FetchOptions } from "./types";
+
 const jwksCache = new Map<string, any>();
-const FASTLY_BACKEND = "sbx-backend";
 
 type JwksCacheKey = string;
-
-type FetchOptions = RequestInit & { backend?: string };
 
 type FetchJwksParams = {
   cacheKey: JwksCacheKey;

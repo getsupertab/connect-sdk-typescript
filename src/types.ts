@@ -55,3 +55,10 @@ export enum LicenseTokenInvalidReason {
   EXPIRED = "license_token_expired",
   INVALID_AUDIENCE = "invalid_license_audience",
 }
+
+export const FASTLY_BACKEND = "stc-backend";
+
+export interface FetchOptions extends RequestInit {
+  // Fastly-specific extension for backend routing
+  backend?: string;
+}

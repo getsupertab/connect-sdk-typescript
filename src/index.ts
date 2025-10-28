@@ -4,6 +4,7 @@ import {
   EventPayload,
   TokenVerificationResult,
   TokenInvalidReason,
+  FASTLY_BACKEND,
 } from "./types";
 import {
   jwtVerify,
@@ -217,7 +218,7 @@ export class SupertabConnect {
       };
       // @ts-ignore
       if (globalThis?.fastly) {
-        options = { ...options, backend: "sbx-backend" };
+        options = { ...options, backend: FASTLY_BACKEND };
       }
       const response = await fetch(
         `${SupertabConnect.baseUrl}/events`,
