@@ -11,8 +11,8 @@ service_id = "htU7dofxXoIecnLODwYMP0"
 
 [local_server]
   [local_server.backends]
-    [local_server.backends.sbx-backend]
-      url = "https://api-connect.sbx.supertab.co/"
+    [local_server.backends.stc-backend]
+      url = "http://127.0.0.1:8000"
 
 [scripts]
   build = "npm run build"

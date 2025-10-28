@@ -1,6 +1,7 @@
 /// <reference types="@fastly/js-compute" />
 import { SecretStore } from "fastly:secret-store";
 import { SupertabConnect } from "@getsupertab/supertab-connect-sdk";
+// import { SupertabConnect } from "../../../src/index.ts";
 
 import { CONFIG } from "./config.js";
 
@@ -16,7 +17,16 @@ try {
   MERCHANT_API_KEY = CONFIG.MERCHANT_API_KEY;
 }
 
+SupertabConnect.setBaseUrl(CONFIG.BASE_URL);
+
 // The entry point for the request handler.
-addEventListener("fetch", (event) => event.respondWith(
-    SupertabConnect.fastlyHandleRequests(event.request, MERCHANT_SYSTEM_URN, MERCHANT_API_KEY)
-));
+addEventListener("fetch", (event) =>
+  event.respondWith(
+    SupertabConnect.fastlyHandleRequests(
+      event.request,
+      MERCHANT_SYSTEM_URN,
+      MERCHANT_API_KEY,
+      true
+    )
+  )
+);
