@@ -34,7 +34,7 @@ const debug = true; // Set to true for debugging purposes
  */
 export class SupertabConnect {
   private apiKey?: string;
-  private static baseUrl: string = "https://api-connect.sbx.supertab.co";
+  private static baseUrl: string = "https://api-connect.supertab.co";
   private merchantSystemUrn!: string;
 
   private static _instance: SupertabConnect | null = null;
@@ -514,10 +514,10 @@ export class SupertabConnect {
     clientId: string,
     kid: string,
     privateKeyPem: string,
-    tokenEndpoint: string,
     resourceUrl: string,
     licenseXml: string
   ): Promise<string> {
+    const tokenEndpoint = SupertabConnect.baseUrl + "/rsl/token";
     return generateLicenseTokenHelper({
       clientId,
       kid,
