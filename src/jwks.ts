@@ -72,6 +72,7 @@ export async function fetchPlatformJwks(
   debug: boolean
 ): Promise<any> {
   const jwksUrl = `${baseUrl}/.well-known/jwks.json/platform`;
+  console.log("Fetching platform JWKS from:", jwksUrl);
 
   return fetchAndCacheJwks({
     cacheKey: "platform_jwks",

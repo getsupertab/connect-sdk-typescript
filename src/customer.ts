@@ -23,7 +23,7 @@ async function importKeyForAlgs(
   privateKeyPem: string,
   debug: boolean | undefined
 ): Promise<{ key: CryptoKey; alg: SupportedAlg }> {
-  const supportedAlgs: SupportedAlg[] = ["RS256", "ES256"];
+  const supportedAlgs: SupportedAlg[] = ["ES256", "RS256"];
 
   for (const algorithm of supportedAlgs) {
     try {
