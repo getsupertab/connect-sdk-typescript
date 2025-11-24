@@ -297,13 +297,6 @@ export class SupertabConnect {
     });
   }
 
-  async hostRSLicenseXML(): Promise<Response> {
-    return hostRSLicenseXMLHelper(
-      SupertabConnect.baseUrl,
-      this.merchantSystemUrn
-    );
-  }
-
   /**
    * Request a license token from the Supertab Connect token endpoint.
    * @param clientId OAuth client identifier used for the assertion issuer/subject claims.
