@@ -117,46 +117,6 @@ export class SupertabConnect {
     }
   }
 
-  /**
-   * Handle the request for license tokens, report an event to Supertab Connect and return a response
-   */
-  private async baseLicenseHandleRequest(
-    licenseToken: string,
-    url: string,
-    user_agent: string,
-    ctx: any
-  ): Promise<Response> {
-    return baseLicenseHandleRequestHelper({
-      licenseToken,
-      url,
-      userAgent: user_agent,
-      ctx,
-      supertabBaseUrl: SupertabConnect.baseUrl,
-      merchantSystemUrn: this.merchantSystemUrn,
-      debug,
-      recordEvent: (
-        eventName: string,
-        properties?: Record<string, any>,
-        licenseId?: string
-      ) => this.recordEvent(eventName, properties, licenseId),
-    });
-  }
-
-  private extractDataFromRequest(request: Request): {
-    licenseToken: string;
-    url: string;
-    user_agent: string;
-  } {
-    // Parse token
-    const auth = request.headers.get("Authorization") || "";
-    const licenseToken = auth.startsWith("License ") ? auth.slice(8) : "";
-
-    // Extract URL and user agent
-    const url = request.url;
-    const user_agent = request.headers.get("User-Agent") || "unknown";
-
-    return { licenseToken, url, user_agent };
-  }
 
   static checkIfBotRequest(request: Request): boolean {
     const userAgent = request.headers.get("User-Agent") || "";
@@ -287,8 +247,10 @@ export class SupertabConnect {
     ctx?: any
   ): Promise<Response> {
     // 1. Extract license token, URL, and user agent from the request
-    const { licenseToken, url, user_agent } =
-      this.extractDataFromRequest(request);
+    const auth = request.headers.get("Authorization") || "";
+    const licenseToken = auth.startsWith("License ") ? auth.slice(8) : "";
+    const url = request.url;
+    const user_agent = request.headers.get("User-Agent") || "unknown";
 
     // 2. Handle bot detection if provided
     if (botDetectionHandler && !botDetectionHandler(request, ctx)) {
@@ -298,8 +260,21 @@ export class SupertabConnect {
       });
     }
 
-    // 3. Call the base license handle request method and return the result
-    return this.baseLicenseHandleRequest(licenseToken, url, user_agent, ctx);
+    // 3. Handle the license token request
+    return baseLicenseHandleRequestHelper({
+      licenseToken,
+      url,
+      userAgent: user_agent,
+      ctx,
+      supertabBaseUrl: SupertabConnect.baseUrl,
+      merchantSystemUrn: this.merchantSystemUrn,
+      debug,
+      recordEvent: (
+        eventName: string,
+        properties?: Record<string, any>,
+        licenseId?: string
+      ) => this.recordEvent(eventName, properties, licenseId),
+    });
   }
 
   async hostRSLicenseXML(): Promise<Response> {
