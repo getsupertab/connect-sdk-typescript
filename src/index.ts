@@ -3,11 +3,13 @@ import {
   Env,
   EventPayload,
   FASTLY_BACKEND,
+  LicenseTokenVerificationResult,
 } from "./types";
 import { generateLicenseToken as generateLicenseTokenHelper } from "./customer";
 import {
   baseLicenseHandleRequest as baseLicenseHandleRequestHelper,
   hostRSLicenseXML as hostRSLicenseXMLHelper,
+  verifyLicenseToken as verifyLicenseTokenHelper,
 } from "./license";
 
 export type { Env } from "./types";
@@ -70,6 +72,24 @@ export class SupertabConnect {
    */
   public static setBaseUrl(url: string): void {
     SupertabConnect.baseUrl = url;
+  }
+
+  /**
+   * Verify a license token
+   * @param licenseToken The license token to verify
+   * @param requestUrl The URL of the request being made
+   * @returns A promise that resolves with the verification result
+   */
+  async verifyLicenseToken(
+    licenseToken: string,
+    requestUrl: string
+  ): Promise<LicenseTokenVerificationResult> {
+    return verifyLicenseTokenHelper({
+      licenseToken,
+      requestUrl,
+      supertabBaseUrl: SupertabConnect.baseUrl,
+      debug,
+    });
   }
 
   /**
