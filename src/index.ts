@@ -13,10 +13,7 @@ import {
   JWTHeaderParameters,
   JWTPayload,
 } from "jose";
-import {
-  generateLicenseToken as generateLicenseTokenHelper,
-  generateCustomerJWT as generateCustomerJWTHelper,
-} from "./customer";
+import { generateLicenseToken as generateLicenseTokenHelper } from "./customer";
 import {
   baseLicenseHandleRequest as baseLicenseHandleRequestHelper,
   hostRSLicenseXML as hostRSLicenseXMLHelper,
@@ -526,28 +523,6 @@ export class SupertabConnect {
       resourceUrl,
       licenseXml,
       debug,
-    });
-  }
-
-
-  /** Generate a customer JWT
-   * @param customerURN The customer's unique resource name (URN).
-   * @param kid The key ID to include in the JWT header.
-   * @param privateKeyPem The private key in PEM format used to sign the JWT.
-   * @param expirationSeconds The token's expiration time in seconds (default is 3600 seconds).
-   * @returns A promise that resolves to the generated JWT as a string.
-   */
-  static async generateCustomerJWT(
-    customerURN: string,
-    kid: string,
-    privateKeyPem: string,
-    expirationSeconds: number = 3600
-  ): Promise<string> {
-    return generateCustomerJWTHelper({
-      customerURN,
-      kid,
-      privateKeyPem,
-      expirationSeconds,
     });
   }
 }
