@@ -13,9 +13,10 @@ interface Env {
     MERCHANT_API_KEY: string;
     [key: string]: string;
 }
-interface TokenVerificationResult {
+interface LicenseTokenVerificationResult {
     valid: boolean;
     reason?: string;
+    licenseId?: string;
     payload?: any;
 }
 
@@ -36,11 +37,12 @@ declare class SupertabConnect {
      */
     static setBaseUrl(url: string): void;
     /**
-     * Verify a JWT token
-     * @param token The JWT token to verify
+     * Verify a license token
+     * @param licenseToken The license token to verify
+     * @param requestUrl The URL of the request being made
      * @returns A promise that resolves with the verification result
      */
-    verifyToken(token: string): Promise<TokenVerificationResult>;
+    verifyLicenseToken(licenseToken: string, requestUrl: string): Promise<LicenseTokenVerificationResult>;
     /**
      * Records an analytics event
      * @param eventName Name of the event to record
@@ -49,20 +51,10 @@ declare class SupertabConnect {
      * @returns Promise that resolves when the event is recorded
      */
     recordEvent(eventName: string, properties?: Record<string, any>, licenseId?: string): Promise<void>;
-    /**
-     * Handle the request, report an event to Supertab Connect and return a response
-     */
-    private baseHandleRequest;
-    /**
-     * Handle the request for license tokens, report an event to Supertab Connect and return a response
-     */
-    private baseLicenseHandleRequest;
-    private extractDataFromRequest;
     static checkIfBotRequest(request: Request): boolean;
     static cloudflareHandleRequests(request: Request, env: Env, ctx: any): Promise<Response>;
     static fastlyHandleRequests(request: Request, merchantSystemUrn: string, merchantApiKey: string, enableRSL?: boolean): Promise<Response>;
     handleRequest(request: Request, botDetectionHandler?: (request: Request, ctx?: any) => boolean, ctx?: any): Promise<Response>;
-    hostRSLicenseXML(): Promise<Response>;
     /**
      * Request a license token from the Supertab Connect token endpoint.
      * @param clientId OAuth client identifier used for the assertion issuer/subject claims.
@@ -74,14 +66,6 @@ declare class SupertabConnect {
      * @returns Promise resolving to the issued license access token string.
      */
     static generateLicenseToken(clientId: string, kid: string, privateKeyPem: string, resourceUrl: string, licenseXml: string): Promise<string>;
-    /** Generate a customer JWT
-     * @param customerURN The customer's unique resource name (URN).
-     * @param kid The key ID to include in the JWT header.
-     * @param privateKeyPem The private key in PEM format used to sign the JWT.
-     * @param expirationSeconds The token's expiration time in seconds (default is 3600 seconds).
-     * @returns A promise that resolves to the generated JWT as a string.
-     */
-    static generateCustomerJWT(customerURN: string, kid: string, privateKeyPem: string, expirationSeconds?: number): Promise<string>;
 }
 
 export { type Env, SupertabConnect };
