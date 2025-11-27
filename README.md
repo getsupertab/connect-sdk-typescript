@@ -23,11 +23,14 @@ const supertabConnect = new SupertabConnect({
   merchantSystemUrn: "your_merchant_system_urn",
 });
 
-// Verify a token
-const verification = await supertabConnect.verifyToken(token);
+// Verify a license token
+const verification = await supertabConnect.verifyLicenseToken(
+  licenseToken,
+  "https://example.com/article"
+);
 
 // Record an event
-await supertabConnect.recordEvent("page_viewed", token, {
+await supertabConnect.recordEvent("page_viewed", {
   page_url: "https://example.com/article",
   user_agent: "Mozilla/5.0...",
 });
@@ -104,9 +107,9 @@ const supertabConnect = new SupertabConnect({
 Resets the singleton instance of SupertabConnect allowing to create an instance with a new config.
 We expect this to not be called in the usual production setup as the SDK is designed to intercept requests using specific public methods.
 
-### `fastlyHandleRequests(request: Request, merchantSystemUrn: string, merchantApiKey: string): Promise<Response>`
+### `fastlyHandleRequests(request: Request, merchantSystemUrn: string, merchantApiKey: string, enableRSL?: boolean): Promise<Response>`
 
-Handles the Supertab Connect part for each incoming HTTP request within Fastly CDN: it verifies the JWT token and records the event.
+Handles the Supertab Connect part for each incoming HTTP request within Fastly CDN: it verifies the license token and records the event.
 
 For examples see the [Fastly Compute Example](#fastly-compute-example) section above.
 
@@ -115,16 +118,17 @@ For examples see the [Fastly Compute Example](#fastly-compute-example) section a
 - `request` (Request): The incoming HTTP request object
 - `merchantSystemUrn` (string): Your merchant system identifier (recommended to be stored in a Fastly SecretStore)
 - `merchantApiKey` (string): Your Supertab merchant API key (recommended to be stored in a Fastly SecretStore)
+- `enableRSL` (boolean, optional): Enable RSL license.xml hosting (default: false)
 
 **Returns:**
 
 - `Promise<Response>`: Result of bot detection, verification and event recording
-  - If the requester is not a bot to be blocked, or if the token is present and valid, returns 200 OK
-  - If token is invalid or missing, returns 403 Forbidden with either INVALID_TOKEN or MISSING_TOKEN as a reason
+  - If the requester is not a bot to be blocked, or if the license token is present and valid, returns 200 OK
+  - If license token is invalid or missing, returns 401 Unauthorized
 
 ### `cloudflareHandleRequests(request: Request, env: Env, ctx: any = null): Promise<Response>`
 
-Handles the Supertab Connect part for each incoming HTTP request within CloudFlare CDN: it verifies the JWT token and records the event.
+Handles the Supertab Connect part for each incoming HTTP request within CloudFlare CDN: it verifies the license token and records the event.
 
 For examples see the [CloudFlare Worker Example](#cloudflare-worker-example) section above.
 
@@ -137,8 +141,8 @@ For examples see the [CloudFlare Worker Example](#cloudflare-worker-example) sec
 **Returns:**
 
 - `Promise<Response>`: Result of bot detection, verification and event recording
-  - If the requester is not a bot to be blocked, or if the token is present and valid, returns 200 OK
-  - If token is invalid or missing, returns 403 Forbidden with either INVALID_TOKEN or MISSING_TOKEN as a reason
+  - If the requester is not a bot to be blocked, or if the license token is present and valid, returns 200 OK
+  - If license token is invalid or missing, returns 401 Unauthorized
 
 ### `handleRequest(request: Request, botDetectionHandler?: (request: Request, ctx?: any) => boolean,  ctx?: any): Promise<Response>`
 
@@ -154,54 +158,59 @@ Any of out-of-the-box bot detector methods can be used or a custom one can be su
 **Returns:**
 
 - `Promise<Response>`: Result of bot detection, verification and event recording
-  - If the requester is not a bot to be blocked, or if the token is present and valid, returns 200 OK
-  - If token is invalid or missing, returns 403 Forbidden with either INVALID_TOKEN or MISSING_TOKEN as a reason
+  - If the requester is not a bot to be blocked, or if the license token is present and valid, returns 200 OK
+  - If license token is invalid or missing, returns 401 Unauthorized
 
-### `verifyToken(token: string): Promise<TokenVerificationResult>`
+### `verifyLicenseToken(licenseToken: string, requestUrl: string): Promise<LicenseTokenVerificationResult>`
 
-Verifies self-signed JWT Tokens sent by the Customer and signed by their private-key. Internally, it fetches the JWKs hosted by Supertab Connect for the customer and verifies using the public key available.
+Verifies license tokens issued by the Supertab platform. Internally, it fetches the platform JWKs hosted by Supertab Connect and verifies the ES256 signature.
 
 **Parameters:**
 
-- `token` (string): The JWT token to verify
+- `licenseToken` (string): The license token to verify
+- `requestUrl` (string): The URL of the request being made (used for audience validation)
 
 **Returns:**
 
-- `Promise<TokenVerificationResult>`: Object with verification result
+- `Promise<LicenseTokenVerificationResult>`: Object with verification result
   - `valid`: boolean indicating if token is valid
   - `reason`: string reason for failure (if invalid)
+  - `licenseId`: the license ID (if valid)
   - `payload`: decoded token payload (if valid)
 
 Example
 
 ```js
-const token = "eyJhbGciOiJSUzI1..."; // Token from Authorization header
-const verification = await supertabConnect.verifyToken(token);
+const licenseToken = "eyJhbGciOiJFUzI1..."; // Token from Authorization header
+const verification = await supertabConnect.verifyLicenseToken(
+  licenseToken,
+  "https://example.com/article"
+);
 
 if (verification.valid) {
   // Allow access to content
-  console.log("Token verified successfully", verification.payload);
+  console.log("License verified successfully", verification.licenseId);
 } else {
   // Block access
-  console.log("Token verification failed:", verification.reason);
+  console.log("License verification failed:", verification.reason);
 }
 ```
 
-### `recordEvent(eventName: string, customerToken?: string, properties?: Record<string, any>): Promise<void>`
+### `recordEvent(eventName: string, properties?: Record<string, any>, licenseId?: string): Promise<void>`
 
 Records an event in the Supertab Connect platform.
 
 **Parameters:**
 
 - `eventName` (string): Name of the event to record
-- `customerToken` (string, optional): The self-signed JWT token sent by the customer
 - `properties` (object, optional): Additional properties to include with the event
+- `licenseId` (string, optional): License ID associated with the event
 
 Example:
 
 ```js
 // Record a page view with additional properties
-await supertabConnect.recordEvent("page_viewed", token, {
+await supertabConnect.recordEvent("page_viewed", {
   page_url: request.url,
   user_agent: request.headers.get("User-Agent"),
   referrer: request.headers.get("Referer"),
@@ -221,34 +230,18 @@ A simple check based on the information passed in request's Headers to decide wh
 
 - `boolean`: True if the request's Headers fall into the conditions to identify requester as a bot; False otherwise.
 
-### `generateCustomerJWT(customerURN: string, kid: string, privateKeyPem: string, expirationSeconds?: number): Promise<string>`
+### `generateLicenseToken(clientId: string, kid: string, privateKeyPem: string, resourceUrl: string, licenseXml: string): Promise<string>`
 
-Generates a self‑signed RS256 JWT for a Customer with a `kid` header. The `privateKeyPem` must be in PEM format.
+Requests a license token from the Supertab Connect token endpoint using OAuth2 client assertion.
 
 **Parameters:**
 
-- `customerURN` (string): The Customer URN (must start with `urn:stc:customer:`)
+- `clientId` (string): OAuth client identifier used for the assertion issuer/subject claims, fetched from the System Detail page
 - `kid` (string): Key ID to include in the JWT header
-- `privateKeyPem` (string): the private key in PEM format
-- `expirationSeconds` (number, optional): Expiry in seconds (default: `3600`)
+- `privateKeyPem` (string): Private key in PEM format used to sign the client assertion
+- `resourceUrl` (string): Resource URL attempting to access with a License
+- `licenseXml` (string): XML license document associated with the resource url attempting to access
 
 **Returns:**
 
-- `Promise<string>`: The signed JWT
-
-**Example:**
-
-```ts
-import { SupertabConnect } from "@getsupertab/supertab-connect-sdk";
-
-const token = await SupertabConnect.generateCustomerJWT(
-  "urn:stc:customer:79fcac58-1966-470a-be40-c34847aecabd",
-  "key_dc0d3d1103c319e9",
-  `-----BEGIN PRIVATE KEY-----
-...
------END PRIVATE KEY-----`,
-  3600
-);
-
-console.log("Generated JWT:", token);
-```
+- `Promise<string>`: The issued license access token

@@ -12,13 +12,6 @@ type GenerateLicenseTokenParams = {
   debug?: boolean;
 };
 
-type GenerateCustomerJwtParams = {
-  customerURN: string;
-  kid: string;
-  privateKeyPem: string;
-  expirationSeconds?: number;
-};
-
 async function importKeyForAlgs(
   privateKeyPem: string,
   debug: boolean | undefined
@@ -120,23 +113,4 @@ export async function generateLicenseToken({
   }
 }
 
-export async function generateCustomerJWT({
-  customerURN,
-  kid,
-  privateKeyPem,
-  expirationSeconds = 3600,
-}: GenerateCustomerJwtParams): Promise<string> {
-  const alg: SupportedAlg = "RS256";
-  const key = await importPKCS8(privateKeyPem, alg);
-
-  const now = Math.floor(Date.now() / 1000);
-
-  return new SignJWT({})
-    .setProtectedHeader({ alg, kid })
-    .setIssuer(customerURN)
-    .setIssuedAt(now)
-    .setExpirationTime(now + expirationSeconds)
-    .sign(key);
-}
-
-export type { GenerateLicenseTokenParams, GenerateCustomerJwtParams };
+export type { GenerateLicenseTokenParams };
