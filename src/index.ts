@@ -2,26 +2,15 @@ import {
   SupertabConnectConfig,
   Env,
   EventPayload,
-  TokenVerificationResult,
-  TokenInvalidReason,
   FASTLY_BACKEND,
+  LicenseTokenVerificationResult,
 } from "./types";
-import {
-  jwtVerify,
-  decodeProtectedHeader,
-  decodeJwt,
-  JWTHeaderParameters,
-  JWTPayload,
-} from "jose";
-import {
-  generateLicenseToken as generateLicenseTokenHelper,
-  generateCustomerJWT as generateCustomerJWTHelper,
-} from "./customer";
+import { generateLicenseToken as generateLicenseTokenHelper } from "./customer";
 import {
   baseLicenseHandleRequest as baseLicenseHandleRequestHelper,
   hostRSLicenseXML as hostRSLicenseXMLHelper,
+  verifyLicenseToken as verifyLicenseTokenHelper,
 } from "./license";
-import { fetchIssuerJwks, fetchPlatformJwks } from "./jwks";
 
 export type { Env } from "./types";
 
@@ -86,106 +75,21 @@ export class SupertabConnect {
   }
 
   /**
-   * Verify a JWT token
-   * @param token The JWT token to verify
+   * Verify a license token
+   * @param licenseToken The license token to verify
+   * @param requestUrl The URL of the request being made
    * @returns A promise that resolves with the verification result
    */
-  async verifyToken(token: string): Promise<TokenVerificationResult> {
-    // 1. Check if token exists
-    if (!token) {
-      return {
-        valid: false,
-        reason: TokenInvalidReason.MISSING_TOKEN,
-      };
-    }
-
-    // 2. Verify header and algorithm
-    let header: JWTHeaderParameters;
-    try {
-      header = decodeProtectedHeader(token) as JWTHeaderParameters;
-    } catch (error) {
-      if (debug) {
-        console.error("Invalid JWT header:", error);
-      }
-      return {
-        valid: false,
-        reason: TokenInvalidReason.INVALID_HEADER,
-      };
-    }
-
-    if (header.alg !== "RS256") {
-      return {
-        valid: false,
-        reason: TokenInvalidReason.INVALID_ALG,
-      };
-    }
-
-    // 3. Verify payload and issuer
-    let payload: JWTPayload;
-    try {
-      payload = decodeJwt(token);
-    } catch (error) {
-      if (debug) {
-        console.error("Invalid JWT payload:", error);
-      }
-      return {
-        valid: false,
-        reason: TokenInvalidReason.INVALID_PAYLOAD,
-      };
-    }
-
-    const issuer: string | undefined = payload.iss;
-    if (!issuer || !issuer.startsWith("urn:stc:customer:")) {
-      return {
-        valid: false,
-        reason: TokenInvalidReason.INVALID_ISSUER,
-      };
-    }
-
-    // 4. Verify signature
-    try {
-      const jwks = await fetchIssuerJwks(
-        SupertabConnect.baseUrl,
-        issuer,
-        debug
-      );
-
-      // Create a key finder function for verification
-      const getKey = async (header: JWTHeaderParameters) => {
-        const jwk = jwks.keys.find((key: any) => key.kid === header.kid);
-        if (!jwk) throw new Error(`No matching key found: ${header.kid}`);
-        return jwk;
-      };
-
-      const result = await jwtVerify(token, getKey, {
-        issuer,
-        algorithms: ["RS256"],
-        clockTolerance: "1m",
-      });
-
-      // Success case - token is valid
-      return {
-        valid: true,
-        payload: result.payload,
-      };
-    } catch (error: any) {
-      if (debug) {
-        console.error("JWT verification failed:", error);
-      }
-
-      // Check if token is expired
-      if (error.message?.includes("exp")) {
-        return {
-          valid: false,
-          reason: TokenInvalidReason.EXPIRED,
-        };
-      }
-
-      return {
-        valid: false,
-        reason: TokenInvalidReason.SIGNATURE_VERIFICATION_FAILED,
-      };
-    }
+  async verifyLicenseToken(
+    licenseToken: string,
+    requestUrl: string
+  ): Promise<LicenseTokenVerificationResult> {
+    return verifyLicenseTokenHelper({
+      licenseToken,
+      requestUrl,
+      supertabBaseUrl: SupertabConnect.baseUrl,
+      debug,
+    });
   }
 
   /**
@@ -233,116 +137,6 @@ export class SupertabConnect {
     }
   }
 
-  /**
-   * Handle the request, report an event to Supertab Connect and return a response
-   */
-  private async baseHandleRequest(
-    token: string,
-    url: string,
-    user_agent: string,
-    ctx: any
-  ): Promise<Response> {
-    // 1. Verify token
-    const verification = await this.verifyToken(token);
-
-    // Record event helper
-    async function recordEvent(
-      stc: SupertabConnect,
-      eventName: string,
-      ctx: any
-    ) {
-      const eventProperties = {
-        page_url: url,
-        user_agent: user_agent,
-        verification_status: verification.valid ? "valid" : "invalid",
-        verification_reason: verification.reason || "success",
-      };
-      if (ctx) {
-        const eventPromise = stc.recordEvent(eventName, eventProperties);
-        ctx.waitUntil(eventPromise);
-        return eventPromise;
-      } else {
-        return await stc.recordEvent(eventName, eventProperties);
-      }
-    }
-
-    // 2. Handle based on verification result
-    if (!verification.valid) {
-      await recordEvent(
-        this,
-        verification.reason || "token_verification_failed",
-        ctx
-      );
-      const message =
-        "Payment required: you need to present a valid Supertab Connect token to access this content. " +
-        "Check out the provided url for details";
-      const details =
-        "❌ Content access denied" +
-        (verification.reason ? `: ${verification.reason}` : "");
-      const contentAccessUrl = `${SupertabConnect.baseUrl}/merchants/systems/${this.merchantSystemUrn}/content-access.json`;
-
-      const responseBody = {
-        url: contentAccessUrl,
-        message: message,
-        details: details,
-      };
-
-      return new Response(JSON.stringify(responseBody), {
-        status: 402,
-        headers: new Headers({ "Content-Type": "application/json" }),
-      });
-    }
-
-    // 3. Success
-    await recordEvent(this, "page_viewed", ctx);
-    return new Response("✅ Content Access granted", {
-      status: 200,
-      headers: new Headers({ "Content-Type": "application/json" }),
-    });
-  }
-
-  /**
-   * Handle the request for license tokens, report an event to Supertab Connect and return a response
-   */
-  private async baseLicenseHandleRequest(
-    licenseToken: string,
-    url: string,
-    user_agent: string,
-    ctx: any
-  ): Promise<Response> {
-    return baseLicenseHandleRequestHelper({
-      licenseToken,
-      url,
-      userAgent: user_agent,
-      ctx,
-      supertabBaseUrl: SupertabConnect.baseUrl,
-      merchantSystemUrn: this.merchantSystemUrn,
-      debug,
-      recordEvent: (
-        eventName: string,
-        properties?: Record<string, any>,
-        licenseId?: string
-      ) => this.recordEvent(eventName, properties, licenseId),
-    });
-  }
-
-  private extractDataFromRequest(request: Request): {
-    token: string;
-    licenseToken: string;
-    url: string;
-    user_agent: string;
-  } {
-    // Parse token
-    const auth = request.headers.get("Authorization") || "";
-    const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-    const licenseToken = auth.startsWith("License ") ? auth.slice(8) : "";
-
-    // Extract URL and user agent
-    const url = request.url;
-    const user_agent = request.headers.get("User-Agent") || "unknown";
-
-    return { token, licenseToken, url, user_agent };
-  }
 
   static checkIfBotRequest(request: Request): boolean {
     const userAgent = request.headers.get("User-Agent") || "";
@@ -472,9 +266,11 @@ export class SupertabConnect {
     botDetectionHandler?: (request: Request, ctx?: any) => boolean,
     ctx?: any
   ): Promise<Response> {
-    // 1. Extract token, license token, URL, and user agent from the request
-    const { token, licenseToken, url, user_agent } =
-      this.extractDataFromRequest(request);
+    // 1. Extract license token, URL, and user agent from the request
+    const auth = request.headers.get("Authorization") || "";
+    const licenseToken = auth.startsWith("License ") ? auth.slice(8) : "";
+    const url = request.url;
+    const user_agent = request.headers.get("User-Agent") || "unknown";
 
     // 2. Handle bot detection if provided
     if (botDetectionHandler && !botDetectionHandler(request, ctx)) {
@@ -484,20 +280,21 @@ export class SupertabConnect {
       });
     }
 
-    // 3. Check for bearer token first, then fallback to license token
-    if (token) {
-      return this.baseHandleRequest(token, url, user_agent, ctx);
-    }
-
-    // 4. Call the base licenhandle request method and return the result
-    return this.baseLicenseHandleRequest(licenseToken, url, user_agent, ctx);
-  }
-
-  async hostRSLicenseXML(): Promise<Response> {
-    return hostRSLicenseXMLHelper(
-      SupertabConnect.baseUrl,
-      this.merchantSystemUrn
-    );
+    // 3. Handle the license token request
+    return baseLicenseHandleRequestHelper({
+      licenseToken,
+      url,
+      userAgent: user_agent,
+      ctx,
+      supertabBaseUrl: SupertabConnect.baseUrl,
+      merchantSystemUrn: this.merchantSystemUrn,
+      debug,
+      recordEvent: (
+        eventName: string,
+        properties?: Record<string, any>,
+        licenseId?: string
+      ) => this.recordEvent(eventName, properties, licenseId),
+    });
   }
 
   /**
@@ -526,28 +323,6 @@ export class SupertabConnect {
       resourceUrl,
       licenseXml,
       debug,
-    });
-  }
-
-
-  /** Generate a customer JWT
-   * @param customerURN The customer's unique resource name (URN).
-   * @param kid The key ID to include in the JWT header.
-   * @param privateKeyPem The private key in PEM format used to sign the JWT.
-   * @param expirationSeconds The token's expiration time in seconds (default is 3600 seconds).
-   * @returns A promise that resolves to the generated JWT as a string.
-   */
-  static async generateCustomerJWT(
-    customerURN: string,
-    kid: string,
-    privateKeyPem: string,
-    expirationSeconds: number = 3600
-  ): Promise<string> {
-    return generateCustomerJWTHelper({
-      customerURN,
-      kid,
-      privateKeyPem,
-      expirationSeconds,
     });
   }
 }

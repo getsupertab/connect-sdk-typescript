@@ -49,24 +49,6 @@ async function fetchAndCacheJwks({
   return jwksCache.get(cacheKey);
 }
 
-export async function fetchIssuerJwks(
-  baseUrl: string,
-  issuer: string,
-  debug: boolean
-): Promise<any> {
-  const jwksUrl = `${baseUrl}/.well-known/jwks.json/${encodeURIComponent(
-    issuer
-  )}`;
-
-  return fetchAndCacheJwks({
-    cacheKey: issuer,
-    url: jwksUrl,
-    debug,
-    failureMessage: "Failed to fetch JWKS",
-    logLabel: "Error fetching JWKS:",
-  });
-}
-
 export async function fetchPlatformJwks(
   baseUrl: string,
   debug: boolean
