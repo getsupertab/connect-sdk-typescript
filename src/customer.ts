@@ -12,6 +12,57 @@ type GenerateLicenseTokenParams = {
   debug?: boolean;
 };
 
+type ObtainLicenseTokenParams = {
+  clientId: string;
+  clientSecret: string;
+  tokenEndpoint: string;
+  resourceUrl: string;
+  licenseXml: string;
+  debug?: boolean;
+};
+
+async function retrieveLicenseToken(
+    tokenEndpoint: string,
+    requestOptions: RequestInit,
+    debug: boolean | undefined
+) {
+  try {
+    const response = await fetch(tokenEndpoint, requestOptions);
+
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => "");
+      const errorMessage = `Failed to obtain license token: ${
+        response.status
+      } ${response.statusText}${errorBody ? ` - ${errorBody}` : ""}`;
+      throw new Error(errorMessage);
+    }
+
+    let data: any;
+    try {
+      data = await response.json();
+    } catch (parseError) {
+      if (debug) {
+        console.error(
+          "Failed to parse license token response as JSON:",
+          parseError
+        );
+      }
+      throw new Error("Failed to parse license token response as JSON");
+    }
+
+    if (!data?.access_token) {
+      throw new Error("License token response missing access_token");
+    }
+
+    return data.access_token;
+  } catch (error) {
+    if (debug) {
+      console.error("Error generating license token:", error);
+    }
+    throw error;
+  }
+}
+
 async function importKeyForAlgs(
   privateKeyPem: string,
   debug: boolean | undefined
@@ -76,41 +127,34 @@ export async function generateLicenseToken({
     body: payload.toString(),
   };
 
-  try {
-    const response = await fetch(tokenEndpoint, requestOptions);
-
-    if (!response.ok) {
-      const errorBody = await response.text().catch(() => "");
-      const errorMessage = `Failed to obtain license token: ${
-        response.status
-      } ${response.statusText}${errorBody ? ` - ${errorBody}` : ""}`;
-      throw new Error(errorMessage);
-    }
-
-    let data: any;
-    try {
-      data = await response.json();
-    } catch (parseError) {
-      if (debug) {
-        console.error(
-          "Failed to parse license token response as JSON:",
-          parseError
-        );
-      }
-      throw new Error("Failed to parse license token response as JSON");
-    }
-
-    if (!data?.access_token) {
-      throw new Error("License token response missing access_token");
-    }
-
-    return data.access_token;
-  } catch (error) {
-    if (debug) {
-      console.error("Error generating license token:", error);
-    }
-    throw error;
-  }
+  return retrieveLicenseToken(tokenEndpoint, requestOptions, debug);
 }
 
-export type { GenerateLicenseTokenParams };
+export async function obtainLicenseToken({
+  clientId,
+  clientSecret,
+  tokenEndpoint,
+  resourceUrl,
+  licenseXml,
+  debug,
+}: ObtainLicenseTokenParams): Promise<string> {
+  const payload = new URLSearchParams({
+    grant_type: "client_credentials",
+    license: licenseXml,
+    resource: resourceUrl,
+  });
+
+  const requestOptions: RequestInit = {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+      Authorization: "Basic " + btoa(`${clientId}:${clientSecret}`),
+    },
+    body: payload.toString(),
+  };
+
+  return retrieveLicenseToken(tokenEndpoint, requestOptions, debug);
+}
+
+export type { GenerateLicenseTokenParams, ObtainLicenseTokenParams };
