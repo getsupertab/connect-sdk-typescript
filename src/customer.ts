@@ -88,7 +88,8 @@ async function importKeyForAlgs(
   );
 }
 
-export async function generateLicenseToken({
+// Temporarily not exporting this function to reflect only client credentials flow being supported
+async function generateLicenseToken({
   clientId,
   kid,
   privateKeyPem,
