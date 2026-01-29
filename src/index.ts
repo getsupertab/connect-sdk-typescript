@@ -5,7 +5,7 @@ import {
   FASTLY_BACKEND,
   LicenseTokenVerificationResult,
 } from "./types";
-import { generateLicenseToken as generateLicenseTokenHelper } from "./customer";
+import { obtainLicenseToken as obtainLicenseTokenHelper } from "./customer";
 import {
   baseLicenseHandleRequest as baseLicenseHandleRequestHelper,
   hostRSLicenseXML as hostRSLicenseXMLHelper,
@@ -299,26 +299,22 @@ export class SupertabConnect {
 
   /**
    * Request a license token from the Supertab Connect token endpoint.
-   * @param clientId OAuth client identifier used for the assertion issuer/subject claims.
-   * @param kid The key ID to include in the JWT header.
-   * @param privateKeyPem Private key in PEM format used to sign the client assertion.
-   * @param tokenEndpoint Token endpoint URL.
+   * @param clientId OAuth client identifier.
+   * @param clientSecret OAuth client secret for client_credentials flow.
    * @param resourceUrl Resource URL attempting to access with a License.
    * @param licenseXml XML license document to include in the request payload.
    * @returns Promise resolving to the issued license access token string.
    */
-  static async generateLicenseToken(
+  static async obtainLicenseToken(
     clientId: string,
-    kid: string,
-    privateKeyPem: string,
+    clientSecret: string,
     resourceUrl: string,
     licenseXml: string
   ): Promise<string> {
     const tokenEndpoint = SupertabConnect.baseUrl + "/rsl/token";
-    return generateLicenseTokenHelper({
+    return obtainLicenseTokenHelper({
       clientId,
-      kid,
-      privateKeyPem,
+      clientSecret,
       tokenEndpoint,
       resourceUrl,
       licenseXml,
