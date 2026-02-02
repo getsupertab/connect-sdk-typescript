@@ -25,7 +25,8 @@
   "prepublishOnly": "npm run build",
   "scripts": {
     "build": "tsup",
-    "dev": "tsup --watch"
+    "dev": "tsup --watch",
+    "test": "vitest run"
   },
   "keywords": [
     "supertab",
@@ -37,7 +38,8 @@
   "devDependencies": {
     "@types/node": "^18.0.0",
     "tsup": "^8.5.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "jose": "^6.0.11"
