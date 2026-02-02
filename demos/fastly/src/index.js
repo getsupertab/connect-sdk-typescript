@@ -1,9 +1,6 @@
 /// <reference types="@fastly/js-compute" />
 import { SecretStore } from "fastly:secret-store";
-import { SupertabConnect } from "@getsupertab/supertab-connect-sdk";
-// import { SupertabConnect } from "../../../src/index.ts";
-
-import { CONFIG } from "./config.js";
+import { SupertabConnect, CONFIG } from "./config.js";
 
 let MERCHANT_SYSTEM_URN, MERCHANT_API_KEY;
 
