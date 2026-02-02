@@ -13,7 +13,7 @@ import {
 } from "./types";
 import { fetchPlatformJwks } from "./jwks";
 
-const stripTrailingSlash = (value: string) => value.replace(/\/+$/, "");
+const stripTrailingSlash = (value: string) => value.trim().replace(/\/+$/, "");
 
 export type VerifyLicenseTokenParams = {
   licenseToken: string;
@@ -75,9 +75,12 @@ export async function verifyLicenseToken({
   const licenseId: string | undefined = payload.license_id;
 
   const issuer: string | undefined = payload.iss;
-  if (!issuer || !issuer.startsWith(supertabBaseUrl)) {
+  const normalizedIssuer = issuer ? stripTrailingSlash(issuer) : undefined;
+  const normalizedBaseUrl = stripTrailingSlash(supertabBaseUrl);
+
+  if (!normalizedIssuer || !normalizedIssuer.startsWith(normalizedBaseUrl)) {
     if (debug) {
-      console.error("Invalid license JWT issuer:", issuer);
+      console.error("License JWT issuer is missing or malformed:", issuer);
     }
     return {
       valid: false,
