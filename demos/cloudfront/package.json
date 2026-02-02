@@ -1,0 +1,22 @@
+{
+  "name": "cloudflront",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "build": "esbuild index.ts --bundle --platform=node --target=node18 --outfile=dist/index.js",
+    "package": "cd dist && zip -r function.zip index.js",
+    "deploy": "npm run build && npm run package"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@getsupertab/supertab-connect-sdk": "0.1.0-beta.31"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.160",
+    "esbuild": "0.27.2",
+    "typescript": "^5.9.3"
+  }
+}
