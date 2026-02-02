@@ -23,9 +23,11 @@ jspm_packages/
 *.wasm
 .wrangler*
 .dev.vars
-my_prod_test.ts
+production_test_script.ts
 CLAUDE.md
 demos/cloudfront/dist
 demos/cloudfront/config.ts
+demos/fastly/src/config.js
 demos/cloudflront/dist/trust-policy.json
 AWSCLIV2.pkg
+    
