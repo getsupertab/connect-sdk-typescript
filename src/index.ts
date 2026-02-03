@@ -5,10 +5,10 @@ import {
   HandlerAction,
   HandlerResult,
   EventPayload,
+  Env,
   FASTLY_BACKEND,
   LicenseTokenInvalidReason,
   LicenseTokenVerificationResult,
-  Env,
 } from "./types";
 import { obtainLicenseToken as obtainLicenseTokenHelper } from "./customer";
 import {

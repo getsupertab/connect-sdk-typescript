@@ -206,6 +206,7 @@ export function buildSignalResult(requestUrl: string): HandlerResult {
     },
   };
 }
+
 export function buildBlockResult({
   reason,
   requestUrl,
@@ -284,10 +285,10 @@ export function buildBlockResult({
     status,
     body: `Access to this resource requires a valid license token. Error: ${rslError} - ${errorDescription}`,
     headers: {
-    "Content-Type": "text/plain; charset=UTF-8",
-    "WWW-Authenticate": `License error="${rslError}", error_description="${errorDescription}"`,
-    Link: `<${licenseLink}>; rel="license"; type="application/rsl+xml"`,
-  },
+      "Content-Type": "text/plain; charset=UTF-8",
+      "WWW-Authenticate": `License error="${rslError}", error_description="${errorDescription}"`,
+      Link: `<${licenseLink}>; rel="license"; type="application/rsl+xml"`,
+    },
   };
 }
 
@@ -342,13 +343,13 @@ export async function validateTokenAndBuildResult(
   if (params.recordEvent) {
     const eventName = verification.valid
       ? "license_used"
-      : verification.reason;
+      : verification.reason || "license_token_verification_failed";
 
     const eventProperties = {
       page_url: params.url,
       user_agent: params.userAgent,
       verification_status: verification.valid ? "valid" : "invalid",
-      verification_reason: verification.valid ? "success" : verification.reason,
+      verification_reason: verification.reason || "success",
     };
 
     const eventPromise = params.recordEvent(
@@ -364,7 +365,7 @@ export async function validateTokenAndBuildResult(
 
   if (!verification.valid) {
     return buildBlockResult({
-      reason: verification.reason,
+      reason: verification.reason || LicenseTokenInvalidReason.MISSING_TOKEN,
       requestUrl: params.url,
       supertabBaseUrl: params.supertabBaseUrl,
     });
