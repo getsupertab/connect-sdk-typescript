@@ -1,6 +1,17 @@
+export enum EnforcementMode {
+  DISABLED = "disabled",
+  SOFT = "soft",
+  STRICT = "strict",
+}
+
+export type BotDetector = (request: Request, ctx?: any) => boolean;
+
 export interface SupertabConnectConfig {
   apiKey: string;
   merchantSystemUrn: string;
+  enforcement?: EnforcementMode;
+  botDetector?: BotDetector;
+  debug?: boolean;
 }
 
 /**
@@ -46,3 +57,12 @@ export interface FetchOptions extends RequestInit {
   // Fastly-specific extension for backend routing
   backend?: string;
 }
+
+export enum HandlerAction {
+  ALLOW = "allow",
+  BLOCK = "block",
+}
+
+export type HandlerResult =
+  | { action: HandlerAction.ALLOW; headers?: Record<string, string> }
+  | { action: HandlerAction.BLOCK; status: number; body: string; headers: Record<string, string> };
