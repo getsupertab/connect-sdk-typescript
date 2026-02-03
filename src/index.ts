@@ -299,25 +299,22 @@ export class SupertabConnect {
 
   /**
    * Request a license token from the Supertab Connect token endpoint.
+   * Automatically fetches and parses license.xml from the resource URL's origin,
+   * using the token endpoint specified in the matching content element's server attribute.
    * @param clientId OAuth client identifier.
    * @param clientSecret OAuth client secret for client_credentials flow.
    * @param resourceUrl Resource URL attempting to access with a License.
-   * @param licenseXml XML license document to include in the request payload.
    * @returns Promise resolving to the issued license access token string.
    */
   static async obtainLicenseToken(
     clientId: string,
     clientSecret: string,
-    resourceUrl: string,
-    licenseXml: string
+    resourceUrl: string
   ): Promise<string> {
-    const tokenEndpoint = SupertabConnect.baseUrl + "/rsl/token";
     return obtainLicenseTokenHelper({
       clientId,
       clientSecret,
-      tokenEndpoint,
       resourceUrl,
-      licenseXml,
       debug,
     });
   }
