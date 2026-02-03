@@ -1,20 +1,30 @@
 import {
   SupertabConnectConfig,
-  Env,
+  EnforcementMode,
+  BotDetector,
+  HandlerAction,
+  HandlerResult,
   EventPayload,
+  Env,
   FASTLY_BACKEND,
+  LicenseTokenInvalidReason,
   LicenseTokenVerificationResult,
 } from "./types";
 import { obtainLicenseToken as obtainLicenseTokenHelper } from "./customer";
 import {
-  baseLicenseHandleRequest as baseLicenseHandleRequestHelper,
-  hostRSLicenseXML as hostRSLicenseXMLHelper,
+  buildBlockResult,
+  buildSignalResult,
   verifyLicenseToken as verifyLicenseTokenHelper,
+  validateTokenAndBuildResult,
 } from "./license";
+import {
+  cloudflareHandleRequests as cloudflareHandler,
+  fastlyHandleRequests as fastlyHandler,
+} from "./cdn";
 
-export type { Env } from "./types";
-
-const debug = true; // Set to true for debugging purposes
+export { EnforcementMode, HandlerAction };
+export type { Env, BotDetector, HandlerResult } from "./types";
+export { defaultBotDetector } from "./bots";
 
 /**
  * SupertabConnect class provides higher level methods
@@ -25,6 +35,9 @@ export class SupertabConnect {
   private apiKey?: string;
   private static baseUrl: string = "https://api-connect.supertab.co";
   private merchantSystemUrn!: string;
+  private enforcement!: EnforcementMode;
+  private botDetector?: BotDetector;
+  private debug!: boolean;
 
   private static _instance: SupertabConnect | null = null;
 
@@ -58,6 +71,9 @@ export class SupertabConnect {
     }
     this.apiKey = config.apiKey;
     this.merchantSystemUrn = config.merchantSystemUrn;
+    this.enforcement = config.enforcement ?? EnforcementMode.SOFT;
+    this.botDetector = config.botDetector;
+    this.debug = config.debug ?? false;
 
     // Register this as the singleton instance
     SupertabConnect._instance = this;
@@ -75,6 +91,13 @@ export class SupertabConnect {
   }
 
   /**
+   * Get the current base URL for API requests.
+   */
+  public static getBaseUrl(): string {
+    return SupertabConnect.baseUrl;
+  }
+
+  /**
    * Verify a license token
    * @param licenseToken The license token to verify
    * @param requestUrl The URL of the request being made
@@ -88,7 +111,7 @@ export class SupertabConnect {
       licenseToken,
       requestUrl,
       supertabBaseUrl: SupertabConnect.baseUrl,
-      debug,
+      debug: this.debug,
     });
   }
 
@@ -137,164 +160,48 @@ export class SupertabConnect {
     }
   }
 
-
-  static checkIfBotRequest(request: Request): boolean {
-    const userAgent = request.headers.get("User-Agent") || "";
-    const accept = request.headers.get("accept") || "";
-    const secChUa = request.headers.get("sec-ch-ua");
-    const acceptLanguage = request.headers.get("accept-language");
-    const botScore = (request as any).cf?.botManagement?.score;
-
-    const botList = [
-      "chatgpt-user",
-      "perplexitybot",
-      "gptbot",
-      "anthropic-ai",
-      "ccbot",
-      "claude-web",
-      "claudebot",
-      "cohere-ai",
-      "youbot",
-      "diffbot",
-      "oai-searchbot",
-      "meta-externalagent",
-      "timpibot",
-      "amazonbot",
-      "bytespider",
-      "perplexity-user",
-      "googlebot",
-      "bot",
-      "curl",
-      "wget",
-    ];
-    // 1. Basic substring check from known list
-    const lowerCaseUserAgent = userAgent.toLowerCase();
-    const botUaMatch = botList.some((bot) => lowerCaseUserAgent.includes(bot));
-
-    // 2. Headless browser detection
-    const headlessIndicators =
-      userAgent.toLowerCase().includes("headless") ||
-      userAgent.toLowerCase().includes("puppeteer") ||
-      !secChUa;
-
-    const only_sec_ch_ua_missing =
-      !userAgent.toLowerCase().includes("headless") ||
-      !userAgent.toLowerCase().includes("puppeteer") ||
-      !secChUa;
-
-    // 3. Suspicious header gaps — many bots omit these
-    const missingHeaders = !accept || !acceptLanguage;
-
-    // 4. Cloudflare bot score check (if available)
-    const lowBotScore = typeof botScore === "number" && botScore < 30;
-    console.log("Bot Detection Details:", {
-      botUaMatch,
-      headlessIndicators,
-      missingHeaders,
-      lowBotScore,
-      botScore,
-    });
-
-    // Safari and Mozilla special case
-    if (
-      lowerCaseUserAgent.includes("safari") ||
-      lowerCaseUserAgent.includes("mozilla")
-    ) {
-      // Safari is not a bot, but it may be headless
-      if (headlessIndicators && only_sec_ch_ua_missing) {
-        return false; // Likely not a bot, but missing a Sec-CH-UA header
-      }
-    }
-
-    // Final decision
-    return botUaMatch || headlessIndicators || missingHeaders || lowBotScore;
-  }
-
-  static async cloudflareHandleRequests(
-    request: Request,
-    env: Env,
-    ctx: any
-  ): Promise<Response> {
-    // Validate required env variables
-    const { MERCHANT_SYSTEM_URN, MERCHANT_API_KEY } = env;
-
-    // Prepare or get the SupertabConnect instance
-    const supertabConnect = new SupertabConnect({
-      apiKey: MERCHANT_API_KEY,
-      merchantSystemUrn: MERCHANT_SYSTEM_URN,
-    });
-
-    // Handle the request, including bot detection, token verification and recording the event
-    return supertabConnect.handleRequest(
-      request,
-      SupertabConnect.checkIfBotRequest,
-      ctx
-    );
-  }
-
-  static async fastlyHandleRequests(
-    request: Request,
-    merchantSystemUrn: string,
-    merchantApiKey: string,
-    enableRSL: boolean = false,
-  ): Promise<Response> {
-    // Prepare or get the SupertabConnect instance
-    const supertabConnect = new SupertabConnect({
-      apiKey: merchantApiKey,
-      merchantSystemUrn: merchantSystemUrn,
-    });
-
-    if (enableRSL) {
-      if (new URL(request.url).pathname === "/license.xml") {
-        return await hostRSLicenseXMLHelper(
-          SupertabConnect.baseUrl,
-          merchantSystemUrn
-        );
-      }
-    }
-
-    // Handle the request, including bot detection, token verification and recording the event
-    return supertabConnect.handleRequest(
-      request,
-      SupertabConnect.checkIfBotRequest,
-      null
-    );
-  }
-
-  async handleRequest(
-    request: Request,
-    botDetectionHandler?: (request: Request, ctx?: any) => boolean,
-    ctx?: any
-  ): Promise<Response> {
-    // 1. Extract license token, URL, and user agent from the request
+  async handleRequest(request: Request, ctx?: any): Promise<HandlerResult> {
     const auth = request.headers.get("Authorization") || "";
-    const licenseToken = auth.startsWith("License ") ? auth.slice(8) : "";
+    const token = auth.startsWith("License ") ? auth.slice(8) : null;
     const url = request.url;
-    const user_agent = request.headers.get("User-Agent") || "unknown";
+    const userAgent = request.headers.get("User-Agent") || "unknown";
 
-    // 2. Handle bot detection if provided
-    if (botDetectionHandler && !botDetectionHandler(request, ctx)) {
-      return new Response("✅ Non-Bot Content Access granted", {
-        status: 200,
-        headers: new Headers({ "Content-Type": "application/json" }),
+    // Token present → ALWAYS validate, regardless of mode or bot detection
+    if (token) {
+      if (this.enforcement === EnforcementMode.DISABLED) {
+        return { action: HandlerAction.ALLOW };
+      }
+      return validateTokenAndBuildResult({
+        token,
+        url,
+        userAgent,
+        supertabBaseUrl: SupertabConnect.baseUrl,
+        debug: this.debug,
+        recordEvent: this.recordEvent.bind(this),
+        ctx,
       });
     }
 
-    // 3. Handle the license token request
-    return baseLicenseHandleRequestHelper({
-      licenseToken,
-      url,
-      userAgent: user_agent,
-      ctx,
-      supertabBaseUrl: SupertabConnect.baseUrl,
-      merchantSystemUrn: this.merchantSystemUrn,
-      debug,
-      recordEvent: (
-        eventName: string,
-        properties?: Record<string, any>,
-        licenseId?: string
-      ) => this.recordEvent(eventName, properties, licenseId),
-    });
+    // No token from here on
+    const isBot = this.botDetector?.(request, ctx) ?? false;
+
+    if (!isBot) {
+      return { action: HandlerAction.ALLOW };
+    }
+
+    // Bot detected, no token — enforcement mode decides
+    switch (this.enforcement) {
+      case EnforcementMode.STRICT:
+        return buildBlockResult({
+          reason: LicenseTokenInvalidReason.MISSING_TOKEN,
+          requestUrl: url,
+          supertabBaseUrl: SupertabConnect.baseUrl,
+        });
+      case EnforcementMode.SOFT:
+        return buildSignalResult(url);
+      default: // DISABLED
+        return { action: HandlerAction.ALLOW };
+    }
   }
 
   /**
@@ -304,12 +211,14 @@ export class SupertabConnect {
    * @param clientId OAuth client identifier.
    * @param clientSecret OAuth client secret for client_credentials flow.
    * @param resourceUrl Resource URL attempting to access with a License.
+   * @param debug Enable debug logging (default: false).
    * @returns Promise resolving to the issued license access token string.
    */
   static async obtainLicenseToken(
     clientId: string,
     clientSecret: string,
-    resourceUrl: string
+    resourceUrl: string,
+    debug: boolean = false
   ): Promise<string> {
     return obtainLicenseTokenHelper({
       clientId,
@@ -317,5 +226,39 @@ export class SupertabConnect {
       resourceUrl,
       debug,
     });
+  }
+
+  /**
+   * Handle requests in Cloudflare Workers environment.
+   */
+  static cloudflareHandleRequests(
+    request: Request,
+    env: Env,
+    ctx: any
+  ): Promise<Response> {
+    return cloudflareHandler(request, env, ctx);
+  }
+
+  /**
+   * Handle requests in Fastly Compute environment.
+   */
+  static fastlyHandleRequests(
+    request: Request,
+    merchantSystemUrn: string,
+    merchantApiKey: string,
+    originBackend: string,
+    options?: {
+      enableRSL?: boolean;
+      botDetector?: BotDetector;
+      enforcement?: EnforcementMode;
+    }
+  ): Promise<Response> {
+    return fastlyHandler(
+      request,
+      merchantSystemUrn,
+      merchantApiKey,
+      originBackend,
+      options
+    );
   }
 }
