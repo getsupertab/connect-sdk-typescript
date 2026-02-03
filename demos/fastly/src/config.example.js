@@ -1,5 +1,9 @@
 // Copy this file to config.js and fill in your values
-export { SupertabConnect } from "@getsupertab/supertab-connect-sdk";
+export {
+  SupertabConnect,
+  defaultBotDetector,
+  EnforcementMode,
+} from "@getsupertab/supertab-connect-sdk";
 
 export const CONFIG = {
   MERCHANT_SYSTEM_URN: "urn:stc:merchant:system:YOUR_SYSTEM_ID",
