@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { SupertabConnect } from "../src/index";
+import { SupertabConnect } from "../../src/index";
 import { ENVIRONMENTS } from "./config";
 
 // ============================================================================

@@ -28,7 +28,6 @@ CLAUDE.md
 demos/cloudfront/dist
 demos/cloudfront/config.ts
 demos/fastly/src/config.js
-tests/config.ts
+tests/e2e/config.ts
 demos/cloudflront/dist/trust-policy.json
 AWSCLIV2.pkg
-    
