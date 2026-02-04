@@ -1,6 +1,17 @@
+export enum EnforcementMode {
+  DISABLED = "disabled",
+  SOFT = "soft",
+  STRICT = "strict",
+}
+
+export type BotDetector = (request: Request, ctx?: any) => boolean;
+
 export interface SupertabConnectConfig {
   apiKey: string;
   merchantSystemUrn: string;
+  enforcement?: EnforcementMode;
+  botDetector?: BotDetector;
+  debug?: boolean;
 }
 
 /**
@@ -22,12 +33,9 @@ export interface EventPayload {
   properties: Record<string, any>;
 }
 
-export interface LicenseTokenVerificationResult {
-  valid: boolean;
-  reason?: string;
-  licenseId?: string;
-  payload?: any;
-}
+export type LicenseTokenVerificationResult =
+  | { valid: true; licenseId?: string; payload: any }
+  | { valid: false; reason: LicenseTokenInvalidReason; licenseId?: string };
 
 export enum LicenseTokenInvalidReason {
   MISSING_TOKEN = "missing_license_token",
@@ -38,6 +46,7 @@ export enum LicenseTokenInvalidReason {
   SIGNATURE_VERIFICATION_FAILED = "license_signature_verification_failed",
   EXPIRED = "license_token_expired",
   INVALID_AUDIENCE = "invalid_license_audience",
+  SERVER_ERROR = "server_error",
 }
 
 export const FASTLY_BACKEND = "stc-backend";
@@ -46,3 +55,12 @@ export interface FetchOptions extends RequestInit {
   // Fastly-specific extension for backend routing
   backend?: string;
 }
+
+export enum HandlerAction {
+  ALLOW = "allow",
+  BLOCK = "block",
+}
+
+export type HandlerResult =
+  | { action: HandlerAction.ALLOW; headers?: Record<string, string> }
+  | { action: HandlerAction.BLOCK; status: number; body: string; headers: Record<string, string> };

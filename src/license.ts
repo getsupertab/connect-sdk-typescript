@@ -5,13 +5,25 @@ import {
   JWTHeaderParameters,
   jwtVerify,
 } from "jose";
+
+interface LicenseJWTPayload extends JWTPayload {
+  license_id?: string;
+}
 import {
+  HandlerAction,
+  HandlerResult,
   LicenseTokenInvalidReason,
   LicenseTokenVerificationResult,
   FASTLY_BACKEND,
   FetchOptions,
 } from "./types";
 import { fetchPlatformJwks } from "./jwks";
+
+export type EventRecorder = (
+  eventName: string,
+  properties: Record<string, any>,
+  licenseId?: string
+) => Promise<void>;
 
 const stripTrailingSlash = (value: string) => value.trim().replace(/\/+$/, "");
 
@@ -58,9 +70,9 @@ export async function verifyLicenseToken({
     };
   }
 
-  let payload: JWTPayload;
+  let payload: LicenseJWTPayload;
   try {
-    payload = decodeJwt(licenseToken);
+    payload = decodeJwt(licenseToken) as LicenseJWTPayload;
   } catch (error) {
     if (debug) {
       console.error("Invalid license JWT payload:", error);
@@ -71,7 +83,6 @@ export async function verifyLicenseToken({
     };
   }
 
-  // @ts-ignore
   const licenseId: string | undefined = payload.license_id;
 
   const issuer: string | undefined = payload.iss;
@@ -116,9 +127,21 @@ export async function verifyLicenseToken({
     };
   }
 
+  let jwks;
   try {
-    const jwks = await fetchPlatformJwks(supertabBaseUrl, debug);
+    jwks = await fetchPlatformJwks(supertabBaseUrl, debug);
+  } catch (error) {
+    if (debug) {
+      console.error("Failed to fetch platform JWKS:", error);
+    }
+    return {
+      valid: false,
+      reason: LicenseTokenInvalidReason.SERVER_ERROR,
+      licenseId,
+    };
+  }
 
+  try {
     const getKey = async (jwtHeader: JWTHeaderParameters) => {
       const jwk = jwks.keys.find((key: any) => key.kid === jwtHeader.kid);
       if (!jwk) {
@@ -168,127 +191,104 @@ export function generateLicenseLink({
   return `${baseURL.protocol}//${baseURL.host}/license.xml`;
 }
 
-type RecordEventFn = (
-  eventName: string,
-  properties?: Record<string, any>,
-  licenseId?: string
-) => Promise<void>;
-
-type BaseLicenseHandleRequestParams = {
-  licenseToken: string;
-  url: string;
-  userAgent: string;
-  ctx: any;
-  supertabBaseUrl: string;
-  merchantSystemUrn?: string;
-  debug: boolean;
-  recordEvent: RecordEventFn;
-};
-
-export async function baseLicenseHandleRequest({
-  licenseToken,
-  url,
-  userAgent,
-  ctx,
+/**
+ * Build a HandlerResult that signals a missing token in soft enforcement mode.
+ * Returns headers indicating a license is required without blocking the request.
+ */
+export function buildSignalResult(requestUrl: string): HandlerResult {
+  const licenseLink = generateLicenseLink({ requestUrl });
+  return {
+    action: HandlerAction.ALLOW,
+    headers: {
+      Link: `<${licenseLink}>; rel="license"; type="application/rsl+xml"`,
+      "X-RSL-Status": "token_required",
+      "X-RSL-Reason": "missing",
+    },
+  };
+}
+export function buildBlockResult({
+  reason,
+  requestUrl,
   supertabBaseUrl,
-  merchantSystemUrn,
-  debug,
-  recordEvent,
-}: BaseLicenseHandleRequestParams): Promise<Response> {
-  const verification = await verifyLicenseToken({
-    licenseToken,
-    requestUrl: url,
-    supertabBaseUrl,
-    debug,
-  });
+}: {
+  reason: LicenseTokenInvalidReason | string;
+  requestUrl: string;
+  supertabBaseUrl: string;
+}): HandlerResult {
+  let rslError: string;
+  let errorDescription: string;
+  let status: number;
 
-  async function recordLicenseEvent(eventName: string) {
-    const eventProperties = {
-      page_url: url,
-      user_agent: userAgent,
-      verification_status: verification.valid ? "valid" : "invalid",
-      verification_reason: verification.reason || "success",
-    };
+  switch (reason) {
+    // 401 — invalid_request: missing or malformed request
+    case LicenseTokenInvalidReason.MISSING_TOKEN:
+      status = 401;
+      rslError = "invalid_request";
+      errorDescription = "Authorization header missing or malformed";
+      break;
+    case LicenseTokenInvalidReason.INVALID_ALG:
+      status = 401;
+      rslError = "invalid_request";
+      errorDescription = "Unsupported token algorithm";
+      break;
 
-    const eventPromise = recordEvent(
-      eventName,
-      eventProperties,
-      verification.licenseId
-    );
+    // 401 — invalid_token: token exists but is bad
+    case LicenseTokenInvalidReason.EXPIRED:
+      status = 401;
+      rslError = "invalid_token";
+      errorDescription = "The license token has expired";
+      break;
+    case LicenseTokenInvalidReason.SIGNATURE_VERIFICATION_FAILED:
+      status = 401;
+      rslError = "invalid_token";
+      errorDescription = "The license token signature is invalid";
+      break;
+    case LicenseTokenInvalidReason.INVALID_HEADER:
+      status = 401;
+      rslError = "invalid_token";
+      errorDescription = "The license token header is malformed";
+      break;
+    case LicenseTokenInvalidReason.INVALID_PAYLOAD:
+      status = 401;
+      rslError = "invalid_token";
+      errorDescription = "The license token payload is malformed";
+      break;
+    case LicenseTokenInvalidReason.INVALID_ISSUER:
+      status = 401;
+      rslError = "invalid_token";
+      errorDescription = "The license token issuer is not recognized";
+      break;
+    // 403 — insufficient_scope: valid token, wrong resource/usage
+    case LicenseTokenInvalidReason.INVALID_AUDIENCE:
+      status = 403;
+      rslError = "insufficient_scope";
+      errorDescription = "The license does not grant access to this resource";
+      break;
+    // 503 — server-side validation failure
+    case LicenseTokenInvalidReason.SERVER_ERROR:
+      status = 503;
+      rslError = "server_error";
+      errorDescription = "The server encountered an error validating the license";
+      break;
 
-    if (ctx?.waitUntil) {
-      ctx.waitUntil(eventPromise);
-    }
-
-    return eventPromise;
+    default:
+      status = 401;
+      rslError = "invalid_token";
+      errorDescription = "License token missing, expired, revoked, or malformed";
   }
 
-  if (!verification.valid) {
-    await recordLicenseEvent(
-      verification.reason || "license_token_verification_failed"
-    );
+  const licenseLink = generateLicenseLink({ requestUrl });
 
-    let rslError = "invalid_request";
-    let errorDescription = "Access to this resource requires a license";
-
-    switch (verification.reason) {
-      case LicenseTokenInvalidReason.MISSING_TOKEN:
-        rslError = "invalid_request";
-        errorDescription = "Access to this resource requires a license";
-        break;
-      case LicenseTokenInvalidReason.EXPIRED:
-        rslError = "invalid_token";
-        errorDescription = "The license token has expired";
-        break;
-      case LicenseTokenInvalidReason.SIGNATURE_VERIFICATION_FAILED:
-        rslError = "invalid_token";
-        errorDescription = "The license token signature is invalid";
-        break;
-      case LicenseTokenInvalidReason.INVALID_HEADER:
-        rslError = "invalid_token";
-        errorDescription = "The license token header is invalid";
-        break;
-      case LicenseTokenInvalidReason.INVALID_PAYLOAD:
-        rslError = "invalid_token";
-        errorDescription = "The license token payload is invalid";
-        break;
-      case LicenseTokenInvalidReason.INVALID_ISSUER:
-        rslError = "invalid_token";
-        errorDescription = "The license token issuer is invalid";
-        break;
-      case LicenseTokenInvalidReason.INVALID_AUDIENCE:
-        rslError = "invalid_token";
-        errorDescription = "The license token audience is invalid";
-        break;
-      default:
-        rslError = "invalid_request";
-        errorDescription = "Access to this resource requires a license";
-    }
-
-    const licenseLink = generateLicenseLink({
-      requestUrl: url,
-    });
-    const errorUri = `${supertabBaseUrl}/docs/errors#${rslError}`;
-
-    const headers = new Headers({
-      "Content-Type": "text/plain; charset=UTF-8",
-      "WWW-Authenticate": `License error="${rslError}", error_description="${errorDescription}", error_uri="${errorUri}"`,
-      Link: `${licenseLink}; rel="license"; type="application/rsl+xml"`,
-    });
-
-    const responseBody = `Access to this resource requires a valid license token. Error: ${rslError} - ${errorDescription}`;
-
-    return new Response(responseBody, {
-      status: 401,
-      headers,
-    });
-  }
-
-  await recordLicenseEvent("license_used");
-  return new Response("✅ License Token Access granted", {
-    status: 200,
-    headers: new Headers({ "Content-Type": "application/json" }),
-  });
+  return {
+    action: HandlerAction.BLOCK,
+    status,
+    body: `Access to this resource requires a valid license token. Error: ${rslError} - ${errorDescription}`,
+    headers: {
+    "Content-Type": "text/plain; charset=UTF-8",
+    "WWW-Authenticate": `License error="${rslError}", error_description="${errorDescription}"`,
+    Link: `<${licenseLink}>; rel="license"; type="application/rsl+xml"`,
+  },
+  };
 }
 
 function buildFetchOptions(): FetchOptions {
@@ -317,4 +317,58 @@ export async function hostRSLicenseXML(
     status: 200,
     headers: new Headers({ "Content-Type": "application/xml" }),
   });
+}
+
+export type ValidateTokenParams = {
+  token: string;
+  url: string;
+  userAgent: string;
+  supertabBaseUrl: string;
+  debug: boolean;
+  recordEvent?: EventRecorder;
+  ctx?: any;
+};
+
+export async function validateTokenAndBuildResult(
+  params: ValidateTokenParams
+): Promise<HandlerResult> {
+  const verification = await verifyLicenseToken({
+    licenseToken: params.token,
+    requestUrl: params.url,
+    supertabBaseUrl: params.supertabBaseUrl,
+    debug: params.debug,
+  });
+
+  if (params.recordEvent) {
+    const eventName = verification.valid
+      ? "license_used"
+      : verification.reason;
+
+    const eventProperties = {
+      page_url: params.url,
+      user_agent: params.userAgent,
+      verification_status: verification.valid ? "valid" : "invalid",
+      verification_reason: verification.valid ? "success" : verification.reason,
+    };
+
+    const eventPromise = params.recordEvent(
+      eventName,
+      eventProperties,
+      verification.licenseId
+    );
+
+    if (params.ctx?.waitUntil) {
+      params.ctx.waitUntil(eventPromise);
+    }
+  }
+
+  if (!verification.valid) {
+    return buildBlockResult({
+      reason: verification.reason,
+      requestUrl: params.url,
+      supertabBaseUrl: params.supertabBaseUrl,
+    });
+  }
+
+  return { action: HandlerAction.ALLOW };
 }

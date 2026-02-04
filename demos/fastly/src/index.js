@@ -1,6 +1,11 @@
 /// <reference types="@fastly/js-compute" />
 import { SecretStore } from "fastly:secret-store";
-import { SupertabConnect, CONFIG } from "./config.js";
+import {
+  SupertabConnect,
+  defaultBotDetector,
+  EnforcementMode,
+  CONFIG,
+} from "./config.js";
 
 let MERCHANT_SYSTEM_URN, MERCHANT_API_KEY;
 
@@ -23,7 +28,12 @@ addEventListener("fetch", (event) =>
       event.request,
       MERCHANT_SYSTEM_URN,
       MERCHANT_API_KEY,
-      true
+      "origin",
+      {
+        enableRSL: true,
+        // botDetector: defaultBotDetector,
+        // enforcement: EnforcementMode.STRICT,
+      }
     )
   )
 );
