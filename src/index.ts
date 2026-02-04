@@ -5,10 +5,10 @@ import {
   HandlerAction,
   HandlerResult,
   EventPayload,
-  Env,
   FASTLY_BACKEND,
   LicenseTokenInvalidReason,
   LicenseTokenVerificationResult,
+  Env,
 } from "./types";
 import { obtainLicenseToken as obtainLicenseTokenHelper } from "./customer";
 import {
@@ -17,13 +17,10 @@ import {
   verifyLicenseToken as verifyLicenseTokenHelper,
   validateTokenAndBuildResult,
 } from "./license";
-import {
-  cloudflareHandleRequests as cloudflareHandler,
-  fastlyHandleRequests as fastlyHandler,
-} from "./cdn";
+import { handleCloudflareRequest, handleFastlyRequest } from "./cdn";
 
 export { EnforcementMode, HandlerAction };
-export type { Env, BotDetector, HandlerResult } from "./types";
+export type { Env, BotDetector, HandlerResult };
 export { defaultBotDetector } from "./bots";
 
 /**
@@ -229,20 +226,24 @@ export class SupertabConnect {
   }
 
   /**
-   * Handle requests in Cloudflare Workers environment.
+   * Handle incoming requests for Cloudflare Workers.
    */
-  static cloudflareHandleRequests(
+  static async cloudflareHandleRequests(
     request: Request,
     env: Env,
     ctx: any
   ): Promise<Response> {
-    return cloudflareHandler(request, env, ctx);
+    const instance = new SupertabConnect({
+      apiKey: env.MERCHANT_API_KEY,
+      merchantSystemUrn: env.MERCHANT_SYSTEM_URN,
+    });
+    return handleCloudflareRequest(instance, request, ctx);
   }
 
   /**
-   * Handle requests in Fastly Compute environment.
+   * Handle incoming requests for Fastly Compute.
    */
-  static fastlyHandleRequests(
+  static async fastlyHandleRequests(
     request: Request,
     merchantSystemUrn: string,
     merchantApiKey: string,
@@ -253,12 +254,25 @@ export class SupertabConnect {
       enforcement?: EnforcementMode;
     }
   ): Promise<Response> {
-    return fastlyHandler(
+    const { enableRSL = false, botDetector, enforcement } = options ?? {};
+
+    const instance = new SupertabConnect({
+      apiKey: merchantApiKey,
+      merchantSystemUrn: merchantSystemUrn,
+      botDetector,
+      enforcement,
+    });
+
+    return handleFastlyRequest(
+      instance,
       request,
-      merchantSystemUrn,
-      merchantApiKey,
       originBackend,
-      options
+      enableRSL
+        ? {
+            baseUrl: SupertabConnect.baseUrl,
+            merchantSystemUrn,
+          }
+        : undefined
     );
   }
 }

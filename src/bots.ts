@@ -43,7 +43,7 @@ export function defaultBotDetector(request: Request): boolean {
     userAgent.toLowerCase().includes("puppeteer") ||
     !secChUa;
 
-  const only_sec_ch_ua_missing =
+  const isBrowserMissingSecChUa =
     !userAgent.toLowerCase().includes("headless") &&
     !userAgent.toLowerCase().includes("puppeteer") &&
     !secChUa;
@@ -60,7 +60,7 @@ export function defaultBotDetector(request: Request): boolean {
     lowerCaseUserAgent.includes("mozilla")
   ) {
     // Safari is not a bot, but it may be headless
-    if (headlessIndicators && only_sec_ch_ua_missing) {
+    if (headlessIndicators && isBrowserMissingSecChUa) {
       return false; // Likely not a bot, but missing a Sec-CH-UA header
     }
   }

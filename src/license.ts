@@ -203,7 +203,7 @@ export function buildBlockResult({
   reason: LicenseTokenInvalidReason | string;
   requestUrl: string;
   supertabBaseUrl: string;
-}): { action: HandlerAction.BLOCK; status: 401; body: string; headers: Record<string, string> } {
+}): HandlerResult {
   let rslError = "invalid_request";
   let errorDescription = "Access to this resource requires a license";
 
