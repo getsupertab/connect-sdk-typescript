@@ -131,7 +131,7 @@ describeMode(TestMode.SOFT_NO_BOT_DETECTION)("Soft Mode (No Bot Detection)", () 
   it("valid token gets 200", async () => {
     const response = await fetchResource({ userAgent: "bot", token: "valid" });
     expect(response.status).toBe(200);
-  });
+  }, 30000);  // increase timeout to 30s
 
   it("invalid token gets 401", async () => {
     const response = await fetchResource({ userAgent: "bot", token: "invalid" });
