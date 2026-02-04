@@ -26,7 +26,7 @@ Tests are grouped by server configuration. Set `TEST_MODE` to match how your ser
 ## Running Tests
 
 ```bash
-# Run with default mode (soft-bot-detection) against local server
+# Run with default mode (soft-no-bot-detection) against local server
 npm test
 
 # Run specific mode
