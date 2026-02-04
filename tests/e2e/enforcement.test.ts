@@ -58,7 +58,8 @@ async function fetchResource(options: FetchOptions): Promise<Response> {
     const signedLicense = await SupertabConnect.obtainLicenseToken(
       config.clientId,
       clientSecret,
-      config.resourceUrl
+      config.resourceUrl,
+      true
     );
     headers.Authorization = `License ${signedLicense}`;
   } else if (token === "invalid") {
