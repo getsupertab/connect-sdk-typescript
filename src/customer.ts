@@ -1,4 +1,4 @@
-import { importPKCS8, SignJWT } from "jose";
+import { loadJose } from "./jose";
 
 type SupportedAlg = "RS256" | "ES256";
 
@@ -71,6 +71,7 @@ async function importKeyForAlgs(
   privateKeyPem: string,
   debug: boolean | undefined
 ): Promise<{ key: CryptoKey; alg: SupportedAlg }> {
+  const { importPKCS8 } = await loadJose();
   const supportedAlgs: SupportedAlg[] = ["ES256", "RS256"];
 
   for (const algorithm of supportedAlgs) {
@@ -102,6 +103,7 @@ async function generateLicenseToken({
   licenseXml,
   debug,
 }: GenerateLicenseTokenParams): Promise<string> {
+  const { SignJWT } = await loadJose();
   const { key, alg } = await importKeyForAlgs(privateKeyPem, debug);
   const now = Math.floor(Date.now() / 1000);
 
