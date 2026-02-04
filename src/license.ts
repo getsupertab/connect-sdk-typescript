@@ -127,9 +127,21 @@ export async function verifyLicenseToken({
     };
   }
 
+  let jwks;
   try {
-    const jwks = await fetchPlatformJwks(supertabBaseUrl, debug);
+    jwks = await fetchPlatformJwks(supertabBaseUrl, debug);
+  } catch (error) {
+    if (debug) {
+      console.error("Failed to fetch platform JWKS:", error);
+    }
+    return {
+      valid: false,
+      reason: LicenseTokenInvalidReason.SERVER_ERROR,
+      licenseId,
+    };
+  }
 
+  try {
     const getKey = async (jwtHeader: JWTHeaderParameters) => {
       const jwk = jwks.keys.find((key: any) => key.kid === jwtHeader.kid);
       if (!jwk) {
@@ -188,13 +200,12 @@ export function buildSignalResult(requestUrl: string): HandlerResult {
   return {
     action: HandlerAction.ALLOW,
     headers: {
-      Link: `${licenseLink}; rel="license"; type="application/rsl+xml"`,
+      Link: `<${licenseLink}>; rel="license"; type="application/rsl+xml"`,
       "X-RSL-Status": "token_required",
       "X-RSL-Reason": "missing",
     },
   };
 }
-
 export function buildBlockResult({
   reason,
   requestUrl,
@@ -204,55 +215,79 @@ export function buildBlockResult({
   requestUrl: string;
   supertabBaseUrl: string;
 }): HandlerResult {
-  let rslError = "invalid_request";
-  let errorDescription = "Access to this resource requires a license";
+  let rslError: string;
+  let errorDescription: string;
+  let status: number;
 
   switch (reason) {
+    // 401 — invalid_request: missing or malformed request
     case LicenseTokenInvalidReason.MISSING_TOKEN:
+      status = 401;
       rslError = "invalid_request";
-      errorDescription = "Access to this resource requires a license";
+      errorDescription = "Authorization header missing or malformed";
       break;
+    case LicenseTokenInvalidReason.INVALID_ALG:
+      status = 401;
+      rslError = "invalid_request";
+      errorDescription = "Unsupported token algorithm";
+      break;
+
+    // 401 — invalid_token: token exists but is bad
     case LicenseTokenInvalidReason.EXPIRED:
+      status = 401;
       rslError = "invalid_token";
       errorDescription = "The license token has expired";
       break;
     case LicenseTokenInvalidReason.SIGNATURE_VERIFICATION_FAILED:
+      status = 401;
       rslError = "invalid_token";
       errorDescription = "The license token signature is invalid";
       break;
     case LicenseTokenInvalidReason.INVALID_HEADER:
+      status = 401;
       rslError = "invalid_token";
-      errorDescription = "The license token header is invalid";
+      errorDescription = "The license token header is malformed";
       break;
     case LicenseTokenInvalidReason.INVALID_PAYLOAD:
+      status = 401;
       rslError = "invalid_token";
-      errorDescription = "The license token payload is invalid";
+      errorDescription = "The license token payload is malformed";
       break;
     case LicenseTokenInvalidReason.INVALID_ISSUER:
+      status = 401;
       rslError = "invalid_token";
-      errorDescription = "The license token issuer is invalid";
+      errorDescription = "The license token issuer is not recognized";
       break;
+    // 403 — insufficient_scope: valid token, wrong resource/usage
     case LicenseTokenInvalidReason.INVALID_AUDIENCE:
-      rslError = "invalid_token";
-      errorDescription = "The license token audience is invalid";
+      status = 403;
+      rslError = "insufficient_scope";
+      errorDescription = "The license does not grant access to this resource";
       break;
+    // 503 — server-side validation failure
+    case LicenseTokenInvalidReason.SERVER_ERROR:
+      status = 503;
+      rslError = "server_error";
+      errorDescription = "The server encountered an error validating the license";
+      break;
+
     default:
-      rslError = "invalid_request";
-      errorDescription = "Access to this resource requires a license";
+      status = 401;
+      rslError = "invalid_token";
+      errorDescription = "License token missing, expired, revoked, or malformed";
   }
 
   const licenseLink = generateLicenseLink({ requestUrl });
-  const errorUri = `${supertabBaseUrl}/docs/errors#${rslError}`;
 
   return {
     action: HandlerAction.BLOCK,
-    status: 401,
+    status,
     body: `Access to this resource requires a valid license token. Error: ${rslError} - ${errorDescription}`,
     headers: {
-      "Content-Type": "text/plain; charset=UTF-8",
-      "WWW-Authenticate": `License error="${rslError}", error_description="${errorDescription}", error_uri="${errorUri}"`,
-      Link: `${licenseLink}; rel="license"; type="application/rsl+xml"`,
-    },
+    "Content-Type": "text/plain; charset=UTF-8",
+    "WWW-Authenticate": `License error="${rslError}", error_description="${errorDescription}"`,
+    Link: `<${licenseLink}>; rel="license"; type="application/rsl+xml"`,
+  },
   };
 }
 
@@ -307,13 +342,13 @@ export async function validateTokenAndBuildResult(
   if (params.recordEvent) {
     const eventName = verification.valid
       ? "license_used"
-      : verification.reason || "license_token_verification_failed";
+      : verification.reason;
 
     const eventProperties = {
       page_url: params.url,
       user_agent: params.userAgent,
       verification_status: verification.valid ? "valid" : "invalid",
-      verification_reason: verification.reason || "success",
+      verification_reason: verification.valid ? "success" : verification.reason,
     };
 
     const eventPromise = params.recordEvent(
@@ -329,7 +364,7 @@ export async function validateTokenAndBuildResult(
 
   if (!verification.valid) {
     return buildBlockResult({
-      reason: verification.reason || LicenseTokenInvalidReason.MISSING_TOKEN,
+      reason: verification.reason,
       requestUrl: params.url,
       supertabBaseUrl: params.supertabBaseUrl,
     });

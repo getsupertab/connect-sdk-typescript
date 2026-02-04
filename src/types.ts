@@ -33,12 +33,9 @@ export interface EventPayload {
   properties: Record<string, any>;
 }
 
-export interface LicenseTokenVerificationResult {
-  valid: boolean;
-  reason?: string;
-  licenseId?: string;
-  payload?: any;
-}
+export type LicenseTokenVerificationResult =
+  | { valid: true; licenseId?: string; payload: any }
+  | { valid: false; reason: LicenseTokenInvalidReason; licenseId?: string };
 
 export enum LicenseTokenInvalidReason {
   MISSING_TOKEN = "missing_license_token",
@@ -49,6 +46,7 @@ export enum LicenseTokenInvalidReason {
   SIGNATURE_VERIFICATION_FAILED = "license_signature_verification_failed",
   EXPIRED = "license_token_expired",
   INVALID_AUDIENCE = "invalid_license_audience",
+  SERVER_ERROR = "server_error",
 }
 
 export const FASTLY_BACKEND = "stc-backend";
