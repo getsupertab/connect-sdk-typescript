@@ -1,10 +1,5 @@
-import {
-  decodeProtectedHeader,
-  decodeJwt,
-  JWTPayload,
-  JWTHeaderParameters,
-  jwtVerify,
-} from "jose";
+import type { JWTPayload, JWTHeaderParameters } from "jose";
+import { loadJose } from "./jose";
 
 interface LicenseJWTPayload extends JWTPayload {
   license_id?: string;
@@ -40,6 +35,8 @@ export async function verifyLicenseToken({
   supertabBaseUrl,
   debug,
 }: VerifyLicenseTokenParams): Promise<LicenseTokenVerificationResult> {
+  const { decodeProtectedHeader, decodeJwt, jwtVerify } = await loadJose();
+
   if (!licenseToken) {
     return {
       valid: false,
