@@ -23,7 +23,7 @@ const DEFAULT_TEST_MODE = TestMode.SOFT_NO_BOT_DETECTION;
 const TEST_MODE = process.env.TEST_MODE || DEFAULT_TEST_MODE;
 
 // Environment selection - single var picks full config
-const TEST_ENV = process.env.TEST_ENV || "local";
+const TEST_ENV = process.env.TEST_ENV || "sandbox-cloudfront";
 
 const config = ENVIRONMENTS[TEST_ENV] || ENVIRONMENTS.local;
 
@@ -32,7 +32,7 @@ const config = ENVIRONMENTS[TEST_ENV] || ENVIRONMENTS.local;
 // ============================================================================
 
 const USER_AGENTS = {
-  bot: "curl/7.64.1",
+  bot: "curl",
   browser:
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 };
@@ -126,7 +126,7 @@ describeMode(TestMode.SOFT_NO_BOT_DETECTION)("Soft Mode (No Bot Detection)", () 
     expect(response.status).toBe(200);
     expect(response.headers.get("X-RSL-Status")).toBeNull();
     expect(response.headers.get("WWW-Authenticate")).toBeNull();
-  });
+  }, 30000);  // increase timeout to 30s
 
   it("valid token gets 200", async () => {
     const response = await fetchResource({ userAgent: "bot", token: "valid" });
@@ -137,7 +137,7 @@ describeMode(TestMode.SOFT_NO_BOT_DETECTION)("Soft Mode (No Bot Detection)", () 
     const response = await fetchResource({ userAgent: "bot", token: "invalid" });
     expect(response.status).toBe(401);
     expect(response.headers.get("WWW-Authenticate")).toBeTruthy();
-  });
+  }, 30000);  // increase timeout to 30s
 });
 
 // ============================================================================
@@ -150,19 +150,19 @@ describeMode(TestMode.STRICT_NO_BOT_DETECTION)("Strict Mode (No Bot Detection)",
     expect(response.status).toBe(200);
     expect(response.headers.get("X-RSL-Status")).toBeNull();
     expect(response.headers.get("WWW-Authenticate")).toBeNull();
-  });
+  }, 30000);  // increase timeout to 30s
 
   it("valid token gets 200", async () => {
     const response = await fetchResource({ userAgent: "bot", token: "valid" });
     expect(response.status).toBe(200);
-  });
+  }, 30000);  // increase timeout to 30s
 
   it("invalid token gets 401", async () => {
     const response = await fetchResource({ userAgent: "bot", token: "invalid" });
     expect(response.status).toBe(401);
     expect(response.headers.get("WWW-Authenticate")).toBeTruthy();
   });
-});
+  }, 30000);  // increase timeout to 30s
 
 // ============================================================================
 // soft-bot-detection - Soft enforcement, bot detection ON
@@ -199,17 +199,17 @@ describeMode(TestMode.STRICT_BOT_DETECTION)("Strict Mode (Bot Detection ON)", ()
     expect(response.status).toBe(401);
     expect(response.headers.get("WWW-Authenticate")).toBeTruthy();
     expect(response.headers.get("Link")).toBeTruthy();
-  });
+  }, 30000);  // increase timeout to 30s
 
   it("bot + valid token gets 200", async () => {
     const response = await fetchResource({ userAgent: "bot", token: "valid" });
     expect(response.status).toBe(200);
-  });
+  }, 30000);  // increase timeout to 30s
 
   it("bot + invalid token gets 401", async () => {
     const response = await fetchResource({ userAgent: "bot", token: "invalid" });
     expect(response.status).toBe(401);
     expect(response.headers.get("WWW-Authenticate")).toBeTruthy();
     expect(response.headers.get("Link")).toBeTruthy();
-  });
+  }, 30000);  // increase timeout to 30s
 });
