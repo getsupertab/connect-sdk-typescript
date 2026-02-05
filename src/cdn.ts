@@ -1,4 +1,10 @@
-import { HandlerAction, HandlerResult } from "./types";
+import {
+  HandlerAction,
+  HandlerResult,
+  CloudFrontHeaders,
+  CloudFrontRequestEvent,
+  CloudFrontRequestResult,
+} from "./types";
 import { hostRSLicenseXML } from "./license";
 
 // Interface for what the CDN handlers need - avoids circular dependency
@@ -73,4 +79,44 @@ export async function handleFastlyRequest(
   }
 
   return originResponse;
+}
+
+export async function handleCloudfrontRequest<TRequest extends Record<string, any>>(
+  handler: RequestHandler,
+  event: CloudFrontRequestEvent<TRequest>
+): Promise<CloudFrontRequestResult<TRequest>> {
+  const cfRequest = event.Records[0].cf.request;
+
+  // Convert CloudFront request to Web API Request
+  const url = `https://${cfRequest.headers.host[0].value}${cfRequest.uri}${cfRequest.querystring ? "?" + cfRequest.querystring : ""}`;
+
+  const headers = new Headers();
+  Object.entries(cfRequest.headers).forEach(([key, values]) => {
+    values.forEach(({ value }) => headers.append(key, value));
+  });
+
+  const webRequest = new Request(url, {
+    method: cfRequest.method,
+    headers: headers,
+  });
+
+  const result = await handler.handleRequest(webRequest);
+
+  if (result.action === HandlerAction.BLOCK) {
+    const responseHeaders: CloudFrontHeaders = {};
+    Object.entries(result.headers).forEach(([key, value]) => {
+      responseHeaders[key.toLowerCase()] = [{ key, value }];
+    });
+
+    return {
+      status: result.status.toString(),
+      statusDescription:
+        result.status === 401 ? "Unauthorized" : "Payment Required",
+      headers: responseHeaders,
+      body: result.body,
+    };
+  }
+
+  // Allow request to continue to origin
+  return cfRequest;
 }

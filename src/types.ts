@@ -64,3 +64,48 @@ export enum HandlerAction {
 export type HandlerResult =
   | { action: HandlerAction.ALLOW; headers?: Record<string, string> }
   | { action: HandlerAction.BLOCK; status: number; body: string; headers: Record<string, string> };
+
+// CloudFront Lambda@Edge types
+// Uses permissive types to be compatible with aws-lambda package types
+export interface CloudFrontHeaders {
+  [key: string]: Array<{ key?: string; value: string }>;
+}
+
+export interface CloudFrontResultResponse {
+  status: string;
+  statusDescription?: string;
+  headers?: CloudFrontHeaders;
+  bodyEncoding?: "text" | "base64";
+  body?: string;
+}
+
+// CloudFrontRequestEvent uses a generic request type to accept aws-lambda's CloudFrontRequest
+export interface CloudFrontRequestEvent<TRequest = Record<string, any>> {
+  Records: Array<{
+    cf: {
+      config?: {
+        distributionDomainName?: string;
+        distributionId?: string;
+        eventType?: string;
+        requestId?: string;
+      };
+      request: TRequest & {
+        uri: string;
+        method: string;
+        querystring: string;
+        headers: CloudFrontHeaders;
+      };
+    };
+  }>;
+}
+
+// Result can be either the original request (pass-through) or a response
+// Using generic to preserve the original request type for pass-through
+export type CloudFrontRequestResult<TRequest = Record<string, any>> = TRequest | CloudFrontResultResponse;
+
+export interface CloudfrontHandlerOptions {
+  apiKey: string;
+  merchantSystemUrn: string;
+  botDetector?: BotDetector;
+  enforcement?: EnforcementMode;
+}

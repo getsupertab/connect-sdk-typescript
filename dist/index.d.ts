@@ -55,6 +55,44 @@ type HandlerResult = {
     body: string;
     headers: Record<string, string>;
 };
+interface CloudFrontHeaders {
+    [key: string]: Array<{
+        key?: string;
+        value: string;
+    }>;
+}
+interface CloudFrontResultResponse {
+    status: string;
+    statusDescription?: string;
+    headers?: CloudFrontHeaders;
+    bodyEncoding?: "text" | "base64";
+    body?: string;
+}
+interface CloudFrontRequestEvent<TRequest = Record<string, any>> {
+    Records: Array<{
+        cf: {
+            config?: {
+                distributionDomainName?: string;
+                distributionId?: string;
+                eventType?: string;
+                requestId?: string;
+            };
+            request: TRequest & {
+                uri: string;
+                method: string;
+                querystring: string;
+                headers: CloudFrontHeaders;
+            };
+        };
+    }>;
+}
+type CloudFrontRequestResult<TRequest = Record<string, any>> = TRequest | CloudFrontResultResponse;
+interface CloudfrontHandlerOptions {
+    apiKey: string;
+    merchantSystemUrn: string;
+    botDetector?: BotDetector;
+    enforcement?: EnforcementMode;
+}
 
 /**
  * Default bot detection logic using multiple signals.
@@ -126,6 +164,10 @@ declare class SupertabConnect {
         botDetector?: BotDetector;
         enforcement?: EnforcementMode;
     }): Promise<Response>;
+    /**
+     * Handle incoming requests for AWS CloudFront Lambda@Edge.
+     */
+    static cloudfrontHandleRequests<TRequest extends Record<string, any>>(event: CloudFrontRequestEvent<TRequest>, options: CloudfrontHandlerOptions): Promise<CloudFrontRequestResult<TRequest>>;
 }
 
-export { type BotDetector, EnforcementMode, type Env, HandlerAction, type HandlerResult, SupertabConnect, defaultBotDetector };
+export { type BotDetector, type CloudFrontRequestEvent, type CloudFrontRequestResult, type CloudfrontHandlerOptions, EnforcementMode, type Env, HandlerAction, type HandlerResult, SupertabConnect, defaultBotDetector };

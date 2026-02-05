@@ -17,10 +17,26 @@ import {
   verifyLicenseToken as verifyLicenseTokenHelper,
   validateTokenAndBuildResult,
 } from "./license";
-import { handleCloudflareRequest, handleFastlyRequest } from "./cdn";
+import {
+  handleCloudflareRequest,
+  handleFastlyRequest,
+  handleCloudfrontRequest,
+} from "./cdn";
+import {
+  CloudFrontRequestEvent,
+  CloudFrontRequestResult,
+  CloudfrontHandlerOptions,
+} from "./types";
 
 export { EnforcementMode, HandlerAction };
-export type { Env, BotDetector, HandlerResult };
+export type {
+  Env,
+  BotDetector,
+  HandlerResult,
+  CloudFrontRequestEvent,
+  CloudFrontRequestResult,
+  CloudfrontHandlerOptions,
+};
 export { defaultBotDetector } from "./bots";
 
 /**
@@ -274,5 +290,21 @@ export class SupertabConnect {
           }
         : undefined
     );
+  }
+
+  /**
+   * Handle incoming requests for AWS CloudFront Lambda@Edge.
+   */
+  static async cloudfrontHandleRequests<TRequest extends Record<string, any>>(
+    event: CloudFrontRequestEvent<TRequest>,
+    options: CloudfrontHandlerOptions
+  ): Promise<CloudFrontRequestResult<TRequest>> {
+    const instance = new SupertabConnect({
+      apiKey: options.apiKey,
+      merchantSystemUrn: options.merchantSystemUrn,
+      botDetector: options.botDetector,
+      enforcement: options.enforcement,
+    });
+    return handleCloudfrontRequest(instance, event);
   }
 }
