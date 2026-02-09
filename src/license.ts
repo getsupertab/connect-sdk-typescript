@@ -232,6 +232,7 @@ export function buildSignalResult(requestUrl: string): HandlerResult {
     },
   };
 }
+
 function reasonToRslError(reason: LicenseTokenInvalidReason | string): { rslError: string; status: number } {
   switch (reason) {
     case LicenseTokenInvalidReason.MISSING_TOKEN:
@@ -338,6 +339,7 @@ export async function verifyAndRecordEvent(
       verification_reason: verification.valid ? "success" : verification.reason,
     },
     licenseId: verification.licenseId,
+    debug: params.debug,
   });
   if (params.ctx?.waitUntil) {
     params.ctx.waitUntil(eventPromise);
