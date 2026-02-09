@@ -1,6 +1,7 @@
 import {
   HandlerAction,
   HandlerResult,
+  ExecutionContext,
   CloudFrontHeaders,
   CloudFrontRequestEvent,
   CloudFrontRequestResult,
@@ -9,13 +10,13 @@ import { hostRSLicenseXML } from "./license";
 
 // Interface for what the CDN handlers need - avoids circular dependency
 interface RequestHandler {
-  handleRequest(request: Request, ctx?: any): Promise<HandlerResult>;
+  handleRequest(request: Request, ctx?: ExecutionContext): Promise<HandlerResult>;
 }
 
 export async function handleCloudflareRequest(
   handler: RequestHandler,
   request: Request,
-  ctx: any
+  ctx: ExecutionContext
 ): Promise<Response> {
   const result = await handler.handleRequest(request, ctx);
 
