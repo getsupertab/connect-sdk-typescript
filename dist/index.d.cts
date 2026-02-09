@@ -102,7 +102,17 @@ declare class SupertabConnect {
     private botDetector?;
     private debug;
     private static _instance;
+    /**
+     * Create a new SupertabConnect instance (singleton).
+     * Returns the existing instance if one exists with the same config.
+     * @param config SDK configuration including apiKey and merchantSystemUrn
+     * @param reset Pass true to replace an existing instance with different config
+     * @throws If an instance with different config already exists and reset is false
+     */
     constructor(config: SupertabConnectConfig, reset?: boolean);
+    /**
+     * Clear the singleton instance, allowing a new one to be created with different config.
+     */
     static resetInstance(): void;
     /**
      * Override the default base URL for API requests (intended for local development/testing).
@@ -168,10 +178,21 @@ declare class SupertabConnect {
     }): Promise<string>;
     /**
      * Handle incoming requests for Cloudflare Workers.
+     * Pass this directly as your Worker's fetch handler.
+     * @param request The incoming Worker request
+     * @param env Worker environment bindings containing MERCHANT_API_KEY and MERCHANT_SYSTEM_URN
+     * @param ctx Worker execution context for non-blocking event recording
      */
     static cloudflareHandleRequests(request: Request, env: Env, ctx: ExecutionContext): Promise<Response>;
     /**
      * Handle incoming requests for Fastly Compute.
+     * @param request The incoming Fastly request
+     * @param merchantSystemUrn The merchant system URN for identification
+     * @param merchantApiKey The merchant API key for authentication
+     * @param originBackend The Fastly backend name to forward allowed requests to
+     * @param options.enableRSL Serve license.xml at /license.xml for RSL-compliant clients (default: false)
+     * @param options.botDetector Custom bot detection function
+     * @param options.enforcement Enforcement mode (default: SOFT)
      */
     static fastlyHandleRequests(request: Request, merchantSystemUrn: string, merchantApiKey: string, originBackend: string, options?: {
         enableRSL?: boolean;
@@ -180,6 +201,9 @@ declare class SupertabConnect {
     }): Promise<Response>;
     /**
      * Handle incoming requests for AWS CloudFront Lambda@Edge.
+     * Use as the handler for a viewer-request LambdaEdge function.
+     * @param event The CloudFront viewer-request event
+     * @param options Configuration including apiKey, merchantSystemUrn, and optional botDetector/enforcement
      */
     static cloudfrontHandleRequests<TRequest extends Record<string, any>>(event: CloudFrontRequestEvent<TRequest>, options: CloudfrontHandlerOptions): Promise<CloudFrontRequestResult<TRequest>>;
 }
