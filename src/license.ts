@@ -13,14 +13,34 @@ import {
   FetchOptions,
 } from "./types";
 import { fetchPlatformJwks } from "./jwks";
-
-export type EventRecorder = (
-  eventName: string,
-  properties: Record<string, any>,
-  licenseId?: string
-) => Promise<void>;
+import { recordEvent } from "./events";
 
 const stripTrailingSlash = (value: string) => value.trim().replace(/\/+$/, "");
+
+function reasonToErrorDescription(reason: LicenseTokenInvalidReason): string {
+  switch (reason) {
+    case LicenseTokenInvalidReason.MISSING_TOKEN:
+      return "Authorization header missing or malformed";
+    case LicenseTokenInvalidReason.INVALID_ALG:
+      return "Unsupported token algorithm";
+    case LicenseTokenInvalidReason.EXPIRED:
+      return "The license token has expired";
+    case LicenseTokenInvalidReason.SIGNATURE_VERIFICATION_FAILED:
+      return "The license token signature is invalid";
+    case LicenseTokenInvalidReason.INVALID_HEADER:
+      return "The license token header is malformed";
+    case LicenseTokenInvalidReason.INVALID_PAYLOAD:
+      return "The license token payload is malformed";
+    case LicenseTokenInvalidReason.INVALID_ISSUER:
+      return "The license token issuer is not recognized";
+    case LicenseTokenInvalidReason.INVALID_AUDIENCE:
+      return "The license does not grant access to this resource";
+    case LicenseTokenInvalidReason.SERVER_ERROR:
+      return "The server encountered an error validating the license";
+    default:
+      return "License token missing, expired, revoked, or malformed";
+  }
+}
 
 export type VerifyLicenseTokenParams = {
   licenseToken: string;
@@ -41,6 +61,7 @@ export async function verifyLicenseToken({
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.MISSING_TOKEN,
+      error: reasonToErrorDescription(LicenseTokenInvalidReason.MISSING_TOKEN),
     };
   }
 
@@ -54,6 +75,7 @@ export async function verifyLicenseToken({
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.INVALID_HEADER,
+      error: reasonToErrorDescription(LicenseTokenInvalidReason.INVALID_HEADER),
     };
   }
 
@@ -64,6 +86,7 @@ export async function verifyLicenseToken({
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.INVALID_ALG,
+      error: reasonToErrorDescription(LicenseTokenInvalidReason.INVALID_ALG),
     };
   }
 
@@ -77,6 +100,7 @@ export async function verifyLicenseToken({
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.INVALID_PAYLOAD,
+      error: reasonToErrorDescription(LicenseTokenInvalidReason.INVALID_PAYLOAD),
     };
   }
 
@@ -93,6 +117,7 @@ export async function verifyLicenseToken({
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.INVALID_ISSUER,
+      error: reasonToErrorDescription(LicenseTokenInvalidReason.INVALID_ISSUER),
       licenseId,
     };
   }
@@ -120,6 +145,7 @@ export async function verifyLicenseToken({
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.INVALID_AUDIENCE,
+      error: reasonToErrorDescription(LicenseTokenInvalidReason.INVALID_AUDIENCE),
       licenseId,
     };
   }
@@ -134,6 +160,7 @@ export async function verifyLicenseToken({
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.SERVER_ERROR,
+      error: reasonToErrorDescription(LicenseTokenInvalidReason.SERVER_ERROR),
       licenseId,
     };
   }
@@ -167,6 +194,7 @@ export async function verifyLicenseToken({
       return {
         valid: false,
         reason: LicenseTokenInvalidReason.EXPIRED,
+        error: reasonToErrorDescription(LicenseTokenInvalidReason.EXPIRED),
         licenseId,
       };
     }
@@ -174,6 +202,7 @@ export async function verifyLicenseToken({
     return {
       valid: false,
       reason: LicenseTokenInvalidReason.SIGNATURE_VERIFICATION_FAILED,
+      error: reasonToErrorDescription(LicenseTokenInvalidReason.SIGNATURE_VERIFICATION_FAILED),
       licenseId,
     };
   }
@@ -203,77 +232,37 @@ export function buildSignalResult(requestUrl: string): HandlerResult {
     },
   };
 }
+function reasonToRslError(reason: LicenseTokenInvalidReason | string): { rslError: string; status: number } {
+  switch (reason) {
+    case LicenseTokenInvalidReason.MISSING_TOKEN:
+    case LicenseTokenInvalidReason.INVALID_ALG:
+      return { rslError: "invalid_request", status: 401 };
+    case LicenseTokenInvalidReason.EXPIRED:
+    case LicenseTokenInvalidReason.SIGNATURE_VERIFICATION_FAILED:
+    case LicenseTokenInvalidReason.INVALID_HEADER:
+    case LicenseTokenInvalidReason.INVALID_PAYLOAD:
+    case LicenseTokenInvalidReason.INVALID_ISSUER:
+      return { rslError: "invalid_token", status: 401 };
+    case LicenseTokenInvalidReason.INVALID_AUDIENCE:
+      return { rslError: "insufficient_scope", status: 403 };
+    case LicenseTokenInvalidReason.SERVER_ERROR:
+      return { rslError: "server_error", status: 503 };
+    default:
+      return { rslError: "invalid_token", status: 401 };
+  }
+}
+
 export function buildBlockResult({
   reason,
+  error,
   requestUrl,
-  supertabBaseUrl,
 }: {
   reason: LicenseTokenInvalidReason | string;
+  error: string;
   requestUrl: string;
-  supertabBaseUrl: string;
 }): HandlerResult {
-  let rslError: string;
-  let errorDescription: string;
-  let status: number;
-
-  switch (reason) {
-    // 401 — invalid_request: missing or malformed request
-    case LicenseTokenInvalidReason.MISSING_TOKEN:
-      status = 401;
-      rslError = "invalid_request";
-      errorDescription = "Authorization header missing or malformed";
-      break;
-    case LicenseTokenInvalidReason.INVALID_ALG:
-      status = 401;
-      rslError = "invalid_request";
-      errorDescription = "Unsupported token algorithm";
-      break;
-
-    // 401 — invalid_token: token exists but is bad
-    case LicenseTokenInvalidReason.EXPIRED:
-      status = 401;
-      rslError = "invalid_token";
-      errorDescription = "The license token has expired";
-      break;
-    case LicenseTokenInvalidReason.SIGNATURE_VERIFICATION_FAILED:
-      status = 401;
-      rslError = "invalid_token";
-      errorDescription = "The license token signature is invalid";
-      break;
-    case LicenseTokenInvalidReason.INVALID_HEADER:
-      status = 401;
-      rslError = "invalid_token";
-      errorDescription = "The license token header is malformed";
-      break;
-    case LicenseTokenInvalidReason.INVALID_PAYLOAD:
-      status = 401;
-      rslError = "invalid_token";
-      errorDescription = "The license token payload is malformed";
-      break;
-    case LicenseTokenInvalidReason.INVALID_ISSUER:
-      status = 401;
-      rslError = "invalid_token";
-      errorDescription = "The license token issuer is not recognized";
-      break;
-    // 403 — insufficient_scope: valid token, wrong resource/usage
-    case LicenseTokenInvalidReason.INVALID_AUDIENCE:
-      status = 403;
-      rslError = "insufficient_scope";
-      errorDescription = "The license does not grant access to this resource";
-      break;
-    // 503 — server-side validation failure
-    case LicenseTokenInvalidReason.SERVER_ERROR:
-      status = 503;
-      rslError = "server_error";
-      errorDescription = "The server encountered an error validating the license";
-      break;
-
-    default:
-      status = 401;
-      rslError = "invalid_token";
-      errorDescription = "License token missing, expired, revoked, or malformed";
-  }
-
+  const { rslError, status } = reasonToRslError(reason);
+  const errorDescription = error;
   const licenseLink = generateLicenseLink({ requestUrl });
 
   return {
@@ -281,10 +270,10 @@ export function buildBlockResult({
     status,
     body: `Access to this resource requires a valid license token. Error: ${rslError} - ${errorDescription}`,
     headers: {
-    "Content-Type": "text/plain; charset=UTF-8",
-    "WWW-Authenticate": `License error="${rslError}", error_description="${errorDescription}"`,
-    Link: `<${licenseLink}>; rel="license"; type="application/rsl+xml"`,
-  },
+      "Content-Type": "text/plain; charset=UTF-8",
+      "WWW-Authenticate": `License error="${rslError}", error_description="${errorDescription}"`,
+      Link: `<${licenseLink}>; rel="license"; type="application/rsl+xml"`,
+    },
   };
 }
 
@@ -316,19 +305,20 @@ export async function hostRSLicenseXML(
   });
 }
 
-export type ValidateTokenParams = {
+export type VerifyAndRecordEventParams = {
   token: string;
   url: string;
   userAgent: string;
   supertabBaseUrl: string;
   debug: boolean;
-  recordEvent?: EventRecorder;
-  ctx?: any;
+  apiKey: string;
+  merchantSystemUrn: string;
+  ctx?: { waitUntil(promise: Promise<any>): void };
 };
 
-export async function validateTokenAndBuildResult(
-  params: ValidateTokenParams
-): Promise<HandlerResult> {
+export async function verifyAndRecordEvent(
+  params: VerifyAndRecordEventParams
+): Promise<LicenseTokenVerificationResult> {
   const verification = await verifyLicenseToken({
     licenseToken: params.token,
     requestUrl: params.url,
@@ -336,36 +326,22 @@ export async function validateTokenAndBuildResult(
     debug: params.debug,
   });
 
-  if (params.recordEvent) {
-    const eventName = verification.valid
-      ? "license_used"
-      : verification.reason;
-
-    const eventProperties = {
+  const eventPromise = recordEvent({
+    apiKey: params.apiKey,
+    merchantSystemUrn: params.merchantSystemUrn,
+    baseUrl: params.supertabBaseUrl,
+    eventName: verification.valid ? "license_used" : verification.reason,
+    properties: {
       page_url: params.url,
       user_agent: params.userAgent,
       verification_status: verification.valid ? "valid" : "invalid",
       verification_reason: verification.valid ? "success" : verification.reason,
-    };
-
-    const eventPromise = params.recordEvent(
-      eventName,
-      eventProperties,
-      verification.licenseId
-    );
-
-    if (params.ctx?.waitUntil) {
-      params.ctx.waitUntil(eventPromise);
-    }
+    },
+    licenseId: verification.licenseId,
+  });
+  if (params.ctx?.waitUntil) {
+    params.ctx.waitUntil(eventPromise);
   }
 
-  if (!verification.valid) {
-    return buildBlockResult({
-      reason: verification.reason,
-      requestUrl: params.url,
-      supertabBaseUrl: params.supertabBaseUrl,
-    });
-  }
-
-  return { action: HandlerAction.ALLOW };
+  return verification;
 }
