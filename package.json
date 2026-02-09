@@ -26,7 +26,8 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "vitest run"
+    "test": "vitest run",
+    "demo": "tsx tests/e2e/demo.ts"
   },
   "keywords": [
     "supertab",
@@ -38,6 +39,7 @@
   "devDependencies": {
     "@types/node": "^18.0.0",
     "tsup": "^8.5.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.0.0",
     "vitest": "^3.2.4"
   },
