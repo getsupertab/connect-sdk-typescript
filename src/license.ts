@@ -5,6 +5,7 @@ interface LicenseJWTPayload extends JWTPayload {
   license_id?: string;
 }
 import {
+  ExecutionContext,
   HandlerAction,
   HandlerResult,
   LicenseTokenInvalidReason,
@@ -253,6 +254,17 @@ function reasonToRslError(reason: LicenseTokenInvalidReason | string): { rslErro
   }
 }
 
+/**
+ * Sanitize a string for safe use in an HTTP header quoted-string (RFC 7230).
+ * Strips CR/LF to prevent header injection and escapes backslashes and quotes.
+ */
+function sanitizeHeaderValue(value: string): string {
+  return value
+    .replace(/[\r\n]/g, "")
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"');
+}
+
 export function buildBlockResult({
   reason,
   error,
@@ -263,13 +275,13 @@ export function buildBlockResult({
   requestUrl: string;
 }): HandlerResult {
   const { rslError, status } = reasonToRslError(reason);
-  const errorDescription = error;
+  const errorDescription = sanitizeHeaderValue(error);
   const licenseLink = generateLicenseLink({ requestUrl });
 
   return {
     action: HandlerAction.BLOCK,
     status,
-    body: `Access to this resource requires a valid license token. Error: ${rslError} - ${errorDescription}`,
+    body: `Access to this resource requires a valid license token. Error: ${rslError} - ${error}`,
     headers: {
       "Content-Type": "text/plain; charset=UTF-8",
       "WWW-Authenticate": `License error="${rslError}", error_description="${errorDescription}"`,
@@ -314,7 +326,7 @@ export type VerifyAndRecordEventParams = {
   debug: boolean;
   apiKey: string;
   merchantSystemUrn: string;
-  ctx?: { waitUntil(promise: Promise<any>): void };
+  ctx?: ExecutionContext;
 };
 
 export async function verifyAndRecordEvent(
