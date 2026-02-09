@@ -4,10 +4,9 @@ import {
   BotDetector,
   HandlerAction,
   HandlerResult,
-  EventPayload,
-  FASTLY_BACKEND,
   LicenseTokenInvalidReason,
-  LicenseTokenVerificationResult,
+  RSLVerificationResult,
+  ExecutionContext,
   Env,
 } from "./types";
 import { obtainLicenseToken as obtainLicenseTokenHelper } from "./customer";
@@ -15,7 +14,7 @@ import {
   buildBlockResult,
   buildSignalResult,
   verifyLicenseToken as verifyLicenseTokenHelper,
-  validateTokenAndBuildResult,
+  verifyAndRecordEvent,
 } from "./license";
 import {
   handleCloudflareRequest,
@@ -30,6 +29,8 @@ import {
 
 export { EnforcementMode, HandlerAction };
 export type {
+  RSLVerificationResult,
+  ExecutionContext,
   Env,
   BotDetector,
   HandlerResult,
@@ -54,6 +55,13 @@ export class SupertabConnect {
 
   private static _instance: SupertabConnect | null = null;
 
+  /**
+   * Create a new SupertabConnect instance (singleton).
+   * Returns the existing instance if one exists with the same config.
+   * @param config SDK configuration including apiKey and merchantSystemUrn
+   * @param reset Pass true to replace an existing instance with different config
+   * @throws If an instance with different config already exists and reset is false
+   */
   public constructor(config: SupertabConnectConfig, reset: boolean = false) {
     if (!reset && SupertabConnect._instance) {
       // If reset was not requested and an instance conflicts with the provided config, throw an error
@@ -92,6 +100,9 @@ export class SupertabConnect {
     SupertabConnect._instance = this;
   }
 
+  /**
+   * Clear the singleton instance, allowing a new one to be created with different config.
+   */
   public static resetInstance(): void {
     SupertabConnect._instance = null;
   }
@@ -111,69 +122,79 @@ export class SupertabConnect {
   }
 
   /**
-   * Verify a license token
-   * @param licenseToken The license token to verify
-   * @param requestUrl The URL of the request being made
+   * Pure token verification — verifies a license token without recording any events.
+   * @param options.token The license token to verify
+   * @param options.resourceUrl The URL of the resource being accessed
+   * @param options.baseUrl Optional override for the Supertab Connect API base URL
+   * @param options.debug Enable debug logging (default: false)
    * @returns A promise that resolves with the verification result
    */
-  async verifyLicenseToken(
-    licenseToken: string,
-    requestUrl: string
-  ): Promise<LicenseTokenVerificationResult> {
-    return verifyLicenseTokenHelper({
-      licenseToken,
-      requestUrl,
-      supertabBaseUrl: SupertabConnect.baseUrl,
-      debug: this.debug,
+  static async verify(options: {
+    token: string;
+    resourceUrl: string;
+    baseUrl?: string;
+    debug?: boolean;
+  }): Promise<RSLVerificationResult> {
+    const baseUrl = options.baseUrl ?? SupertabConnect.baseUrl;
+
+    const result = await verifyLicenseTokenHelper({
+      licenseToken: options.token,
+      requestUrl: options.resourceUrl,
+      supertabBaseUrl: baseUrl,
+      debug: options.debug ?? false,
     });
+
+    if (result.valid) {
+      return { valid: true };
+    }
+
+    return { valid: false, error: result.error };
   }
 
   /**
-   * Records an analytics event
-   * @param eventName Name of the event to record
-   * @param properties Additional properties to include with the event
-   * @param licenseId Optional license ID associated with the event
-   * @returns Promise that resolves when the event is recorded
+   * Verify a license token and record an analytics event.
+   * Uses the instance's apiKey and merchantSystemUrn for event recording.
+   * @param options.token The license token to verify
+   * @param options.resourceUrl The URL of the resource being accessed
+   * @param options.userAgent Optional user agent string for event recording
+   * @param options.debug Enable debug logging (default: false)
+   * @param options.ctx Optional execution context with waitUntil for non-blocking event recording
+   * @returns A promise that resolves with the verification result
    */
-  async recordEvent(
-    eventName: string,
-    properties: Record<string, any> = {},
-    licenseId?: string
-  ): Promise<void> {
-    const payload: EventPayload = {
-      event_name: eventName,
-      merchant_system_urn: this.merchantSystemUrn ? this.merchantSystemUrn : "",
-      license_id: licenseId,
-      properties,
-    };
+  async verifyAndRecord(options: {
+    token: string;
+    resourceUrl: string;
+    userAgent?: string;
+    debug?: boolean;
+    ctx?: ExecutionContext;
+  }): Promise<RSLVerificationResult> {
+    const result = await verifyAndRecordEvent({
+      token: options.token,
+      url: options.resourceUrl,
+      userAgent: options.userAgent ?? "unknown",
+      supertabBaseUrl: SupertabConnect.baseUrl,
+      debug: options.debug ?? this.debug,
+      apiKey: this.apiKey!,
+      merchantSystemUrn: this.merchantSystemUrn,
+      ctx: options.ctx,
+    });
 
-    try {
-      let options: any = {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      };
-      // @ts-ignore
-      if (globalThis?.fastly) {
-        options = { ...options, backend: FASTLY_BACKEND };
-      }
-      const response = await fetch(
-        `${SupertabConnect.baseUrl}/events`,
-        options
-      );
-
-      if (!response.ok) {
-        console.log(`Failed to record event: ${response.status}`);
-      }
-    } catch (error) {
-      console.log("Error recording event:", error);
+    if (result.valid) {
+      return { valid: true };
     }
+
+    return { valid: false, error: result.error };
   }
 
-  async handleRequest(request: Request, ctx?: any): Promise<HandlerResult> {
+  /**
+   * Handle an incoming request by extracting the license token, verifying it, and recording an analytics event.
+   * When no token is present, bot detection and enforcement mode determine the response.
+   * @param request The incoming HTTP request
+   * @param ctx Execution context for non-blocking event recording.
+   *   Pass this from your platform (e.g. Cloudflare Workers)
+   * @returns A promise that resolves with the handler result indicating ALLOW or  BLOCK request
+   */
+  async handleRequest(request: Request, ctx?: ExecutionContext): Promise<HandlerResult> {
     const auth = request.headers.get("Authorization") || "";
     const token = auth.startsWith("License ") ? auth.slice(8) : null;
     const url = request.url;
@@ -184,15 +205,24 @@ export class SupertabConnect {
       if (this.enforcement === EnforcementMode.DISABLED) {
         return { action: HandlerAction.ALLOW };
       }
-      return validateTokenAndBuildResult({
+      const verification = await verifyAndRecordEvent({
         token,
         url,
         userAgent,
         supertabBaseUrl: SupertabConnect.baseUrl,
         debug: this.debug,
-        recordEvent: this.recordEvent.bind(this),
+        apiKey: this.apiKey!,
+        merchantSystemUrn: this.merchantSystemUrn,
         ctx,
       });
+      if (!verification.valid) {
+        return buildBlockResult({
+          reason: verification.reason,
+          error: verification.error,
+          requestUrl: url,
+        });
+      }
+      return { action: HandlerAction.ALLOW };
     }
 
     // No token from here on
@@ -207,8 +237,8 @@ export class SupertabConnect {
       case EnforcementMode.STRICT:
         return buildBlockResult({
           reason: LicenseTokenInvalidReason.MISSING_TOKEN,
+          error: "Authorization header missing or malformed",
           requestUrl: url,
-          supertabBaseUrl: SupertabConnect.baseUrl,
         });
       case EnforcementMode.SOFT:
         return buildSignalResult(url);
@@ -219,35 +249,37 @@ export class SupertabConnect {
 
   /**
    * Request a license token from the Supertab Connect token endpoint.
-   * Automatically fetches and parses license.xml from the resource URL's origin,
-   * using the token endpoint specified in the matching content element's server attribute.
-   * @param clientId OAuth client identifier.
-   * @param clientSecret OAuth client secret for client_credentials flow.
-   * @param resourceUrl Resource URL attempting to access with a License.
-   * @param debug Enable debug logging (default: false).
+   * @param options.clientId OAuth client identifier.
+   * @param options.clientSecret OAuth client secret for client_credentials flow.
+   * @param options.resourceUrl Resource URL attempting to access with a License.
+   * @param options.debug Enable debug logging (default: false).
    * @returns Promise resolving to the issued license access token string.
    */
-  static async obtainLicenseToken(
-    clientId: string,
-    clientSecret: string,
-    resourceUrl: string,
-    debug: boolean = false
-  ): Promise<string> {
+  static async obtainLicenseToken(options: {
+    clientId: string;
+    clientSecret: string;
+    resourceUrl: string;
+    debug?: boolean;
+  }): Promise<string> {
     return obtainLicenseTokenHelper({
-      clientId,
-      clientSecret,
-      resourceUrl,
-      debug,
+      clientId: options.clientId,
+      clientSecret: options.clientSecret,
+      resourceUrl: options.resourceUrl,
+      debug: options.debug,
     });
   }
 
   /**
    * Handle incoming requests for Cloudflare Workers.
+   * Pass this directly as your Worker's fetch handler.
+   * @param request The incoming Worker request
+   * @param env Worker environment bindings containing MERCHANT_API_KEY and MERCHANT_SYSTEM_URN
+   * @param ctx Worker execution context for non-blocking event recording
    */
   static async cloudflareHandleRequests(
     request: Request,
     env: Env,
-    ctx: any
+    ctx: ExecutionContext
   ): Promise<Response> {
     const instance = new SupertabConnect({
       apiKey: env.MERCHANT_API_KEY,
@@ -258,6 +290,13 @@ export class SupertabConnect {
 
   /**
    * Handle incoming requests for Fastly Compute.
+   * @param request The incoming Fastly request
+   * @param merchantSystemUrn The merchant system URN for identification
+   * @param merchantApiKey The merchant API key for authentication
+   * @param originBackend The Fastly backend name to forward allowed requests to
+   * @param options.enableRSL Serve license.xml at /license.xml for RSL-compliant clients (default: false)
+   * @param options.botDetector Custom bot detection function
+   * @param options.enforcement Enforcement mode (default: SOFT)
    */
   static async fastlyHandleRequests(
     request: Request,
@@ -294,6 +333,9 @@ export class SupertabConnect {
 
   /**
    * Handle incoming requests for AWS CloudFront Lambda@Edge.
+   * Use as the handler for a viewer-request LambdaEdge function.
+   * @param event The CloudFront viewer-request event
+   * @param options Configuration including apiKey, merchantSystemUrn, and optional botDetector/enforcement
    */
   static async cloudfrontHandleRequests<TRequest extends Record<string, any>>(
     event: CloudFrontRequestEvent<TRequest>,

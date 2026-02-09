@@ -4,7 +4,11 @@ export enum EnforcementMode {
   STRICT = "strict",
 }
 
-export type BotDetector = (request: Request, ctx?: any) => boolean;
+export interface ExecutionContext {
+  waitUntil(promise: Promise<any>): void;
+}
+
+export type BotDetector = (request: Request, ctx?: ExecutionContext) => boolean;
 
 export interface SupertabConnectConfig {
   apiKey: string;
@@ -35,7 +39,7 @@ export interface EventPayload {
 
 export type LicenseTokenVerificationResult =
   | { valid: true; licenseId?: string; payload: any }
-  | { valid: false; reason: LicenseTokenInvalidReason; licenseId?: string };
+  | { valid: false; reason: LicenseTokenInvalidReason; error: string; licenseId?: string };
 
 export enum LicenseTokenInvalidReason {
   MISSING_TOKEN = "missing_license_token",
@@ -109,3 +113,8 @@ export interface CloudfrontHandlerOptions {
   botDetector?: BotDetector;
   enforcement?: EnforcementMode;
 }
+
+export type RSLVerificationResult = {
+  valid: boolean;
+  error?: string;
+};

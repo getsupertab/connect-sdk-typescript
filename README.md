@@ -12,59 +12,10 @@ yarn add @getsupertab/supertab-connect-sdk
 
 ## Basic Usage
 
-### Manual setup
-
-```js
-import { SupertabConnect } from "@getsupertab/supertab-connect-sdk";
-
-// Initialize the SDK
-const supertabConnect = new SupertabConnect({
-  apiKey: "stc_live_your_api_key",
-  merchantSystemUrn: "your_merchant_system_urn",
-});
-
-// Verify a license token
-const verification = await supertabConnect.verifyLicenseToken(
-  licenseToken,
-  "https://example.com/article"
-);
-
-// Record an event
-await supertabConnect.recordEvent("page_viewed", {
-  page_url: "https://example.com/article",
-  user_agent: "Mozilla/5.0...",
-});
-```
-
-### Fastly Compute Example
-
-```js
-/// <reference types="@fastly/js-compute" />
-import { SecretStore } from "fastly:secret-store";
-import { SupertabConnect } from "@getsupertab/supertab-connect-sdk";
-
-const configDict = new SecretStore("demo");
-const config = {
-  apiKey: configDict.get("MERCHANT_API_KEY"),
-  merchantSystemUrn: configDict.get("MERCHANT_SYSTEM_URN"),
-};
-
-// The entry point for the request handler.
-addEventListener("fetch", (event) =>
-  event.respondWith(
-    SupertabConnect.fastlyHandleRequests(
-      event.request,
-      config.merchantSystemUrn,
-      config.apiKey
-    )
-  )
-);
-```
-
-### CloudFlare Worker Example
+### Cloudflare Workers
 
 ```ts
-import { SupertabConnect, Env } from "@getsupertab/supertab-connect-sdk";
+import { SupertabConnect, Env, ExecutionContext } from "@getsupertab/supertab-connect-sdk";
 
 export default {
   async fetch(
@@ -77,21 +28,49 @@ export default {
 };
 ```
 
-## Configuration Options
+### Fastly Compute
 
-The SDK is configured using the `SupertabConnectConfig` object
+```js
+/// <reference types="@fastly/js-compute" />
+import { SecretStore } from "fastly:secret-store";
+import { SupertabConnect } from "@getsupertab/supertab-connect-sdk";
 
-| Parameter           | Type   | Required | Default | Description                     |
-| ------------------- | ------ | -------- | ------- | ------------------------------- |
-| `apiKey`            | string | Yes      | -       | Your Supertab merchant API key  |
-| `merchantSystemUrn` | string | Yes      | -       | Your merchant system identifier |
+const configDict = new SecretStore("demo");
+const merchantSystemUrn = configDict.get("MERCHANT_SYSTEM_URN");
+const merchantApiKey = configDict.get("MERCHANT_API_KEY");
 
-## Public API Reference
+addEventListener("fetch", (event) =>
+  event.respondWith(
+    SupertabConnect.fastlyHandleRequests(
+      event.request,
+      merchantSystemUrn,
+      merchantApiKey,
+      "origin-backend"
+    )
+  )
+);
+```
 
-### `constructor(config: SupertabConnectConfig, reset: boolean = false)`
+### AWS CloudFront Lambda@Edge
 
-Creates a new instance of the SupertabConnect SDK.
-If the SDK was already initialized and the config parameters are different, it will throw an error unless `reset` is set to true.
+```ts
+import {
+  SupertabConnect,
+  CloudFrontRequestEvent,
+  CloudFrontRequestResult,
+} from "@getsupertab/supertab-connect-sdk";
+
+export async function handler(
+  event: CloudFrontRequestEvent
+): Promise<CloudFrontRequestResult> {
+  return SupertabConnect.cloudfrontHandleRequests(event, {
+    apiKey: "stc_live_your_api_key",
+    merchantSystemUrn: "your_merchant_system_urn",
+  });
+}
+```
+
+### Manual Setup
 
 ```ts
 import { SupertabConnect } from "@getsupertab/supertab-connect-sdk";
@@ -100,148 +79,137 @@ const supertabConnect = new SupertabConnect({
   apiKey: "stc_live_your_api_key",
   merchantSystemUrn: "your_merchant_system_urn",
 });
-```
 
-### `resetInstance(): void`
+// Verify a license token and record an analytics event
+const result = await supertabConnect.verifyAndRecord({
+  token: licenseToken,
+  resourceUrl: "https://example.com/article",
+  userAgent: request.headers.get("User-Agent") ?? undefined,
+  ctx, // pass your platform's execution context for non-blocking event recording
+});
 
-Resets the singleton instance of SupertabConnect allowing to create an instance with a new config.
-We expect this to not be called in the usual production setup as the SDK is designed to intercept requests using specific public methods.
-
-### `fastlyHandleRequests(request: Request, merchantSystemUrn: string, merchantApiKey: string, enableRSL?: boolean): Promise<Response>`
-
-Handles the Supertab Connect part for each incoming HTTP request within Fastly CDN: it verifies the license token and records the event.
-
-For examples see the [Fastly Compute Example](#fastly-compute-example) section above.
-
-**Parameters:**
-
-- `request` (Request): The incoming HTTP request object
-- `merchantSystemUrn` (string): Your merchant system identifier (recommended to be stored in a Fastly SecretStore)
-- `merchantApiKey` (string): Your Supertab merchant API key (recommended to be stored in a Fastly SecretStore)
-- `enableRSL` (boolean, optional): Enable RSL license.xml hosting (default: false)
-
-**Returns:**
-
-- `Promise<Response>`: Result of bot detection, verification and event recording
-  - If the requester is not a bot to be blocked, or if the license token is present and valid, returns 200 OK
-  - If license token is invalid or missing, returns 401 Unauthorized
-
-### `cloudflareHandleRequests(request: Request, env: Env, ctx: any = null): Promise<Response>`
-
-Handles the Supertab Connect part for each incoming HTTP request within CloudFlare CDN: it verifies the license token and records the event.
-
-For examples see the [CloudFlare Worker Example](#cloudflare-worker-example) section above.
-
-**Parameters:**
-
-- `request` (Request): The incoming HTTP request object
-- `env` (Env): Environment variables provided for CloudFlare Workers (MERCHANT_API_KEY and MERCHANT_SYSTEM_URN must be present)
-- `ctx` (ExecutionContext): Execution context passed from `fetch` worker method for awaiting async operations
-
-**Returns:**
-
-- `Promise<Response>`: Result of bot detection, verification and event recording
-  - If the requester is not a bot to be blocked, or if the license token is present and valid, returns 200 OK
-  - If license token is invalid or missing, returns 401 Unauthorized
-
-### `handleRequest(request: Request, botDetectionHandler?: (request: Request, ctx?: any) => boolean,  ctx?: any): Promise<Response>`
-
-A method for handling requests in a generic way, allowing custom bot detection logic.
-Any of out-of-the-box bot detector methods can be used or a custom one can be supplied provided it follows the specified signature.
-
-**Parameters:**
-
-- `request` (Request): The incoming HTTP request object
-- `botDetectionHandler` (function, optional): Custom function to detect bots. It should return a boolean indicating if the request is from a bot.
-- `ctx` (ExecutionContext, optional): Context object to for awaiting async operations
-
-**Returns:**
-
-- `Promise<Response>`: Result of bot detection, verification and event recording
-  - If the requester is not a bot to be blocked, or if the license token is present and valid, returns 200 OK
-  - If license token is invalid or missing, returns 401 Unauthorized
-
-### `verifyLicenseToken(licenseToken: string, requestUrl: string): Promise<LicenseTokenVerificationResult>`
-
-Verifies license tokens issued by the Supertab platform. Internally, it fetches the platform JWKs hosted by Supertab Connect and verifies the ES256 signature.
-
-**Parameters:**
-
-- `licenseToken` (string): The license token to verify
-- `requestUrl` (string): The URL of the request being made (used for audience validation)
-
-**Returns:**
-
-- `Promise<LicenseTokenVerificationResult>`: Object with verification result
-  - `valid`: boolean indicating if token is valid
-  - `reason`: string reason for failure (if invalid)
-  - `licenseId`: the license ID (if valid)
-  - `payload`: decoded token payload (if valid)
-
-Example
-
-```js
-const licenseToken = "eyJhbGciOiJFUzI1..."; // Token from Authorization header
-const verification = await supertabConnect.verifyLicenseToken(
-  licenseToken,
-  "https://example.com/article"
-);
-
-if (verification.valid) {
-  // Allow access to content
-  console.log("License verified successfully", verification.licenseId);
+if (result.valid) {
+  // Allow access
 } else {
-  // Block access
-  console.log("License verification failed:", verification.reason);
+  console.log("Denied:", result.error);
 }
 ```
 
-### `recordEvent(eventName: string, properties?: Record<string, any>, licenseId?: string): Promise<void>`
+## Configuration Options
 
-Records an event in the Supertab Connect platform.
+The SDK is configured using the `SupertabConnectConfig` object:
 
-**Parameters:**
+| Parameter           | Type               | Required | Default  | Description                                                        |
+| ------------------- | ------------------ | -------- | -------- | ------------------------------------------------------------------ |
+| `apiKey`            | `string`           | Yes      | -        | Your Supertab merchant API key                                     |
+| `merchantSystemUrn` | `string`           | Yes      | -        | Your merchant system identifier                                    |
+| `enforcement`       | `EnforcementMode`  | No       | `SOFT`   | Enforcement mode: `DISABLED`, `SOFT`, or `STRICT`                  |
+| `botDetector`       | `BotDetector`      | No       | -        | Custom bot detection function `(request, ctx?) => boolean`         |
+| `debug`             | `boolean`          | No       | `false`  | Enable debug logging                                               |
 
-- `eventName` (string): Name of the event to record
-- `properties` (object, optional): Additional properties to include with the event
-- `licenseId` (string, optional): License ID associated with the event
+## Public API Reference
 
-Example:
+### `constructor(config: SupertabConnectConfig, reset?: boolean)`
 
-```js
-// Record a page view with additional properties
-await supertabConnect.recordEvent("page_viewed", {
-  page_url: request.url,
-  user_agent: request.headers.get("User-Agent"),
-  referrer: request.headers.get("Referer"),
-  article_id: "12345",
+Creates a new SupertabConnect instance (singleton). Returns the existing instance if one already exists with the same config. Throws if an instance with different config exists unless `reset` is `true`.
+
+### `resetInstance(): void`
+
+Clear the singleton instance, allowing a new one to be created with different config.
+
+### `verify(options): Promise<RSLVerificationResult>` (static)
+
+Pure token verification — verifies a license token without recording any events.
+
+**Parameters (options object):**
+
+| Parameter     | Type      | Required | Description                                      |
+| ------------- | --------- | -------- | ------------------------------------------------ |
+| `token`       | `string`  | Yes      | The license token to verify                      |
+| `resourceUrl` | `string`  | Yes      | The URL of the resource being accessed            |
+| `baseUrl`     | `string`  | No       | Override for the Supertab Connect API base URL    |
+| `debug`       | `boolean` | No       | Enable debug logging                             |
+
+**Returns:** `{ valid: boolean; error?: string }`
+
+```ts
+const result = await SupertabConnect.verify({
+  token: licenseToken,
+  resourceUrl: "https://example.com/article",
 });
 ```
 
-### `checkIfBotRequest(request: Request): boolean`
+### `verifyAndRecord(options): Promise<RSLVerificationResult>`
 
-A simple check based on the information passed in request's Headers to decide whether it comes from a crawler/bot/AI agent or not.
+Verifies a license token and records an analytics event. Uses the instance's `apiKey` and `merchantSystemUrn` for event recording.
+
+**Parameters (options object):**
+
+| Parameter     | Type               | Required | Description                                                      |
+| ------------- | ------------------ | -------- | ---------------------------------------------------------------- |
+| `token`       | `string`           | Yes      | The license token to verify                                      |
+| `resourceUrl` | `string`           | Yes      | The URL of the resource being accessed                            |
+| `userAgent`   | `string`           | No       | User agent string for event recording                            |
+| `debug`       | `boolean`          | No       | Enable debug logging                                             |
+| `ctx`         | `ExecutionContext`  | No       | Execution context for non-blocking event recording               |
+
+**Returns:** `{ valid: boolean; error?: string }`
+
+### `handleRequest(request, ctx?): Promise<HandlerResult>`
+
+Handles an incoming request end-to-end: extracts the license token from the `Authorization` header, verifies it, records an analytics event, and applies bot detection and enforcement mode when no token is present.
 
 **Parameters:**
 
-- `request` (Request): The incoming HTTP request object
+- `request` (`Request`): The incoming HTTP request
+- `ctx` (`ExecutionContext`, optional): Execution context for non-blocking event recording
 
-**Returns:**
+**Returns:** `HandlerResult` — either `{ action: "allow" }` or `{ action: "block", status, body, headers }`.
 
-- `boolean`: True if the request's Headers fall into the conditions to identify requester as a bot; False otherwise.
+### `cloudflareHandleRequests(request, env, ctx): Promise<Response>` (static)
 
-### `generateLicenseToken(clientId: string, kid: string, privateKeyPem: string, resourceUrl: string, licenseXml: string): Promise<string>`
-
-Requests a license token from the Supertab Connect token endpoint using OAuth2 client assertion.
+Convenience handler for Cloudflare Workers. Reads config from Worker environment bindings (`MERCHANT_API_KEY`, `MERCHANT_SYSTEM_URN`).
 
 **Parameters:**
 
-- `clientId` (string): OAuth client identifier used for the assertion issuer/subject claims, fetched from the System Detail page
-- `kid` (string): Key ID to include in the JWT header
-- `privateKeyPem` (string): Private key in PEM format used to sign the client assertion
-- `resourceUrl` (string): Resource URL attempting to access with a License
-- `licenseXml` (string): XML license document associated with the resource url attempting to access
+- `request` (`Request`): The incoming Worker request
+- `env` (`Env`): Worker environment bindings
+- `ctx` (`ExecutionContext`): Worker execution context
 
-**Returns:**
+### `fastlyHandleRequests(request, merchantSystemUrn, merchantApiKey, originBackend, options?): Promise<Response>` (static)
 
-- `Promise<string>`: The issued license access token
+Convenience handler for Fastly Compute.
+
+**Parameters:**
+
+- `request` (`Request`): The incoming Fastly request
+- `merchantSystemUrn` (`string`): Your merchant system identifier
+- `merchantApiKey` (`string`): Your Supertab merchant API key
+- `originBackend` (`string`): The Fastly backend name to forward allowed requests to
+- `options.enableRSL` (`boolean`, optional): Serve `license.xml` at `/license.xml` for RSL-compliant clients (default: `false`)
+- `options.botDetector` (`BotDetector`, optional): Custom bot detection function
+- `options.enforcement` (`EnforcementMode`, optional): Enforcement mode
+
+### `cloudfrontHandleRequests(event, options): Promise<CloudFrontRequestResult>` (static)
+
+Convenience handler for AWS CloudFront Lambda@Edge viewer-request functions.
+
+**Parameters:**
+
+- `event` (`CloudFrontRequestEvent`): The CloudFront viewer-request event
+- `options` (`CloudfrontHandlerOptions`): Configuration object with `apiKey`, `merchantSystemUrn`, and optional `botDetector`/`enforcement`
+
+### `obtainLicenseToken(options): Promise<string>` (static)
+
+Request a license token from the Supertab Connect token endpoint using OAuth2 client credentials.
+
+**Parameters (options object):**
+
+| Parameter      | Type      | Required | Description                                     |
+| -------------- | --------- | -------- | ----------------------------------------------- |
+| `clientId`     | `string`  | Yes      | OAuth client identifier                         |
+| `clientSecret` | `string`  | Yes      | OAuth client secret for client_credentials flow |
+| `resourceUrl`  | `string`  | Yes      | Resource URL to obtain a license for            |
+| `debug`        | `boolean` | No       | Enable debug logging                            |
+
+```

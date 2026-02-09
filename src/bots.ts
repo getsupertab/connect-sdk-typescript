@@ -39,13 +39,13 @@ export function defaultBotDetector(request: Request): boolean {
 
   // 2. Headless browser detection
   const headlessIndicators =
-    userAgent.toLowerCase().includes("headless") ||
-    userAgent.toLowerCase().includes("puppeteer") ||
+    lowerCaseUserAgent.includes("headless") ||
+    lowerCaseUserAgent.includes("puppeteer") ||
     !secChUa;
 
   const isBrowserMissingSecChUa =
-    !userAgent.toLowerCase().includes("headless") &&
-    !userAgent.toLowerCase().includes("puppeteer") &&
+    !lowerCaseUserAgent.includes("headless") &&
+    !lowerCaseUserAgent.includes("puppeteer") &&
     !secChUa;
 
   // 3. Suspicious header gaps — many bots omit these
