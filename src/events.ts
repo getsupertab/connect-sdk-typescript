@@ -7,6 +7,7 @@ export async function recordEvent({
   eventName,
   properties,
   licenseId,
+  debug = false,
 }: {
   apiKey: string;
   merchantSystemUrn: string;
@@ -14,6 +15,7 @@ export async function recordEvent({
   eventName: string;
   properties: Record<string, any>;
   licenseId?: string;
+  debug?: boolean;
 }): Promise<void> {
   const payload: EventPayload = {
     event_name: eventName,
@@ -37,10 +39,12 @@ export async function recordEvent({
     }
     const response = await fetch(`${baseUrl}/events`, options);
 
-    if (!response.ok) {
-      console.log(`Failed to record event: ${response.status}`);
+    if (!response.ok && debug) {
+      console.error(`Failed to record event: ${response.status}`);
     }
   } catch (error) {
-    console.log("Error recording event:", error);
+    if (debug) {
+      console.error("Error recording event:", error);
+    }
   }
 }
