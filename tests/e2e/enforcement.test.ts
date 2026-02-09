@@ -55,12 +55,12 @@ async function fetchResource(options: FetchOptions): Promise<Response> {
 
   if (token === "valid") {
     const clientSecret = config.clientSecret ?? "";
-    const signedLicense = await SupertabConnect.obtainLicenseToken(
-      config.clientId,
+    const signedLicense = await SupertabConnect.obtainLicenseToken({
+      clientId: config.clientId,
       clientSecret,
-      config.resourceUrl,
-      true
-    );
+      resourceUrl: config.resourceUrl,
+      debug: true,
+    });
     headers.Authorization = `License ${signedLicense}`;
   } else if (token === "invalid") {
     headers.Authorization = "License invalid.token.here";
@@ -161,8 +161,8 @@ describeMode(TestMode.STRICT_NO_BOT_DETECTION)("Strict Mode (No Bot Detection)",
     const response = await fetchResource({ userAgent: "bot", token: "invalid" });
     expect(response.status).toBe(401);
     expect(response.headers.get("WWW-Authenticate")).toBeTruthy();
-  });
   }, 30000);  // increase timeout to 30s
+});
 
 // ============================================================================
 // soft-bot-detection - Soft enforcement, bot detection ON
