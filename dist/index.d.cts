@@ -3,7 +3,10 @@ declare enum EnforcementMode {
     SOFT = "soft",
     STRICT = "strict"
 }
-type BotDetector = (request: Request, ctx?: any) => boolean;
+interface ExecutionContext {
+    waitUntil(promise: Promise<any>): void;
+}
+type BotDetector = (request: Request, ctx?: ExecutionContext) => boolean;
 interface SupertabConnectConfig {
     apiKey: string;
     merchantSystemUrn: string;
@@ -21,26 +24,6 @@ interface Env {
     /** The API key for authenticating with the Supertab Connect. */
     MERCHANT_API_KEY: string;
     [key: string]: string;
-}
-type LicenseTokenVerificationResult = {
-    valid: true;
-    licenseId?: string;
-    payload: any;
-} | {
-    valid: false;
-    reason: LicenseTokenInvalidReason;
-    licenseId?: string;
-};
-declare enum LicenseTokenInvalidReason {
-    MISSING_TOKEN = "missing_license_token",
-    INVALID_HEADER = "invalid_license_header",
-    INVALID_ALG = "invalid_license_algorithm",
-    INVALID_PAYLOAD = "invalid_license_payload",
-    INVALID_ISSUER = "invalid_license_issuer",
-    SIGNATURE_VERIFICATION_FAILED = "license_signature_verification_failed",
-    EXPIRED = "license_token_expired",
-    INVALID_AUDIENCE = "invalid_license_audience",
-    SERVER_ERROR = "server_error"
 }
 declare enum HandlerAction {
     ALLOW = "allow",
@@ -93,6 +76,10 @@ interface CloudfrontHandlerOptions {
     botDetector?: BotDetector;
     enforcement?: EnforcementMode;
 }
+type RSLVerificationResult = {
+    valid: boolean;
+    error?: string;
+};
 
 /**
  * Default bot detection logic using multiple signals.
@@ -126,36 +113,63 @@ declare class SupertabConnect {
      */
     static getBaseUrl(): string;
     /**
-     * Verify a license token
-     * @param licenseToken The license token to verify
-     * @param requestUrl The URL of the request being made
+     * Pure token verification — verifies a license token without recording any events.
+     * @param options.token The license token to verify
+     * @param options.resourceUrl The URL of the resource being accessed
+     * @param options.baseUrl Optional override for the Supertab Connect API base URL
+     * @param options.debug Enable debug logging (default: false)
      * @returns A promise that resolves with the verification result
      */
-    verifyLicenseToken(licenseToken: string, requestUrl: string): Promise<LicenseTokenVerificationResult>;
+    static verify(options: {
+        token: string;
+        resourceUrl: string;
+        baseUrl?: string;
+        debug?: boolean;
+    }): Promise<RSLVerificationResult>;
     /**
-     * Records an analytics event
-     * @param eventName Name of the event to record
-     * @param properties Additional properties to include with the event
-     * @param licenseId Optional license ID associated with the event
-     * @returns Promise that resolves when the event is recorded
+     * Verify a license token and record an analytics event.
+     * Uses the instance's apiKey and merchantSystemUrn for event recording.
+     * @param options.token The license token to verify
+     * @param options.resourceUrl The URL of the resource being accessed
+     * @param options.userAgent Optional user agent string for event recording
+     * @param options.debug Enable debug logging (default: false)
+     * @param options.ctx Optional execution context with waitUntil for non-blocking event recording
+     * @returns A promise that resolves with the verification result
      */
-    recordEvent(eventName: string, properties?: Record<string, any>, licenseId?: string): Promise<void>;
-    handleRequest(request: Request, ctx?: any): Promise<HandlerResult>;
+    verifyAndRecord(options: {
+        token: string;
+        resourceUrl: string;
+        userAgent?: string;
+        debug?: boolean;
+        ctx?: ExecutionContext;
+    }): Promise<RSLVerificationResult>;
+    /**
+     * Handle an incoming request by extracting the license token, verifying it, and recording an analytics event.
+     * When no token is present, bot detection and enforcement mode determine the response.
+     * @param request The incoming HTTP request
+     * @param ctx Execution context for non-blocking event recording.
+     *   Pass this from your platform (e.g. Cloudflare Workers)
+     * @returns A promise that resolves with the handler result indicating ALLOW or  BLOCK request
+     */
+    handleRequest(request: Request, ctx?: ExecutionContext): Promise<HandlerResult>;
     /**
      * Request a license token from the Supertab Connect token endpoint.
-     * Automatically fetches and parses license.xml from the resource URL's origin,
-     * using the token endpoint specified in the matching content element's server attribute.
-     * @param clientId OAuth client identifier.
-     * @param clientSecret OAuth client secret for client_credentials flow.
-     * @param resourceUrl Resource URL attempting to access with a License.
-     * @param debug Enable debug logging (default: false).
+     * @param options.clientId OAuth client identifier.
+     * @param options.clientSecret OAuth client secret for client_credentials flow.
+     * @param options.resourceUrl Resource URL attempting to access with a License.
+     * @param options.debug Enable debug logging (default: false).
      * @returns Promise resolving to the issued license access token string.
      */
-    static obtainLicenseToken(clientId: string, clientSecret: string, resourceUrl: string, debug?: boolean): Promise<string>;
+    static obtainLicenseToken(options: {
+        clientId: string;
+        clientSecret: string;
+        resourceUrl: string;
+        debug?: boolean;
+    }): Promise<string>;
     /**
      * Handle incoming requests for Cloudflare Workers.
      */
-    static cloudflareHandleRequests(request: Request, env: Env, ctx: any): Promise<Response>;
+    static cloudflareHandleRequests(request: Request, env: Env, ctx: ExecutionContext): Promise<Response>;
     /**
      * Handle incoming requests for Fastly Compute.
      */
@@ -170,4 +184,4 @@ declare class SupertabConnect {
     static cloudfrontHandleRequests<TRequest extends Record<string, any>>(event: CloudFrontRequestEvent<TRequest>, options: CloudfrontHandlerOptions): Promise<CloudFrontRequestResult<TRequest>>;
 }
 
-export { type BotDetector, type CloudFrontRequestEvent, type CloudFrontRequestResult, type CloudfrontHandlerOptions, EnforcementMode, type Env, HandlerAction, type HandlerResult, SupertabConnect, defaultBotDetector };
+export { type BotDetector, type CloudFrontRequestEvent, type CloudFrontRequestResult, type CloudfrontHandlerOptions, EnforcementMode, type Env, type ExecutionContext, HandlerAction, type HandlerResult, type RSLVerificationResult, SupertabConnect, defaultBotDetector };
