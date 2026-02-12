@@ -20,7 +20,7 @@ This demo uses a Cloudflare Worker to demonstrate how to block and monetize bots
 
     ```env
     MERCHANT_API_KEY=stc_live_cyysbuP9nXQmQkgn-5vrhUr4lEWm_702
-    MERCHANT_SYSTEM_ID=test
+    MERCHANT_SYSTEM_URN=urn:stc:merchant:system:12345678
     ```
 
     > **How to get these values:**
@@ -45,11 +45,13 @@ You can test the worker both with and without credentials:
 
 ### 1. Test Without Credentials
 
-This should be blocked by the worker:
+This should be allowed by the worker in default SOFT enforcement mode:
 
 ```sh
 curl -H "" http://127.0.0.1:8787
 ```
+
+Change the enforcement mode to STRICT in order to see this request blocked.
 
 ### 2. Test With a Valid Customer System Token
 
@@ -97,7 +99,7 @@ print(token)
 Replace `<token>` with the JWT you generated:
 
 ```sh
-curl -H "Authorization: Bearer <token>" http://localhost:8787
+curl -H "Authorization: License <token>" http://localhost:8787
 ```
 
 If the token is valid, you should get access to the protected content.

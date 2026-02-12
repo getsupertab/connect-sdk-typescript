@@ -182,14 +182,21 @@ declare class SupertabConnect {
      * @param request The incoming Worker request
      * @param env Worker environment bindings containing MERCHANT_API_KEY and MERCHANT_SYSTEM_URN
      * @param ctx Worker execution context for non-blocking event recording
+     * @param options Optional configuration items
+     * @param options.botDetector Custom bot detection function
+     * @param options.enforcement Enforcement mode (default: SOFT)
      */
-    static cloudflareHandleRequests(request: Request, env: Env, ctx: ExecutionContext): Promise<Response>;
+    static cloudflareHandleRequests(request: Request, env: Env, ctx: ExecutionContext, options?: {
+        botDetector?: BotDetector;
+        enforcement?: EnforcementMode;
+    }): Promise<Response>;
     /**
      * Handle incoming requests for Fastly Compute.
      * @param request The incoming Fastly request
      * @param merchantSystemUrn The merchant system URN for identification
      * @param merchantApiKey The merchant API key for authentication
      * @param originBackend The Fastly backend name to forward allowed requests to
+     * @param options Optional configuration items
      * @param options.enableRSL Serve license.xml at /license.xml for RSL-compliant clients (default: false)
      * @param options.botDetector Custom bot detection function
      * @param options.enforcement Enforcement mode (default: SOFT)
