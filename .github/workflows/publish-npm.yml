@@ -32,9 +32,9 @@ jobs:
 
       - name: Ensure npm auth token is set
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          if [ -z "${NODE_AUTH_TOKEN}" ]; then
+          if [ -z "${NPM_TOKEN}" ]; then
             echo "Missing npm auth token. Set the secret NPM_TOKEN in npm-release environment."
             exit 1
           fi
@@ -56,5 +56,5 @@ jobs:
 
       - name: Publish package to npm
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --provenance --access public
