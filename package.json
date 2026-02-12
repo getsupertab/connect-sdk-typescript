@@ -35,6 +35,10 @@
   ],
   "author": "Supertab (https://supertab.co)",
   "homepage": "https://supertab-connect.mintlify.app/introduction/about-supertab-connect",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/getsupertab/connect-sdk-typescript"
+  },
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^18.0.0",
