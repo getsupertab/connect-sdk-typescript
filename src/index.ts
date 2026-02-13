@@ -358,7 +358,7 @@ export class SupertabConnect {
       return await handleCloudfrontRequest(instance, event);
     } catch (err) {
       console.error("[SupertabConnect] cloudfrontHandleRequests failed:", err);
-      return event.Records[0].cf.request;
+      return event?.Records?.[0]?.cf?.request as TRequest ?? {} as CloudFrontRequestResult<TRequest>;
     }
   }
 }

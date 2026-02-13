@@ -76,6 +76,19 @@ type RSLVerificationResult = {
     valid: boolean;
     error?: string;
 };
+interface FastlyHandlerBaseOptions {
+    botDetector?: BotDetector;
+    enforcement?: EnforcementMode;
+}
+interface FastlyHandlerWithRSL extends FastlyHandlerBaseOptions {
+    enableRSL: true;
+    merchantSystemUrn: string;
+}
+interface FastlyHandlerWithoutRSL extends FastlyHandlerBaseOptions {
+    enableRSL?: false;
+    merchantSystemUrn?: never;
+}
+type FastlyHandlerOptions = FastlyHandlerWithRSL | FastlyHandlerWithoutRSL;
 
 /**
  * Default bot detection logic using multiple signals.
@@ -196,12 +209,7 @@ declare class SupertabConnect {
      * @param options.botDetector Custom bot detection function
      * @param options.enforcement Enforcement mode (default: SOFT)
      */
-    static fastlyHandleRequests(request: Request, merchantApiKey: string, originBackend: string, options?: {
-        enableRSL?: boolean;
-        merchantSystemUrn?: string;
-        botDetector?: BotDetector;
-        enforcement?: EnforcementMode;
-    }): Promise<Response>;
+    static fastlyHandleRequests(request: Request, merchantApiKey: string, originBackend: string, options?: FastlyHandlerOptions): Promise<Response>;
     /**
      * Handle incoming requests for AWS CloudFront Lambda@Edge.
      * Use as the handler for a viewer-request LambdaEdge function.
@@ -211,4 +219,4 @@ declare class SupertabConnect {
     static cloudfrontHandleRequests<TRequest extends Record<string, any>>(event: CloudFrontRequestEvent<TRequest>, options: CloudfrontHandlerOptions): Promise<CloudFrontRequestResult<TRequest>>;
 }
 
-export { type BotDetector, type CloudFrontRequestEvent, type CloudFrontRequestResult, type CloudfrontHandlerOptions, EnforcementMode, type Env, type ExecutionContext, HandlerAction, type HandlerResult, type RSLVerificationResult, SupertabConnect, defaultBotDetector };
+export { type BotDetector, type CloudFrontRequestEvent, type CloudFrontRequestResult, type CloudfrontHandlerOptions, EnforcementMode, type Env, type ExecutionContext, type FastlyHandlerOptions, HandlerAction, type HandlerResult, type RSLVerificationResult, SupertabConnect, defaultBotDetector };
