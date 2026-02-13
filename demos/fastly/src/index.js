@@ -26,11 +26,11 @@ addEventListener("fetch", (event) =>
   event.respondWith(
     SupertabConnect.fastlyHandleRequests(
       event.request,
-      MERCHANT_SYSTEM_URN,
       MERCHANT_API_KEY,
       "origin",
       {
         enableRSL: true,
+        merchantSystemUrn: MERCHANT_SYSTEM_URN,
         // botDetector: defaultBotDetector,
         // enforcement: EnforcementMode.STRICT,
       }

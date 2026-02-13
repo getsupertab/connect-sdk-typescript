@@ -5,7 +5,7 @@ if (!globalThis.crypto) {
 
 import { SupertabConnect } from "@getsupertab/supertab-connect-sdk";
 import type { CloudFrontRequestEvent, CloudFrontRequestResult } from "aws-lambda";
-import { MERCHANT_SYSTEM_URN, MERCHANT_API_KEY } from "./config";
+import { MERCHANT_API_KEY } from "./config";
 
 SupertabConnect.setBaseUrl("https://api-connect.sbx.supertab.co");
 
@@ -14,6 +14,5 @@ export async function handler(
 ): Promise<CloudFrontRequestResult> {
   return SupertabConnect.cloudfrontHandleRequests(event, {
     apiKey: MERCHANT_API_KEY,
-    merchantSystemUrn: MERCHANT_SYSTEM_URN,
   });
 }

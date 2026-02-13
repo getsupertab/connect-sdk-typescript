@@ -12,7 +12,6 @@ export type BotDetector = (request: Request, ctx?: ExecutionContext) => boolean;
 
 export interface SupertabConnectConfig {
   apiKey: string;
-  merchantSystemUrn: string;
   enforcement?: EnforcementMode;
   botDetector?: BotDetector;
   debug?: boolean;
@@ -23,8 +22,6 @@ export interface SupertabConnectConfig {
  * These are used to identify and authenticate the Merchant System with the Supertab Connect API.
  */
 export interface Env {
-	/** The unique identifier for the merchant system. */
-	MERCHANT_SYSTEM_URN: string;
 	/** The API key for authenticating with the Supertab Connect. */
 	MERCHANT_API_KEY: string;
 	[key: string]: string;
@@ -33,7 +30,6 @@ export interface Env {
 export interface EventPayload {
   event_name: string;
   license_id?: string;
-  merchant_system_urn: string;
   properties: Record<string, any>;
 }
 
@@ -109,7 +105,6 @@ export type CloudFrontRequestResult<TRequest = Record<string, any>> = TRequest |
 
 export interface CloudfrontHandlerOptions {
   apiKey: string;
-  merchantSystemUrn: string;
   botDetector?: BotDetector;
   enforcement?: EnforcementMode;
 }

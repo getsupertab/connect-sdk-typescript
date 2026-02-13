@@ -337,7 +337,6 @@ export type VerifyAndRecordEventParams = {
   supertabBaseUrl: string;
   debug: boolean;
   apiKey: string;
-  merchantSystemUrn: string;
   ctx?: ExecutionContext;
 };
 
@@ -353,7 +352,6 @@ export async function verifyAndRecordEvent(
 
   const eventPromise = recordEvent({
     apiKey: params.apiKey,
-    merchantSystemUrn: params.merchantSystemUrn,
     baseUrl: params.supertabBaseUrl,
     eventName: verification.valid ? "license_used" : verification.reason,
     properties: {

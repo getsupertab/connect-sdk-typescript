@@ -48,7 +48,6 @@ export { defaultBotDetector } from "./bots";
 export class SupertabConnect {
   private apiKey?: string;
   private static baseUrl: string = "https://api-connect.supertab.co";
-  private merchantSystemUrn!: string;
   private enforcement!: EnforcementMode;
   private botDetector?: BotDetector;
   private debug!: boolean;
@@ -58,20 +57,14 @@ export class SupertabConnect {
   /**
    * Create a new SupertabConnect instance (singleton).
    * Returns the existing instance if one exists with the same config.
-   * @param config SDK configuration including apiKey and merchantSystemUrn
+   * @param config SDK configuration including apiKey
    * @param reset Pass true to replace an existing instance with different config
    * @throws If an instance with different config already exists and reset is false
    */
   public constructor(config: SupertabConnectConfig, reset: boolean = false) {
     if (!reset && SupertabConnect._instance) {
       // If reset was not requested and an instance conflicts with the provided config, throw an error
-      if (
-        !(
-          config.apiKey === SupertabConnect._instance.apiKey &&
-          config.merchantSystemUrn ===
-            SupertabConnect._instance.merchantSystemUrn
-        )
-      ) {
+      if (config.apiKey !== SupertabConnect._instance.apiKey) {
         throw new Error(
           "Cannot create a new instance with different configuration. Use resetInstance to clear the existing instance."
         );
@@ -85,13 +78,12 @@ export class SupertabConnect {
       SupertabConnect.resetInstance();
     }
 
-    if (!config.apiKey || !config.merchantSystemUrn) {
+    if (!config.apiKey) {
       throw new Error(
-        "Missing required configuration: apiKey and merchantSystemUrn are required"
+        "Missing required configuration: apiKey is required"
       );
     }
     this.apiKey = config.apiKey;
-    this.merchantSystemUrn = config.merchantSystemUrn;
     this.enforcement = config.enforcement ?? EnforcementMode.SOFT;
     this.botDetector = config.botDetector;
     this.debug = config.debug ?? false;
@@ -153,7 +145,7 @@ export class SupertabConnect {
 
   /**
    * Verify a license token and record an analytics event.
-   * Uses the instance's apiKey and merchantSystemUrn for event recording.
+   * Uses the instance's apiKey for event recording.
    * @param options.token The license token to verify
    * @param options.resourceUrl The URL of the resource being accessed
    * @param options.userAgent Optional user agent string for event recording
@@ -175,7 +167,6 @@ export class SupertabConnect {
       supertabBaseUrl: SupertabConnect.baseUrl,
       debug: options.debug ?? this.debug,
       apiKey: this.apiKey!,
-      merchantSystemUrn: this.merchantSystemUrn,
       ctx: options.ctx,
     });
 
@@ -212,7 +203,6 @@ export class SupertabConnect {
         supertabBaseUrl: SupertabConnect.baseUrl,
         debug: this.debug,
         apiKey: this.apiKey!,
-        merchantSystemUrn: this.merchantSystemUrn,
         ctx,
       });
       if (!verification.valid) {
@@ -273,7 +263,7 @@ export class SupertabConnect {
    * Handle incoming requests for Cloudflare Workers.
    * Pass this directly as your Worker's fetch handler.
    * @param request The incoming Worker request
-   * @param env Worker environment bindings containing MERCHANT_API_KEY and MERCHANT_SYSTEM_URN
+   * @param env Worker environment bindings containing MERCHANT_API_KEY
    * @param ctx Worker execution context for non-blocking event recording
    * @param options Optional configuration items
    * @param options.botDetector Custom bot detection function
@@ -291,7 +281,6 @@ export class SupertabConnect {
     try {
       const instance = new SupertabConnect({
         apiKey: env.MERCHANT_API_KEY,
-        merchantSystemUrn: env.MERCHANT_SYSTEM_URN,
         botDetector: options?.botDetector,
         enforcement: options?.enforcement,
       });
@@ -305,31 +294,30 @@ export class SupertabConnect {
   /**
    * Handle incoming requests for Fastly Compute.
    * @param request The incoming Fastly request
-   * @param merchantSystemUrn The merchant system URN for identification
    * @param merchantApiKey The merchant API key for authentication
    * @param originBackend The Fastly backend name to forward allowed requests to
    * @param options Optional configuration items
    * @param options.enableRSL Serve license.xml at /license.xml for RSL-compliant clients (default: false)
+   * @param options.merchantSystemUrn Required when enableRSL is true; the merchant system URN used to fetch license.xml
    * @param options.botDetector Custom bot detection function
    * @param options.enforcement Enforcement mode (default: SOFT)
    */
   static async fastlyHandleRequests(
     request: Request,
-    merchantSystemUrn: string,
     merchantApiKey: string,
     originBackend: string,
     options?: {
       enableRSL?: boolean;
+      merchantSystemUrn?: string;
       botDetector?: BotDetector;
       enforcement?: EnforcementMode;
     }
   ): Promise<Response> {
     try {
-      const { enableRSL = false, botDetector, enforcement } = options ?? {};
+      const { enableRSL = false, merchantSystemUrn, botDetector, enforcement } = options ?? {};
 
       const instance = new SupertabConnect({
         apiKey: merchantApiKey,
-        merchantSystemUrn: merchantSystemUrn,
         botDetector,
         enforcement,
       });
@@ -338,7 +326,7 @@ export class SupertabConnect {
         instance,
         request,
         originBackend,
-        enableRSL
+        enableRSL && merchantSystemUrn
           ? {
               baseUrl: SupertabConnect.baseUrl,
               merchantSystemUrn,
@@ -355,7 +343,7 @@ export class SupertabConnect {
    * Handle incoming requests for AWS CloudFront Lambda@Edge.
    * Use as the handler for a viewer-request LambdaEdge function.
    * @param event The CloudFront viewer-request event
-   * @param options Configuration including apiKey, merchantSystemUrn, and optional botDetector/enforcement
+   * @param options Configuration including apiKey and optional botDetector/enforcement
    */
   static async cloudfrontHandleRequests<TRequest extends Record<string, any>>(
     event: CloudFrontRequestEvent<TRequest>,
@@ -364,7 +352,6 @@ export class SupertabConnect {
     try {
       const instance = new SupertabConnect({
         apiKey: options.apiKey,
-        merchantSystemUrn: options.merchantSystemUrn,
         botDetector: options.botDetector,
         enforcement: options.enforcement,
       });

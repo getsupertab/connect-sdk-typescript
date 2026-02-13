@@ -36,14 +36,12 @@ import { SecretStore } from "fastly:secret-store";
 import { SupertabConnect } from "@getsupertab/supertab-connect-sdk";
 
 const configDict = new SecretStore("demo");
-const merchantSystemUrn = configDict.get("MERCHANT_SYSTEM_URN");
 const merchantApiKey = configDict.get("MERCHANT_API_KEY");
 
 addEventListener("fetch", (event) =>
   event.respondWith(
     SupertabConnect.fastlyHandleRequests(
       event.request,
-      merchantSystemUrn,
       merchantApiKey,
       "origin-backend"
     )
@@ -65,7 +63,6 @@ export async function handler(
 ): Promise<CloudFrontRequestResult> {
   return SupertabConnect.cloudfrontHandleRequests(event, {
     apiKey: "stc_live_your_api_key",
-    merchantSystemUrn: "your_merchant_system_urn",
   });
 }
 ```
@@ -77,7 +74,6 @@ import { SupertabConnect } from "@getsupertab/supertab-connect-sdk";
 
 const supertabConnect = new SupertabConnect({
   apiKey: "stc_live_your_api_key",
-  merchantSystemUrn: "your_merchant_system_urn",
 });
 
 // Verify a license token and record an analytics event
@@ -102,7 +98,6 @@ The SDK is configured using the `SupertabConnectConfig` object:
 | Parameter           | Type               | Required | Default  | Description                                                        |
 | ------------------- | ------------------ | -------- | -------- | ------------------------------------------------------------------ |
 | `apiKey`            | `string`           | Yes      | -        | Your Supertab merchant API key                                     |
-| `merchantSystemUrn` | `string`           | Yes      | -        | Your merchant system identifier                                    |
 | `enforcement`       | `EnforcementMode`  | No       | `SOFT`   | Enforcement mode: `DISABLED`, `SOFT`, or `STRICT`                  |
 | `botDetector`       | `BotDetector`      | No       | -        | Custom bot detection function `(request, ctx?) => boolean`         |
 | `debug`             | `boolean`          | No       | `false`  | Enable debug logging                                               |
@@ -141,7 +136,7 @@ const result = await SupertabConnect.verify({
 
 ### `verifyAndRecord(options): Promise<RSLVerificationResult>`
 
-Verifies a license token and records an analytics event. Uses the instance's `apiKey` and `merchantSystemUrn` for event recording.
+Verifies a license token and records an analytics event. Uses the instance's `apiKey` for event recording.
 
 **Parameters (options object):**
 
@@ -168,7 +163,7 @@ Handles an incoming request end-to-end: extracts the license token from the `Aut
 
 ### `cloudflareHandleRequests(request, env, ctx): Promise<Response>` (static)
 
-Convenience handler for Cloudflare Workers. Reads config from Worker environment bindings (`MERCHANT_API_KEY`, `MERCHANT_SYSTEM_URN`).
+Convenience handler for Cloudflare Workers. Reads config from Worker environment bindings (`MERCHANT_API_KEY`).
 
 **Parameters:**
 
@@ -176,17 +171,17 @@ Convenience handler for Cloudflare Workers. Reads config from Worker environment
 - `env` (`Env`): Worker environment bindings
 - `ctx` (`ExecutionContext`): Worker execution context
 
-### `fastlyHandleRequests(request, merchantSystemUrn, merchantApiKey, originBackend, options?): Promise<Response>` (static)
+### `fastlyHandleRequests(request, merchantApiKey, originBackend, options?): Promise<Response>` (static)
 
 Convenience handler for Fastly Compute.
 
 **Parameters:**
 
 - `request` (`Request`): The incoming Fastly request
-- `merchantSystemUrn` (`string`): Your merchant system identifier
 - `merchantApiKey` (`string`): Your Supertab merchant API key
 - `originBackend` (`string`): The Fastly backend name to forward allowed requests to
 - `options.enableRSL` (`boolean`, optional): Serve `license.xml` at `/license.xml` for RSL-compliant clients (default: `false`)
+- `options.merchantSystemUrn` (`string`, optional): Required when `enableRSL` is `true`; the merchant system URN used to fetch `license.xml`
 - `options.botDetector` (`BotDetector`, optional): Custom bot detection function
 - `options.enforcement` (`EnforcementMode`, optional): Enforcement mode
 
@@ -197,7 +192,7 @@ Convenience handler for AWS CloudFront Lambda@Edge viewer-request functions.
 **Parameters:**
 
 - `event` (`CloudFrontRequestEvent`): The CloudFront viewer-request event
-- `options` (`CloudfrontHandlerOptions`): Configuration object with `apiKey`, `merchantSystemUrn`, and optional `botDetector`/`enforcement`
+- `options` (`CloudfrontHandlerOptions`): Configuration object with `apiKey` and optional `botDetector`/`enforcement`
 
 ### `obtainLicenseToken(options): Promise<string>` (static)
 

@@ -9,7 +9,6 @@ interface ExecutionContext {
 type BotDetector = (request: Request, ctx?: ExecutionContext) => boolean;
 interface SupertabConnectConfig {
     apiKey: string;
-    merchantSystemUrn: string;
     enforcement?: EnforcementMode;
     botDetector?: BotDetector;
     debug?: boolean;
@@ -19,8 +18,6 @@ interface SupertabConnectConfig {
  * These are used to identify and authenticate the Merchant System with the Supertab Connect API.
  */
 interface Env {
-    /** The unique identifier for the merchant system. */
-    MERCHANT_SYSTEM_URN: string;
     /** The API key for authenticating with the Supertab Connect. */
     MERCHANT_API_KEY: string;
     [key: string]: string;
@@ -72,7 +69,6 @@ interface CloudFrontRequestEvent<TRequest = Record<string, any>> {
 type CloudFrontRequestResult<TRequest = Record<string, any>> = TRequest | CloudFrontResultResponse;
 interface CloudfrontHandlerOptions {
     apiKey: string;
-    merchantSystemUrn: string;
     botDetector?: BotDetector;
     enforcement?: EnforcementMode;
 }
@@ -97,7 +93,6 @@ declare function defaultBotDetector(request: Request): boolean;
 declare class SupertabConnect {
     private apiKey?;
     private static baseUrl;
-    private merchantSystemUrn;
     private enforcement;
     private botDetector?;
     private debug;
@@ -105,7 +100,7 @@ declare class SupertabConnect {
     /**
      * Create a new SupertabConnect instance (singleton).
      * Returns the existing instance if one exists with the same config.
-     * @param config SDK configuration including apiKey and merchantSystemUrn
+     * @param config SDK configuration including apiKey
      * @param reset Pass true to replace an existing instance with different config
      * @throws If an instance with different config already exists and reset is false
      */
@@ -138,7 +133,7 @@ declare class SupertabConnect {
     }): Promise<RSLVerificationResult>;
     /**
      * Verify a license token and record an analytics event.
-     * Uses the instance's apiKey and merchantSystemUrn for event recording.
+     * Uses the instance's apiKey for event recording.
      * @param options.token The license token to verify
      * @param options.resourceUrl The URL of the resource being accessed
      * @param options.userAgent Optional user agent string for event recording
@@ -180,7 +175,7 @@ declare class SupertabConnect {
      * Handle incoming requests for Cloudflare Workers.
      * Pass this directly as your Worker's fetch handler.
      * @param request The incoming Worker request
-     * @param env Worker environment bindings containing MERCHANT_API_KEY and MERCHANT_SYSTEM_URN
+     * @param env Worker environment bindings containing MERCHANT_API_KEY
      * @param ctx Worker execution context for non-blocking event recording
      * @param options Optional configuration items
      * @param options.botDetector Custom bot detection function
@@ -193,16 +188,17 @@ declare class SupertabConnect {
     /**
      * Handle incoming requests for Fastly Compute.
      * @param request The incoming Fastly request
-     * @param merchantSystemUrn The merchant system URN for identification
      * @param merchantApiKey The merchant API key for authentication
      * @param originBackend The Fastly backend name to forward allowed requests to
      * @param options Optional configuration items
      * @param options.enableRSL Serve license.xml at /license.xml for RSL-compliant clients (default: false)
+     * @param options.merchantSystemUrn Required when enableRSL is true; the merchant system URN used to fetch license.xml
      * @param options.botDetector Custom bot detection function
      * @param options.enforcement Enforcement mode (default: SOFT)
      */
-    static fastlyHandleRequests(request: Request, merchantSystemUrn: string, merchantApiKey: string, originBackend: string, options?: {
+    static fastlyHandleRequests(request: Request, merchantApiKey: string, originBackend: string, options?: {
         enableRSL?: boolean;
+        merchantSystemUrn?: string;
         botDetector?: BotDetector;
         enforcement?: EnforcementMode;
     }): Promise<Response>;
@@ -210,7 +206,7 @@ declare class SupertabConnect {
      * Handle incoming requests for AWS CloudFront Lambda@Edge.
      * Use as the handler for a viewer-request LambdaEdge function.
      * @param event The CloudFront viewer-request event
-     * @param options Configuration including apiKey, merchantSystemUrn, and optional botDetector/enforcement
+     * @param options Configuration including apiKey and optional botDetector/enforcement
      */
     static cloudfrontHandleRequests<TRequest extends Record<string, any>>(event: CloudFrontRequestEvent<TRequest>, options: CloudfrontHandlerOptions): Promise<CloudFrontRequestResult<TRequest>>;
 }

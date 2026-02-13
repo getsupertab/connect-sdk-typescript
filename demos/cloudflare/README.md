@@ -20,13 +20,11 @@ This demo uses a Cloudflare Worker to demonstrate how to block and monetize bots
 
     ```env
     MERCHANT_API_KEY=stc_live_cyysbuP9nXQmQkgn-5vrhUr4lEWm_702
-    MERCHANT_SYSTEM_URN=urn:stc:merchant:system:12345678
     ```
 
     > **How to get these values:**
     > - Run the application and dashboards locally.
     > - Register as a merchant.
-    > - Create a merchant system to get the `MERCHANT_SYSTEM_ID`.
     > - Create an API key from the dashboard to get the `MERCHANT_API_KEY`.
 
 2. **Run the Worker Locally**
