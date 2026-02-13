@@ -216,8 +216,13 @@ export function generateLicenseLink({
 }: {
   requestUrl: string;
 }): string {
-  const baseURL = new URL(requestUrl);
-  return `${baseURL.protocol}//${baseURL.host}/license.xml`;
+  try {
+    const baseURL = new URL(requestUrl);
+    return `${baseURL.protocol}//${baseURL.host}/license.xml`;
+  } catch (err) {
+    console.error("[SupertabConnect] generateLicenseLink failed to parse URL:", err);
+    return "/license.xml";
+  }
 }
 
 /**
@@ -305,19 +310,24 @@ export async function hostRSLicenseXML(
   supertabBaseUrl: string,
   merchantSystemUrn: string
 ): Promise<Response> {
-  const licenseUrl = `${supertabBaseUrl}/merchants/systems/${merchantSystemUrn}/license.xml`;
-  const response = await fetch(licenseUrl, buildFetchOptions());
+  try {
+    const licenseUrl = `${supertabBaseUrl}/merchants/systems/${merchantSystemUrn}/license.xml`;
+    const response = await fetch(licenseUrl, buildFetchOptions());
 
-  if (!response.ok) {
-    return new Response("License not found", { status: 404 });
+    if (!response.ok) {
+      return new Response("License not found", { status: 404 });
+    }
+
+    const licenseXml = await response.text();
+
+    return new Response(licenseXml, {
+      status: 200,
+      headers: new Headers({ "Content-Type": "application/xml" }),
+    });
+  } catch (err) {
+    console.error("[SupertabConnect] hostRSLicenseXML failed:", err);
+    return new Response("Bad Gateway", { status: 502 });
   }
-
-  const licenseXml = await response.text();
-
-  return new Response(licenseXml, {
-    status: 200,
-    headers: new Headers({ "Content-Type": "application/xml" }),
-  });
 }
 
 export type VerifyAndRecordEventParams = {

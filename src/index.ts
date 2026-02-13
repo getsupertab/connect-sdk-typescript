@@ -288,13 +288,18 @@ export class SupertabConnect {
        enforcement?: EnforcementMode;
     }
   ): Promise<Response> {
-    const instance = new SupertabConnect({
-      apiKey: env.MERCHANT_API_KEY,
-      merchantSystemUrn: env.MERCHANT_SYSTEM_URN,
-      botDetector: options?.botDetector,
-      enforcement: options?.enforcement,
-    });
-    return handleCloudflareRequest(instance, request, ctx);
+    try {
+      const instance = new SupertabConnect({
+        apiKey: env.MERCHANT_API_KEY,
+        merchantSystemUrn: env.MERCHANT_SYSTEM_URN,
+        botDetector: options?.botDetector,
+        enforcement: options?.enforcement,
+      });
+      return await handleCloudflareRequest(instance, request, ctx);
+    } catch (err) {
+      console.error("[SupertabConnect] cloudflareHandleRequests failed:", err);
+      return await fetch(request);
+    }
   }
 
   /**
@@ -319,26 +324,31 @@ export class SupertabConnect {
       enforcement?: EnforcementMode;
     }
   ): Promise<Response> {
-    const { enableRSL = false, botDetector, enforcement } = options ?? {};
+    try {
+      const { enableRSL = false, botDetector, enforcement } = options ?? {};
 
-    const instance = new SupertabConnect({
-      apiKey: merchantApiKey,
-      merchantSystemUrn: merchantSystemUrn,
-      botDetector,
-      enforcement,
-    });
+      const instance = new SupertabConnect({
+        apiKey: merchantApiKey,
+        merchantSystemUrn: merchantSystemUrn,
+        botDetector,
+        enforcement,
+      });
 
-    return handleFastlyRequest(
-      instance,
-      request,
-      originBackend,
-      enableRSL
-        ? {
-            baseUrl: SupertabConnect.baseUrl,
-            merchantSystemUrn,
-          }
-        : undefined
-    );
+      return await handleFastlyRequest(
+        instance,
+        request,
+        originBackend,
+        enableRSL
+          ? {
+              baseUrl: SupertabConnect.baseUrl,
+              merchantSystemUrn,
+            }
+          : undefined
+      );
+    } catch (err) {
+      console.error("[SupertabConnect] fastlyHandleRequests failed:", err);
+      return await fetch(request, { backend: originBackend } as RequestInit);
+    }
   }
 
   /**
@@ -351,12 +361,17 @@ export class SupertabConnect {
     event: CloudFrontRequestEvent<TRequest>,
     options: CloudfrontHandlerOptions
   ): Promise<CloudFrontRequestResult<TRequest>> {
-    const instance = new SupertabConnect({
-      apiKey: options.apiKey,
-      merchantSystemUrn: options.merchantSystemUrn,
-      botDetector: options.botDetector,
-      enforcement: options.enforcement,
-    });
-    return handleCloudfrontRequest(instance, event);
+    try {
+      const instance = new SupertabConnect({
+        apiKey: options.apiKey,
+        merchantSystemUrn: options.merchantSystemUrn,
+        botDetector: options.botDetector,
+        enforcement: options.enforcement,
+      });
+      return await handleCloudfrontRequest(instance, event);
+    } catch (err) {
+      console.error("[SupertabConnect] cloudfrontHandleRequests failed:", err);
+      return event.Records[0].cf.request;
+    }
   }
 }
