@@ -181,7 +181,7 @@ Convenience handler for Fastly Compute.
 - `merchantApiKey` (`string`): Your Supertab merchant API key
 - `originBackend` (`string`): The Fastly backend name to forward allowed requests to
 - `options.enableRSL` (`boolean`, optional): Serve `license.xml` at `/license.xml` for RSL-compliant clients (default: `false`)
-- `options.merchantSystemUrn` (`string`, optional): Required when `enableRSL` is `true`; the merchant system URN used to fetch `license.xml`
+- `options.merchantSystemUrn` (`string`): Required when `enableRSL` is `true`; the merchant system URN used to fetch `license.xml`. Enforced at the type level via a discriminated union (`FastlyHandlerOptions`).
 - `options.botDetector` (`BotDetector`, optional): Custom bot detection function
 - `options.enforcement` (`EnforcementMode`, optional): Enforcement mode
 

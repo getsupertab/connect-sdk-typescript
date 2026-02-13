@@ -8,6 +8,7 @@ import {
   RSLVerificationResult,
   ExecutionContext,
   Env,
+  FastlyHandlerOptions,
 } from "./types";
 import { obtainLicenseToken as obtainLicenseTokenHelper } from "./customer";
 import {
@@ -34,6 +35,7 @@ export type {
   Env,
   BotDetector,
   HandlerResult,
+  FastlyHandlerOptions,
   CloudFrontRequestEvent,
   CloudFrontRequestResult,
   CloudfrontHandlerOptions,
@@ -306,15 +308,10 @@ export class SupertabConnect {
     request: Request,
     merchantApiKey: string,
     originBackend: string,
-    options?: {
-      enableRSL?: boolean;
-      merchantSystemUrn?: string;
-      botDetector?: BotDetector;
-      enforcement?: EnforcementMode;
-    }
+    options?: FastlyHandlerOptions
   ): Promise<Response> {
     try {
-      const { enableRSL = false, merchantSystemUrn, botDetector, enforcement } = options ?? {};
+      const { botDetector, enforcement } = options ?? {};
 
       const instance = new SupertabConnect({
         apiKey: merchantApiKey,
@@ -322,16 +319,19 @@ export class SupertabConnect {
         enforcement,
       });
 
+      let rslOptions: { baseUrl: string; merchantSystemUrn: string } | undefined;
+      if (options?.enableRSL) {
+        rslOptions = {
+          baseUrl: SupertabConnect.baseUrl,
+          merchantSystemUrn: options.merchantSystemUrn,
+        };
+      }
+
       return await handleFastlyRequest(
         instance,
         request,
         originBackend,
-        enableRSL && merchantSystemUrn
-          ? {
-              baseUrl: SupertabConnect.baseUrl,
-              merchantSystemUrn,
-            }
-          : undefined
+        rslOptions
       );
     } catch (err) {
       console.error("[SupertabConnect] fastlyHandleRequests failed:", err);

@@ -113,3 +113,20 @@ export type RSLVerificationResult = {
   valid: boolean;
   error?: string;
 };
+
+interface FastlyHandlerBaseOptions {
+  botDetector?: BotDetector;
+  enforcement?: EnforcementMode;
+}
+
+interface FastlyHandlerWithRSL extends FastlyHandlerBaseOptions {
+  enableRSL: true;
+  merchantSystemUrn: string;
+}
+
+interface FastlyHandlerWithoutRSL extends FastlyHandlerBaseOptions {
+  enableRSL?: false;
+  merchantSystemUrn?: never;
+}
+
+export type FastlyHandlerOptions = FastlyHandlerWithRSL | FastlyHandlerWithoutRSL;
