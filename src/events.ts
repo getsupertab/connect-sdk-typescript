@@ -2,7 +2,6 @@ import { EventPayload, FASTLY_BACKEND } from "./types";
 
 export async function recordEvent({
   apiKey,
-  merchantSystemUrn,
   baseUrl,
   eventName,
   properties,
@@ -10,7 +9,6 @@ export async function recordEvent({
   debug = false,
 }: {
   apiKey: string;
-  merchantSystemUrn: string;
   baseUrl: string;
   eventName: string;
   properties: Record<string, any>;
@@ -19,7 +17,6 @@ export async function recordEvent({
 }): Promise<void> {
   const payload: EventPayload = {
     event_name: eventName,
-    merchant_system_urn: merchantSystemUrn,
     license_id: licenseId,
     properties,
   };

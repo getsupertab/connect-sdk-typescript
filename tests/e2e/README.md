@@ -46,11 +46,11 @@ Update your Fastly demo (`demos/fastly/src/index.js`) to match the test mode:
 ```javascript
 SupertabConnect.fastlyHandleRequests(
   event.request,
-  MERCHANT_SYSTEM_URN,
   MERCHANT_API_KEY,
   "origin",
   {
     enableRSL: true,
+    merchantSystemUrn: MERCHANT_SYSTEM_URN,
     // For bot-detection modes:
     botDetector: defaultBotDetector,
     enforcement: EnforcementMode.SOFT,  // or STRICT

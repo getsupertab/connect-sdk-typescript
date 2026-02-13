@@ -5,7 +5,6 @@ declare namespace Cloudflare {
 	interface Env {
 		BASE_URL: "http://localhost:8000" | "https://api-connect.sbx.supertab.co/";
 		MERCHANT_API_KEY: string;
-		MERCHANT_SYSTEM_URN: string;
 	}
 }
 interface Env extends Cloudflare.Env {}
