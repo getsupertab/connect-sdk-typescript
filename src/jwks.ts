@@ -22,8 +22,7 @@ type FetchJwksParams = {
 
 function buildFetchOptions(): FetchOptions {
   let options: FetchOptions = { method: "GET" };
-  // @ts-ignore - backend is a Fastly-specific extension
-  if (globalThis?.fastly) {
+  if (globalThis.fastly) {
     options = { ...options, backend: FASTLY_BACKEND };
   }
   return options;

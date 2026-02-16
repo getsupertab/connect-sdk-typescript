@@ -30,8 +30,7 @@ export async function recordEvent({
       },
       body: JSON.stringify(payload),
     };
-    // @ts-ignore - fastly is a Fastly-specific global
-    if (globalThis?.fastly) {
+    if (globalThis.fastly) {
       options = { ...options, backend: FASTLY_BACKEND };
     }
     const response = await fetch(`${baseUrl}/events`, options);

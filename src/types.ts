@@ -51,6 +51,11 @@ export enum LicenseTokenInvalidReason {
   SERVER_ERROR = "server_error",
 }
 
+declare global {
+  // eslint-disable-next-line no-var
+  var fastly: object | undefined;
+}
+
 export const FASTLY_BACKEND = "stc-backend";
 
 export interface FetchOptions extends RequestInit {
