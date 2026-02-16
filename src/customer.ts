@@ -70,9 +70,9 @@ async function retrieveLicenseToken(
       throw new Error(errorMessage);
     }
 
-    let data: any;
+    let data: { access_token?: string };
     try {
-      data = await response.json();
+      data = await response.json() as { access_token?: string };
     } catch (parseError) {
       if (debug) {
         console.error(

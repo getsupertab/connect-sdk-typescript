@@ -171,7 +171,7 @@ export async function verifyLicenseToken({
 
     try {
       const getKey = async (jwtHeader: JWTHeaderParameters) => {
-        const jwk = jwks.keys.find((key: any) => key.kid === jwtHeader.kid);
+        const jwk = jwks.keys.find((key) => key.kid === jwtHeader.kid);
         if (!jwk) {
           throw new JwksKeyNotFoundError(jwtHeader.kid);
         }

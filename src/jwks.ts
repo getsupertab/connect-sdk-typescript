@@ -1,6 +1,7 @@
+import type { JSONWebKeySet } from "jose";
 import { FASTLY_BACKEND, FetchOptions } from "./types";
 
-type JwksCacheEntry = { data: any; cachedAt: number };
+type JwksCacheEntry = { data: JSONWebKeySet; cachedAt: number };
 const jwksCache = new Map<string, JwksCacheEntry>();
 const JWKS_CACHE_TTL_MS = 48 * 60 * 60 * 1000; // 48 hours
 
@@ -34,7 +35,7 @@ async function fetchAndCacheJwks({
   debug,
   failureMessage,
   logLabel,
-}: FetchJwksParams): Promise<any> {
+}: FetchJwksParams): Promise<JSONWebKeySet> {
   const cached = jwksCache.get(cacheKey);
   if (cached && (Date.now() - cached.cachedAt) < JWKS_CACHE_TTL_MS) {
     return cached.data;
@@ -47,7 +48,7 @@ async function fetchAndCacheJwks({
       throw new Error(`${failureMessage}: ${response.status}`);
     }
 
-    const jwksData = await response.json();
+    const jwksData = await response.json() as JSONWebKeySet;
     jwksCache.set(cacheKey, { data: jwksData, cachedAt: Date.now() });
     return jwksData;
   } catch (error) {
@@ -61,7 +62,7 @@ async function fetchAndCacheJwks({
 export async function fetchPlatformJwks(
   baseUrl: string,
   debug: boolean
-): Promise<any> {
+): Promise<JSONWebKeySet> {
   const jwksUrl = `${baseUrl}/.well-known/jwks.json/platform`;
   if (debug) {
     console.debug(`Fetching platform JWKS from URL: ${jwksUrl}`);
