@@ -1,4 +1,4 @@
-import { EventPayload, FASTLY_BACKEND } from "./types";
+import { EventPayload, FASTLY_BACKEND, FetchOptions } from "./types";
 
 export async function recordEvent({
   apiKey,
@@ -11,7 +11,7 @@ export async function recordEvent({
   apiKey: string;
   baseUrl: string;
   eventName: string;
-  properties: Record<string, any>;
+  properties: Record<string, string>;
   licenseId?: string;
   debug?: boolean;
 }): Promise<void> {
@@ -22,7 +22,7 @@ export async function recordEvent({
   };
 
   try {
-    let options: any = {
+    let options: FetchOptions = {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -30,8 +30,7 @@ export async function recordEvent({
       },
       body: JSON.stringify(payload),
     };
-    // @ts-ignore
-    if (globalThis?.fastly) {
+    if (globalThis.fastly) {
       options = { ...options, backend: FASTLY_BACKEND };
     }
     const response = await fetch(`${baseUrl}/events`, options);

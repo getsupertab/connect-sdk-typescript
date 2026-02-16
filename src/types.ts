@@ -1,3 +1,5 @@
+import type { JWTPayload } from "jose";
+
 export enum EnforcementMode {
   DISABLED = "disabled",
   SOFT = "soft",
@@ -5,7 +7,7 @@ export enum EnforcementMode {
 }
 
 export interface ExecutionContext {
-  waitUntil(promise: Promise<any>): void;
+  waitUntil(promise: Promise<void>): void;
 }
 
 export type BotDetector = (request: Request, ctx?: ExecutionContext) => boolean;
@@ -30,11 +32,11 @@ export interface Env {
 export interface EventPayload {
   event_name: string;
   license_id?: string;
-  properties: Record<string, any>;
+  properties: Record<string, string>;
 }
 
 export type LicenseTokenVerificationResult =
-  | { valid: true; licenseId?: string; payload: any }
+  | { valid: true; licenseId?: string; payload: JWTPayload }
   | { valid: false; reason: LicenseTokenInvalidReason; error: string; licenseId?: string };
 
 export enum LicenseTokenInvalidReason {
@@ -47,6 +49,11 @@ export enum LicenseTokenInvalidReason {
   EXPIRED = "license_token_expired",
   INVALID_AUDIENCE = "invalid_license_audience",
   SERVER_ERROR = "server_error",
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var fastly: object | undefined;
 }
 
 export const FASTLY_BACKEND = "stc-backend";

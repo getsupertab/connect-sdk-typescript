@@ -28,8 +28,9 @@ import {
   CloudfrontHandlerOptions,
 } from "./types";
 
-export { EnforcementMode, HandlerAction };
+export { EnforcementMode, HandlerAction, LicenseTokenInvalidReason };
 export type {
+  SupertabConnectConfig,
   RSLVerificationResult,
   ExecutionContext,
   Env,

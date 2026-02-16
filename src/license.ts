@@ -13,7 +13,7 @@ import {
   FASTLY_BACKEND,
   FetchOptions,
 } from "./types";
-import { fetchPlatformJwks } from "./jwks";
+import { fetchPlatformJwks, clearJwksCache, JwksKeyNotFoundError } from "./jwks";
 import { recordEvent } from "./events";
 
 const stripTrailingSlash = (value: string) => value.trim().replace(/\/+$/, "");
@@ -153,61 +153,80 @@ export async function verifyLicenseToken({
     };
   }
 
-  let jwks;
-  try {
-    jwks = await fetchPlatformJwks(supertabBaseUrl, debug);
-  } catch (error) {
-    if (debug) {
-      console.error("Failed to fetch platform JWKS:", error);
-    }
-    return {
-      valid: false,
-      reason: LicenseTokenInvalidReason.SERVER_ERROR,
-      error: reasonToErrorDescription(LicenseTokenInvalidReason.SERVER_ERROR),
-      licenseId,
-    };
-  }
-
-  try {
-    const getKey = async (jwtHeader: JWTHeaderParameters) => {
-      const jwk = jwks.keys.find((key: any) => key.kid === jwtHeader.kid);
-      if (!jwk) {
-        throw new Error(`No matching platform key found: ${jwtHeader.kid}`);
+  const verify = async (): Promise<LicenseTokenVerificationResult> => {
+    let jwks;
+    try {
+      jwks = await fetchPlatformJwks(supertabBaseUrl, debug);
+    } catch (error) {
+      if (debug) {
+        console.error("Failed to fetch platform JWKS:", error);
       }
-      return jwk;
-    };
-
-    const result = await jwtVerify(licenseToken, getKey, {
-      issuer,
-      algorithms: [header.alg],
-      clockTolerance: "1m",
-    });
-
-    return {
-      valid: true,
-      licenseId,
-      payload: result.payload,
-    };
-  } catch (error) {
-    if (debug) {
-      console.error("License JWT verification failed:", error);
-    }
-
-    if (error instanceof Error && error.message?.includes("exp")) {
       return {
         valid: false,
-        reason: LicenseTokenInvalidReason.EXPIRED,
-        error: reasonToErrorDescription(LicenseTokenInvalidReason.EXPIRED),
+        reason: LicenseTokenInvalidReason.SERVER_ERROR,
+        error: reasonToErrorDescription(LicenseTokenInvalidReason.SERVER_ERROR),
         licenseId,
       };
     }
 
-    return {
-      valid: false,
-      reason: LicenseTokenInvalidReason.SIGNATURE_VERIFICATION_FAILED,
-      error: reasonToErrorDescription(LicenseTokenInvalidReason.SIGNATURE_VERIFICATION_FAILED),
-      licenseId,
-    };
+    try {
+      const getKey = async (jwtHeader: JWTHeaderParameters) => {
+        const jwk = jwks.keys.find((key) => key.kid === jwtHeader.kid);
+        if (!jwk) {
+          throw new JwksKeyNotFoundError(jwtHeader.kid);
+        }
+        return jwk;
+      };
+
+      const result = await jwtVerify(licenseToken, getKey, {
+        issuer,
+        algorithms: [header.alg],
+        clockTolerance: "1m",
+      });
+
+      return {
+        valid: true,
+        licenseId,
+        payload: result.payload,
+      };
+    } catch (error) {
+      if (debug) {
+        console.error("License JWT verification failed:", error);
+      }
+
+      if (error instanceof JwksKeyNotFoundError) {
+        throw error;
+      }
+
+      if (error instanceof Error && error.message?.includes("exp")) {
+        return {
+          valid: false,
+          reason: LicenseTokenInvalidReason.EXPIRED,
+          error: reasonToErrorDescription(LicenseTokenInvalidReason.EXPIRED),
+          licenseId,
+        };
+      }
+
+      return {
+        valid: false,
+        reason: LicenseTokenInvalidReason.SIGNATURE_VERIFICATION_FAILED,
+        error: reasonToErrorDescription(LicenseTokenInvalidReason.SIGNATURE_VERIFICATION_FAILED),
+        licenseId,
+      };
+    }
+  };
+
+  try {
+    return await verify();
+  } catch (error) {
+    if (error instanceof JwksKeyNotFoundError) {
+      if (debug) {
+        console.debug("Key not found in cached JWKS, clearing cache and retrying...");
+      }
+      clearJwksCache();
+      return await verify();
+    }
+    throw error;
   }
 }
 
@@ -299,8 +318,7 @@ export function buildBlockResult({
 
 function buildFetchOptions(): FetchOptions {
   let options: FetchOptions = { method: "GET" };
-  // @ts-ignore - backend is a Fastly-specific extension
-  if (globalThis?.fastly) {
+  if (globalThis.fastly) {
     options = { ...options, backend: FASTLY_BACKEND };
   }
   return options;

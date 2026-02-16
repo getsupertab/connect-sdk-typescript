@@ -4,7 +4,7 @@ declare enum EnforcementMode {
     STRICT = "strict"
 }
 interface ExecutionContext {
-    waitUntil(promise: Promise<any>): void;
+    waitUntil(promise: Promise<void>): void;
 }
 type BotDetector = (request: Request, ctx?: ExecutionContext) => boolean;
 interface SupertabConnectConfig {
@@ -21,6 +21,20 @@ interface Env {
     /** The API key for authenticating with the Supertab Connect. */
     MERCHANT_API_KEY: string;
     [key: string]: string;
+}
+declare enum LicenseTokenInvalidReason {
+    MISSING_TOKEN = "missing_license_token",
+    INVALID_HEADER = "invalid_license_header",
+    INVALID_ALG = "invalid_license_algorithm",
+    INVALID_PAYLOAD = "invalid_license_payload",
+    INVALID_ISSUER = "invalid_license_issuer",
+    SIGNATURE_VERIFICATION_FAILED = "license_signature_verification_failed",
+    EXPIRED = "license_token_expired",
+    INVALID_AUDIENCE = "invalid_license_audience",
+    SERVER_ERROR = "server_error"
+}
+declare global {
+    var fastly: object | undefined;
 }
 declare enum HandlerAction {
     ALLOW = "allow",
@@ -219,4 +233,4 @@ declare class SupertabConnect {
     static cloudfrontHandleRequests<TRequest extends Record<string, any>>(event: CloudFrontRequestEvent<TRequest>, options: CloudfrontHandlerOptions): Promise<CloudFrontRequestResult<TRequest>>;
 }
 
-export { type BotDetector, type CloudFrontRequestEvent, type CloudFrontRequestResult, type CloudfrontHandlerOptions, EnforcementMode, type Env, type ExecutionContext, type FastlyHandlerOptions, HandlerAction, type HandlerResult, type RSLVerificationResult, SupertabConnect, defaultBotDetector };
+export { type BotDetector, type CloudFrontRequestEvent, type CloudFrontRequestResult, type CloudfrontHandlerOptions, EnforcementMode, type Env, type ExecutionContext, type FastlyHandlerOptions, HandlerAction, type HandlerResult, LicenseTokenInvalidReason, type RSLVerificationResult, SupertabConnect, type SupertabConnectConfig, defaultBotDetector };
