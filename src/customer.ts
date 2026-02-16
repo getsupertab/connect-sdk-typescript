@@ -1,6 +1,44 @@
-import { loadKeyImport, loadJwtSign } from "./jose";
+import { loadKeyImport, loadJwtSign, loadDecodeJwt } from "./jose";
 
 type SupportedAlg = "RS256" | "ES256";
+
+// In-memory cache for license tokens, keyed by "clientId:resourceUrl"
+const licenseTokenCache = new Map<string, string>();
+
+/**
+ * Returns a cached token if it exists and won't expire within the next 30 seconds.
+ */
+async function getCachedToken(
+  cacheKey: string,
+  debug?: boolean
+): Promise<string | null> {
+  const token = licenseTokenCache.get(cacheKey);
+  if (!token) return null;
+
+  try {
+    const { decodeJwt } = await loadDecodeJwt();
+    const claims = decodeJwt(token);
+    const now = Math.floor(Date.now() / 1000);
+    if (claims.exp && claims.exp > now + 30) {
+      if (debug) {
+        console.debug(
+          `Using cached license token (expires in ${claims.exp - now}s)`
+        );
+      }
+      return token;
+    }
+    if (debug) {
+      console.debug("Cached license token expired or expiring soon, refreshing");
+    }
+  } catch {
+    if (debug) {
+      console.debug("Failed to decode cached token, refreshing");
+    }
+  }
+
+  licenseTokenCache.delete(cacheKey);
+  return null;
+}
 
 type GenerateLicenseTokenParams = {
   clientId: string;
@@ -276,6 +314,10 @@ export async function obtainLicenseToken({
   resourceUrl,
   debug,
 }: ObtainLicenseTokenParams): Promise<string> {
+  const cacheKey = `${clientId}:${resourceUrl}`;
+  const cached = await getCachedToken(cacheKey, debug);
+  if (cached) return cached;
+
   const xml = await fetchLicenseXml(resourceUrl, debug);
   if (debug) {
     console.debug(`Fetched license.xml (${xml.length} chars)`);
@@ -328,7 +370,9 @@ export async function obtainLicenseToken({
     body: payload.toString(),
   };
 
-  return retrieveLicenseToken(tokenEndpoint, requestOptions, debug);
+  const token = await retrieveLicenseToken(tokenEndpoint, requestOptions, debug);
+  licenseTokenCache.set(cacheKey, token);
+  return token;
 }
 
 export type { ObtainLicenseTokenParams };
