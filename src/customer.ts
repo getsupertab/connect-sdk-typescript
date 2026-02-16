@@ -2,40 +2,31 @@ import { loadKeyImport, loadJwtSign, loadDecodeJwt } from "./jose";
 
 type SupportedAlg = "RS256" | "ES256";
 
-// In-memory cache for license tokens, keyed by "clientId:resourceUrl"
-const licenseTokenCache = new Map<string, string>();
+type CachedToken = { token: string; exp: number };
 
-/**
- * Returns a cached token if it exists and won't expire within the next 30 seconds.
- */
-async function getCachedToken(
+// In-memory cache for license tokens, keyed by "clientId:resourceUrl"
+const licenseTokenCache = new Map<string, CachedToken>();
+
+function getCachedToken(
   cacheKey: string,
   debug?: boolean
-): Promise<string | null> {
-  const token = licenseTokenCache.get(cacheKey);
-  if (!token) return null;
+): string | null {
+  const cached = licenseTokenCache.get(cacheKey);
+  if (!cached) return null;
 
-  try {
-    const { decodeJwt } = await loadDecodeJwt();
-    const claims = decodeJwt(token);
-    const now = Math.floor(Date.now() / 1000);
-    if (claims.exp && claims.exp > now + 30) {
-      if (debug) {
-        console.debug(
-          `Using cached license token (expires in ${claims.exp - now}s)`
-        );
-      }
-      return token;
-    }
+  const now = Math.floor(Date.now() / 1000);
+  if (cached.exp > now + 30) {
     if (debug) {
-      console.debug("Cached license token expired or expiring soon, refreshing");
+      console.debug(
+        `Using cached license token (expires in ${cached.exp - now}s)`
+      );
     }
-  } catch {
-    if (debug) {
-      console.debug("Failed to decode cached token, refreshing");
-    }
+    return cached.token;
   }
 
+  if (debug) {
+    console.debug("Cached license token expired or expiring soon, refreshing");
+  }
   licenseTokenCache.delete(cacheKey);
   return null;
 }
@@ -315,7 +306,7 @@ export async function obtainLicenseToken({
   debug,
 }: ObtainLicenseTokenParams): Promise<string> {
   const cacheKey = `${clientId}:${resourceUrl}`;
-  const cached = await getCachedToken(cacheKey, debug);
+  const cached = getCachedToken(cacheKey, debug);
   if (cached) return cached;
 
   const xml = await fetchLicenseXml(resourceUrl, debug);
@@ -371,7 +362,19 @@ export async function obtainLicenseToken({
   };
 
   const token = await retrieveLicenseToken(tokenEndpoint, requestOptions, debug);
-  licenseTokenCache.set(cacheKey, token);
+
+  try {
+    const { decodeJwt } = await loadDecodeJwt();
+    const claims = decodeJwt(token);
+    if (claims.exp) {
+      licenseTokenCache.set(cacheKey, { token, exp: claims.exp });
+    }
+  } catch {
+    if (debug) {
+      console.debug("Failed to decode token for caching, skipping cache");
+    }
+  }
+
   return token;
 }
 
