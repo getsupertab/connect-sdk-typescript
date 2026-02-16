@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, onTestFailed } from "vitest";
 import { SupertabConnect } from "../../src/index";
 import { ENVIRONMENTS } from "./config";
 
@@ -46,6 +46,24 @@ interface FetchOptions {
   token: "none" | "valid" | "invalid";
 }
 
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const payload = Buffer.from(parts[1], "base64url").toString("utf-8");
+    return JSON.parse(payload);
+  } catch {
+    return null;
+  }
+}
+
+// Log buffer — flushed only on test failure
+let logBuffer: string[] = [];
+
+function log(msg: string) {
+  logBuffer.push(msg);
+}
+
 async function fetchResource(options: FetchOptions): Promise<Response> {
   const { userAgent, token } = options;
 
@@ -62,14 +80,33 @@ async function fetchResource(options: FetchOptions): Promise<Response> {
       debug: true,
     });
     headers.Authorization = `License ${signedLicense}`;
+
+    const claims = decodeJwtPayload(signedLicense);
+    log("[fetchResource] Token obtained successfully");
+    log("[fetchResource] Token claims: " + JSON.stringify(claims, null, 2));
+    log("[fetchResource] Resource URL: " + config.resourceUrl);
   } else if (token === "invalid") {
     headers.Authorization = "License invalid.token.here";
   }
+
+  log("[fetchResource] Request headers: " + JSON.stringify(headers, null, 2));
 
   const response = await fetch(config.resourceUrl, {
     method: "GET",
     headers,
   });
+
+  log("[fetchResource] Response status: " + response.status);
+  const headerLines: string[] = [];
+  response.headers.forEach((value, key) => {
+    headerLines.push(`  ${key}: ${value}`);
+  });
+  log("[fetchResource] Response headers:\n" + headerLines.join("\n"));
+
+  if (response.status !== 200) {
+    const body = await response.clone().text();
+    log("[fetchResource] Response body: " + body);
+  }
 
   return response;
 }
@@ -93,6 +130,15 @@ beforeAll(() => {
   console.log(`  Test Mode: ${TEST_MODE}`);
   console.log(`  Base URL: ${baseUrl}`);
   console.log(`  Resource URL: ${config.resourceUrl}\n`);
+});
+
+beforeEach(() => {
+  logBuffer = [];
+  onTestFailed(() => {
+    console.log("\n--- Debug logs for failed test ---");
+    logBuffer.forEach((line) => console.log(line));
+    console.log("--- End debug logs ---\n");
+  });
 });
 
 // ============================================================================
