@@ -82,6 +82,16 @@ export async function handleFastlyRequest(
   return originResponse;
 }
 
+function statusDescription(status: number): string {
+  switch (status) {
+    case 401: return "Unauthorized";
+    case 402: return "Payment Required";
+    case 403: return "Forbidden";
+    case 503: return "Service Unavailable";
+    default: return "Error";
+  }
+}
+
 export async function handleCloudfrontRequest<TRequest extends Record<string, any>>(
   handler: RequestHandler,
   event: CloudFrontRequestEvent<TRequest>
@@ -111,8 +121,7 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
 
     return {
       status: result.status.toString(),
-      statusDescription:
-        result.status === 401 ? "Unauthorized" : "Payment Required",
+      statusDescription: statusDescription(result.status),
       headers: responseHeaders,
       body: result.body,
     };
