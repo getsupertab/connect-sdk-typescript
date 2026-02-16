@@ -1,11 +1,18 @@
 import { FASTLY_BACKEND, FetchOptions } from "./types";
 
-const jwksCache = new Map<string, any>();
+type JwksCacheEntry = { data: any; cachedAt: number };
+const jwksCache = new Map<string, JwksCacheEntry>();
+const JWKS_CACHE_TTL_MS = 48 * 60 * 60 * 1000; // 48 hours
 
-type JwksCacheKey = string;
+export class JwksKeyNotFoundError extends Error {
+  constructor(kid: string | undefined) {
+    super(`No matching platform key found: ${kid}`);
+    this.name = "JwksKeyNotFoundError";
+  }
+}
 
 type FetchJwksParams = {
-  cacheKey: JwksCacheKey;
+  cacheKey: string;
   url: string;
   debug: boolean;
   failureMessage: string;
@@ -28,25 +35,27 @@ async function fetchAndCacheJwks({
   failureMessage,
   logLabel,
 }: FetchJwksParams): Promise<any> {
-  if (!jwksCache.has(cacheKey)) {
-    try {
-      const response = await fetch(url, buildFetchOptions());
-
-      if (!response.ok) {
-        throw new Error(`${failureMessage}: ${response.status}`);
-      }
-
-      const jwksData = await response.json();
-      jwksCache.set(cacheKey, jwksData);
-    } catch (error) {
-      if (debug) {
-        console.error(logLabel, error);
-      }
-      throw error;
-    }
+  const cached = jwksCache.get(cacheKey);
+  if (cached && (Date.now() - cached.cachedAt) < JWKS_CACHE_TTL_MS) {
+    return cached.data;
   }
 
-  return jwksCache.get(cacheKey);
+  try {
+    const response = await fetch(url, buildFetchOptions());
+
+    if (!response.ok) {
+      throw new Error(`${failureMessage}: ${response.status}`);
+    }
+
+    const jwksData = await response.json();
+    jwksCache.set(cacheKey, { data: jwksData, cachedAt: Date.now() });
+    return jwksData;
+  } catch (error) {
+    if (debug) {
+      console.error(logLabel, error);
+    }
+    throw error;
+  }
 }
 
 export async function fetchPlatformJwks(
