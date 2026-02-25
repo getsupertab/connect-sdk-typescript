@@ -2,6 +2,7 @@ import {
   HandlerAction,
   HandlerResult,
   ExecutionContext,
+  CDNStatusDescription,
   CloudFrontHeaders,
   CloudFrontRequestEvent,
   CloudFrontRequestResult,
@@ -82,13 +83,13 @@ export async function handleFastlyRequest(
   return originResponse;
 }
 
-function statusDescription(status: number): string {
+function statusDescription(status: number): CDNStatusDescription {
   switch (status) {
-    case 401: return "Unauthorized";
-    case 402: return "Payment Required";
-    case 403: return "Forbidden";
-    case 503: return "Service Unavailable";
-    default: return "Error";
+    case 401: return CDNStatusDescription.Unauthorized;
+    case 402: return CDNStatusDescription.PaymentRequired;
+    case 403: return CDNStatusDescription.Forbidden;
+    case 503: return CDNStatusDescription.ServiceUnavailable;
+    default: return CDNStatusDescription.Error;
   }
 }
 

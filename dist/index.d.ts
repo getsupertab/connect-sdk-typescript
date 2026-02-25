@@ -49,6 +49,13 @@ type HandlerResult = {
     body: string;
     headers: Record<string, string>;
 };
+declare enum CDNStatusDescription {
+    Unauthorized = "Unauthorized",
+    PaymentRequired = "Payment Required",
+    Forbidden = "Forbidden",
+    ServiceUnavailable = "Service Unavailable",
+    Error = "Error"
+}
 interface CloudFrontHeaders {
     [key: string]: Array<{
         key?: string;
@@ -57,7 +64,7 @@ interface CloudFrontHeaders {
 }
 interface CloudFrontResultResponse {
     status: string;
-    statusDescription?: string;
+    statusDescription?: CDNStatusDescription;
     headers?: CloudFrontHeaders;
     bodyEncoding?: "text" | "base64";
     body?: string;
@@ -233,4 +240,4 @@ declare class SupertabConnect {
     static cloudfrontHandleRequests<TRequest extends Record<string, any>>(event: CloudFrontRequestEvent<TRequest>, options: CloudfrontHandlerOptions): Promise<CloudFrontRequestResult<TRequest>>;
 }
 
-export { type BotDetector, type CloudFrontRequestEvent, type CloudFrontRequestResult, type CloudfrontHandlerOptions, EnforcementMode, type Env, type ExecutionContext, type FastlyHandlerOptions, HandlerAction, type HandlerResult, LicenseTokenInvalidReason, type RSLVerificationResult, SupertabConnect, type SupertabConnectConfig, defaultBotDetector };
+export { type BotDetector, CDNStatusDescription, type CloudFrontRequestEvent, type CloudFrontRequestResult, type CloudfrontHandlerOptions, EnforcementMode, type Env, type ExecutionContext, type FastlyHandlerOptions, HandlerAction, type HandlerResult, LicenseTokenInvalidReason, type RSLVerificationResult, SupertabConnect, type SupertabConnectConfig, defaultBotDetector };

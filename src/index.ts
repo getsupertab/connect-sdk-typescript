@@ -5,6 +5,7 @@ import {
   HandlerAction,
   HandlerResult,
   LicenseTokenInvalidReason,
+  CDNStatusDescription,
   RSLVerificationResult,
   ExecutionContext,
   Env,
@@ -28,7 +29,7 @@ import {
   CloudfrontHandlerOptions,
 } from "./types";
 
-export { EnforcementMode, HandlerAction, LicenseTokenInvalidReason };
+export { EnforcementMode, HandlerAction, LicenseTokenInvalidReason, CDNStatusDescription };
 export type {
   SupertabConnectConfig,
   RSLVerificationResult,
