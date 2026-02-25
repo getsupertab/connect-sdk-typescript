@@ -72,6 +72,14 @@ export type HandlerResult =
   | { action: HandlerAction.ALLOW; headers?: Record<string, string> }
   | { action: HandlerAction.BLOCK; status: number; body: string; headers: Record<string, string> };
 
+export enum CDNStatusDescription {
+  Unauthorized = "Unauthorized",
+  PaymentRequired = "Payment Required",
+  Forbidden = "Forbidden",
+  ServiceUnavailable = "Service Unavailable",
+  Error = "Error",
+}
+
 // CloudFront Lambda@Edge types
 // Uses permissive types to be compatible with aws-lambda package types
 export interface CloudFrontHeaders {
@@ -80,7 +88,7 @@ export interface CloudFrontHeaders {
 
 export interface CloudFrontResultResponse {
   status: string;
-  statusDescription?: string;
+  statusDescription?: CDNStatusDescription;
   headers?: CloudFrontHeaders;
   bodyEncoding?: "text" | "base64";
   body?: string;
