@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "build": "esbuild index.ts --bundle --platform=node --target=node18 --outfile=dist/index.js",
+    "build": "esbuild index.ts --bundle --platform=node --target=node20 --outfile=dist/index.js",
     "package": "cd dist && zip -r function.zip index.js",
     "deploy": "npm run build && npm run package"
   },
