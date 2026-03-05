@@ -273,6 +273,7 @@ function findBestMatchingContent(
       return block;
     }
 
+    // Wildcard matching with trailing `/*`
     if (patternPath.endsWith("/*")) {
       const prefix = patternPath.slice(0, -1); // remove trailing *
       if (path.startsWith(prefix)) {
@@ -281,6 +282,13 @@ function findBestMatchingContent(
           bestSpecificity = specificity;
           bestMatch = block;
         }
+      }
+    // Path matching without wildcard (e.g. pattern "/content" matches "/content/article")
+    } else if (path.startsWith(patternPath)) {
+      const specificity = patternPath.length;
+      if (specificity > bestSpecificity) {
+        bestSpecificity = specificity;
+        bestMatch = block;
       }
     }
   }
