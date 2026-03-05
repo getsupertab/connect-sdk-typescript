@@ -122,6 +122,13 @@ describe("findBestMatchingContent", () => {
     expect(result!.urlPattern).toBe("http://127.0.0.1:7676/content");
   });
 
+  it("does not match non-segment prefix", () => {
+    const result = findBestMatchingContent(
+      blocks,
+      "http://127.0.0.1:7676/content-other"
+    );
+    expect(result).toBeNull();
+  });
   it("skips invalid URL patterns gracefully", () => {
     const blocksWithBad: ContentBlock[] = [
       { urlPattern: "not-a-valid-url", server: "http://x", licenseXml: "<license/>" },
