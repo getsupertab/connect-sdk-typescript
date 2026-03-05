@@ -283,8 +283,9 @@ function findBestMatchingContent(
           bestMatch = block;
         }
       }
-    // Path matching without wildcard (e.g. URL "/content/article" matches pattern "/content")
     } else {
+      // Path matching without wildcard (e.g. URL "/content/article" matches pattern "/content")
+      //
       // Enforce path segment boundary by ensuring pattern path ends with "/" before matching.
       // e.g. pattern "/content" should not match path "/content-other",
       // but should match "/content/article".
