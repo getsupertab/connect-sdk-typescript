@@ -283,7 +283,7 @@ function findBestMatchingContent(
           bestMatch = block;
         }
       }
-    // Path matching without wildcard (e.g. pattern "/content" matches "/content/article")
+    // Path matching without wildcard (e.g. URL "/content/article" matches pattern "/content")
     } else if (path.startsWith(patternPath)) {
       const specificity = patternPath.length;
       if (specificity > bestSpecificity) {
