@@ -9,7 +9,7 @@
  *
  * Returns specificity (number of literal characters) on match, or -1 on no match.
  */
-export function matchPathPattern(pattern: string, path: string): number {
+export function scorePathPattern(pattern: string, path: string): number {
   let anchored = false;
   let pat = pattern;
 

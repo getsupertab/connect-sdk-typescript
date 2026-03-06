@@ -1,5 +1,5 @@
 import { loadKeyImport, loadJwtSign, loadDecodeJwt } from "./jose";
-import { matchPathPattern } from "./url-pattern";
+import { scorePathPattern } from "./url-pattern";
 
 type SupportedAlg = "RS256" | "ES256";
 
@@ -276,7 +276,7 @@ function findBestMatchingContent(
     }
 
     // Pattern match (wildcards, prefix, anchored)
-    const specificity = matchPathPattern(patternPath, path);
+    const specificity = scorePathPattern(patternPath, path);
     if (specificity > bestSpecificity) {
       bestSpecificity = specificity;
       bestMatch = block;
