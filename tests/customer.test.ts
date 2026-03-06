@@ -131,7 +131,8 @@ describe("findBestMatchingContent", () => {
     expect(result).not.toBeNull();
     expect(result!.urlPattern).toBe("http://127.0.0.1:7676/*");
   });
-  it("mid-path wildcard matches", () => {
+  
+  it("mid-path wildcard is more specific than bare prefix", () => {
     const blocksWithMidWildcard: ContentBlock[] = [
       ...blocks,
       {
@@ -145,23 +146,6 @@ describe("findBestMatchingContent", () => {
       "http://127.0.0.1:7676/content/news/article"
     );
     expect(result).not.toBeNull();
-    expect(result!.urlPattern).toBe("http://127.0.0.1:7676/content/*/article");
-  });
-
-  it("mid-path wildcard is more specific than bare prefix", () => {
-    const blocksWithMidWildcard: ContentBlock[] = [
-      ...blocks,
-      {
-        urlPattern: "http://127.0.0.1:7676/content/*/article",
-        server: "http://127.0.0.1:8787",
-        licenseXml: "<license/>",
-      },
-    ];
-    // /content (8 literal chars) vs /content/*/article (17 literal chars)
-    const result = findBestMatchingContent(
-      blocksWithMidWildcard,
-      "http://127.0.0.1:7676/content/news/article"
-    );
     expect(result!.urlPattern).toBe("http://127.0.0.1:7676/content/*/article");
   });
 
