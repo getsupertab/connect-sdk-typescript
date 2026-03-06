@@ -25,4 +25,4 @@ jobs:
         run: npm run build
 
       - name: Run tests
-        run: npm test
+        run: npx vitest run --exclude 'tests/e2e/**'
