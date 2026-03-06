@@ -80,6 +80,17 @@ describe("scorePathPattern", () => {
     });
   });
 
+  describe("special characters in pattern", () => {
+    it("treats $ in the middle of pattern as literal", () => {
+      expect(scorePathPattern("/pa$ge", "/pa$ge")).toBe(6);
+    });
+
+    it("treats . in pattern as literal", () => {
+      expect(scorePathPattern("/page.html$", "/page.html")).toBe(10);
+      expect(scorePathPattern("/page.html$", "/pagexhtml")).toBe(-1);
+    });
+  });
+
   describe("specificity", () => {
     it("more literal characters means higher specificity", () => {
       const broad = scorePathPattern("/*", "/content/news/article");

@@ -21,7 +21,7 @@ export function scorePathPattern(pattern: string, path: string): number {
   const hasWildcard = pat.includes("*");
 
   // Escape regex special chars (except *) and treat them as literals
-  const escaped = pat.replace(/[.+?^{}()|[\]\\]/g, "\\$&");
+  const escaped = pat.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
   // Converts wildcard * to regex equivalent .*
   const regexBody = escaped.replace(/\*/g, ".*");
 
