@@ -1,4 +1,5 @@
 import { loadKeyImport, loadJwtSign, loadDecodeJwt } from "./jose";
+import { matchPathPattern } from "./url-pattern";
 
 type SupportedAlg = "RS256" | "ES256";
 
@@ -266,6 +267,7 @@ function findBestMatchingContent(
 
     const patternPath = patternUrl.pathname;
 
+    // Exact match — highest priority, return immediately
     if (patternPath === path) {
       if (debug) {
         console.debug(`Exact match found: ${block.urlPattern}`);
@@ -273,33 +275,11 @@ function findBestMatchingContent(
       return block;
     }
 
-    // Wildcard matching with trailing `/*`
-    if (patternPath.endsWith("/*")) {
-      const prefix = patternPath.slice(0, -1); // remove trailing *
-      if (path.startsWith(prefix)) {
-        const specificity = prefix.length;
-        if (specificity > bestSpecificity) {
-          bestSpecificity = specificity;
-          bestMatch = block;
-        }
-      }
-    } else {
-      // Path matching without wildcard (e.g. URL "/content/article" matches pattern "/content")
-      //
-      // Enforce path segment boundary by ensuring pattern path ends with "/" before matching.
-      // e.g. pattern "/content" should not match path "/content-other",
-      // but should match "/content/article".
-      const normalizedPatternPath = patternPath.endsWith("/")
-        ? patternPath
-        : patternPath + "/";
-
-      if (path.startsWith(normalizedPatternPath)) {
-        const specificity = patternPath.length;
-        if (specificity > bestSpecificity) {
-          bestSpecificity = specificity;
-          bestMatch = block;
-        }
-      }
+    // Pattern match (wildcards, prefix, anchored)
+    const specificity = matchPathPattern(patternPath, path);
+    if (specificity > bestSpecificity) {
+      bestSpecificity = specificity;
+      bestMatch = block;
     }
   }
 

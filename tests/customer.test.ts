@@ -122,13 +122,49 @@ describe("findBestMatchingContent", () => {
     expect(result!.urlPattern).toBe("http://127.0.0.1:7676/content");
   });
 
-  it("does not match non-segment prefix", () => {
+  it("does not match non-segment prefix (falls back to catch-all)", () => {
     const result = findBestMatchingContent(
       blocks,
       "http://127.0.0.1:7676/content-other"
     );
-    expect(result).toBeNull();
+    // /content pattern should NOT match /content-other, but /* catch-all does
+    expect(result).not.toBeNull();
+    expect(result!.urlPattern).toBe("http://127.0.0.1:7676/*");
   });
+  it("mid-path wildcard matches", () => {
+    const blocksWithMidWildcard: ContentBlock[] = [
+      ...blocks,
+      {
+        urlPattern: "http://127.0.0.1:7676/content/*/article",
+        server: "http://127.0.0.1:8787",
+        licenseXml: "<license/>",
+      },
+    ];
+    const result = findBestMatchingContent(
+      blocksWithMidWildcard,
+      "http://127.0.0.1:7676/content/news/article"
+    );
+    expect(result).not.toBeNull();
+    expect(result!.urlPattern).toBe("http://127.0.0.1:7676/content/*/article");
+  });
+
+  it("mid-path wildcard is more specific than bare prefix", () => {
+    const blocksWithMidWildcard: ContentBlock[] = [
+      ...blocks,
+      {
+        urlPattern: "http://127.0.0.1:7676/content/*/article",
+        server: "http://127.0.0.1:8787",
+        licenseXml: "<license/>",
+      },
+    ];
+    // /content (8 literal chars) vs /content/*/article (17 literal chars)
+    const result = findBestMatchingContent(
+      blocksWithMidWildcard,
+      "http://127.0.0.1:7676/content/news/article"
+    );
+    expect(result!.urlPattern).toBe("http://127.0.0.1:7676/content/*/article");
+  });
+
   it("skips invalid URL patterns gracefully", () => {
     const blocksWithBad: ContentBlock[] = [
       { urlPattern: "not-a-valid-url", server: "http://x", licenseXml: "<license/>" },
