@@ -1,4 +1,5 @@
 import { loadKeyImport, loadJwtSign, loadDecodeJwt } from "./jose";
+import { scorePathPattern } from "./url-pattern";
 
 type SupportedAlg = "RS256" | "ES256";
 
@@ -266,6 +267,7 @@ function findBestMatchingContent(
 
     const patternPath = patternUrl.pathname;
 
+    // Exact match — highest priority, return immediately
     if (patternPath === path) {
       if (debug) {
         console.debug(`Exact match found: ${block.urlPattern}`);
@@ -273,15 +275,11 @@ function findBestMatchingContent(
       return block;
     }
 
-    if (patternPath.endsWith("/*")) {
-      const prefix = patternPath.slice(0, -1); // remove trailing *
-      if (path.startsWith(prefix)) {
-        const specificity = prefix.length;
-        if (specificity > bestSpecificity) {
-          bestSpecificity = specificity;
-          bestMatch = block;
-        }
-      }
+    // Pattern match (wildcards, prefix, anchored)
+    const specificity = scorePathPattern(patternPath, path);
+    if (specificity > bestSpecificity) {
+      bestSpecificity = specificity;
+      bestMatch = block;
     }
   }
 

@@ -17,13 +17,18 @@ const sampleXml = `
       <link rel="self" href="http://127.0.0.1:8787/license" />
     </license>
   </content>
+  <content url="http://127.0.0.1:7676/content" server="http://127.0.0.1:8787">
+    <license type="application/vnd.readium.license.status.v1.0+json">
+      <link rel="self" href="http://127.0.0.1:8787/license" />
+    </license>
+  </content>
 </rsl>
 `;
 
 describe("parseContentElements", () => {
   it("parses multiple content blocks", () => {
     const blocks = parseContentElements(sampleXml);
-    expect(blocks).toHaveLength(2);
+    expect(blocks).toHaveLength(3);
 
     expect(blocks[0].urlPattern).toBe("http://127.0.0.1:7676/*");
     expect(blocks[0].server).toBe("http://127.0.0.1:8787");
@@ -32,6 +37,10 @@ describe("parseContentElements", () => {
     expect(blocks[1].urlPattern).toBe("http://127.0.0.1:7676/article/*");
     expect(blocks[1].server).toBe("http://127.0.0.1:8787");
     expect(blocks[1].licenseXml).toContain("<license");
+
+    expect(blocks[2].urlPattern).toBe("http://127.0.0.1:7676/content");
+    expect(blocks[2].server).toBe("http://127.0.0.1:8787");
+    expect(blocks[2].licenseXml).toContain("<license");
   });
 
   it("skips content missing <license>", () => {
@@ -102,6 +111,42 @@ describe("findBestMatchingContent", () => {
       "http://other-host:7676/article/foo"
     );
     expect(result).toBeNull();
+  });
+
+  it("prefix match without wildcard", () => {
+    const result = findBestMatchingContent(
+      blocks,
+      "http://127.0.0.1:7676/content/article"
+    );
+    expect(result).not.toBeNull();
+    expect(result!.urlPattern).toBe("http://127.0.0.1:7676/content");
+  });
+
+  it("does not match non-segment prefix (falls back to catch-all)", () => {
+    const result = findBestMatchingContent(
+      blocks,
+      "http://127.0.0.1:7676/content-other"
+    );
+    // /content pattern should NOT match /content-other, but /* catch-all does
+    expect(result).not.toBeNull();
+    expect(result!.urlPattern).toBe("http://127.0.0.1:7676/*");
+  });
+  
+  it("mid-path wildcard is more specific than bare prefix", () => {
+    const blocksWithMidWildcard: ContentBlock[] = [
+      ...blocks,
+      {
+        urlPattern: "http://127.0.0.1:7676/content/*/article",
+        server: "http://127.0.0.1:8787",
+        licenseXml: "<license/>",
+      },
+    ];
+    const result = findBestMatchingContent(
+      blocksWithMidWildcard,
+      "http://127.0.0.1:7676/content/news/article"
+    );
+    expect(result).not.toBeNull();
+    expect(result!.urlPattern).toBe("http://127.0.0.1:7676/content/*/article");
   });
 
   it("skips invalid URL patterns gracefully", () => {
