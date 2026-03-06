@@ -26,7 +26,6 @@ export function scorePathPattern(pattern: string, path: string): number {
   const regexBody = escaped.replace(/\*/g, ".*");
 
   let regexStr: string;
-  
   if (anchored) {
     regexStr = `^${regexBody}$`;
   } else if (hasWildcard) {
