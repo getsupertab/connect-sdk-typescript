@@ -383,6 +383,8 @@ export async function verifyAndRecordEvent(
   });
   if (params.ctx?.waitUntil) {
     params.ctx.waitUntil(eventPromise);
+  } else {
+    await eventPromise;
   }
 
   return verification;
