@@ -343,24 +343,30 @@ export class SupertabConnect {
 
   /**
    * Handle incoming requests for AWS CloudFront Lambda@Edge.
-   * Use as the handler for a viewer-request LambdaEdge function.
-   * @param event The CloudFront viewer-request event
+   * Use as the handler for an origin-request LambdaEdge function.
+   * @param event The CloudFront origin-request event
    * @param options Configuration including apiKey and optional botDetector/enforcement
    */
   static async cloudfrontHandleRequests<TRequest extends Record<string, any>>(
     event: CloudFrontRequestEvent<TRequest>,
     options: CloudfrontHandlerOptions
   ): Promise<CloudFrontRequestResult<TRequest>> {
+    const request = event?.Records?.[0]?.cf?.request as TRequest ?? {} as CloudFrontRequestResult<TRequest>;
     try {
+      const license_auth_header = request.headers?.["x-license-auth"];
+      if (!license_auth_header) {
+        // No license auth header means the request is either from a human or from an unidentifiable bot.
+        // No reasons to waste compute resources on the rest of the checks.
+        return request;
+      }
       const instance = new SupertabConnect({
         apiKey: options.apiKey,
-        botDetector: options.botDetector,
-        enforcement: options.enforcement,
+        enforcement: options.enforcement
       });
       return await handleCloudfrontRequest(instance, event);
     } catch (err) {
       console.error("[SupertabConnect] cloudfrontHandleRequests failed:", err);
-      return event?.Records?.[0]?.cf?.request as TRequest ?? {} as CloudFrontRequestResult<TRequest>;
+      return request;
     }
   }
 }
