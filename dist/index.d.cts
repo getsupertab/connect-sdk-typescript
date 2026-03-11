@@ -233,8 +233,8 @@ declare class SupertabConnect {
     static fastlyHandleRequests(request: Request, merchantApiKey: string, originBackend: string, options?: FastlyHandlerOptions): Promise<Response>;
     /**
      * Handle incoming requests for AWS CloudFront Lambda@Edge.
-     * Use as the handler for a viewer-request LambdaEdge function.
-     * @param event The CloudFront viewer-request event
+     * Use as the handler for an origin-request LambdaEdge function.
+     * @param event The CloudFront origin-request event
      * @param options Configuration including apiKey and optional botDetector/enforcement
      */
     static cloudfrontHandleRequests<TRequest extends Record<string, any>>(event: CloudFrontRequestEvent<TRequest>, options: CloudfrontHandlerOptions): Promise<CloudFrontRequestResult<TRequest>>;

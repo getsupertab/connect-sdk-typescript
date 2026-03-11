@@ -93,6 +93,11 @@ function statusDescription(status: number): CDNStatusDescription {
   }
 }
 
+/**
+ * Handles an Origin request in CloudFront. Expects X-Original-Request-URL header to contain the original viewer request URL.
+ * @param handler
+ * @param event
+ */
 export async function handleCloudfrontRequest<TRequest extends Record<string, any>>(
   handler: RequestHandler,
   event: CloudFrontRequestEvent<TRequest>
@@ -100,7 +105,9 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
   const cfRequest = event.Records[0].cf.request;
 
   // Convert CloudFront request to Web API Request
-  const url = `https://${cfRequest.headers.host[0].value}${cfRequest.uri}${cfRequest.querystring ? "?" + cfRequest.querystring : ""}`;
+  const viewerRequestUrl = cfRequest.headers?.["x-original-request-url"]?.[0]?.value;
+  const originRequestUrl = `${cfRequest.headers.host[0].value}${cfRequest.uri}`;
+  const url = `https://${viewerRequestUrl ? viewerRequestUrl : originRequestUrl}${cfRequest.querystring ? "?" + cfRequest.querystring : ""}`;
 
   const headers = new Headers();
   Object.entries(cfRequest.headers).forEach(([key, values]) => {
