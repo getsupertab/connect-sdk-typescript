@@ -353,7 +353,7 @@ export async function obtainLicenseToken({
   const payload = new URLSearchParams({
     grant_type: "client_credentials",
     license: matchedContent.licenseXml,
-    resource: resourceUrl,
+    resource: matchedContent.urlPattern,
   });
 
   const requestOptions: RequestInit = {
