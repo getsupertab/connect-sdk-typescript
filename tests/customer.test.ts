@@ -149,6 +149,57 @@ describe("findBestMatchingContent", () => {
     expect(result!.urlPattern).toBe("http://127.0.0.1:7676/content/*/article");
   });
 
+  it("matches path-only pattern (no host)", () => {
+    const pathBlocks: ContentBlock[] = [
+      { urlPattern: "/article/*", server: "http://127.0.0.1:8787", licenseXml: "<license/>" },
+    ];
+    const result = findBestMatchingContent(
+      pathBlocks,
+      "http://127.0.0.1:7676/article/foo"
+    );
+    expect(result).not.toBeNull();
+    expect(result!.urlPattern).toBe("/article/*");
+  });
+
+  it("exact path-only match wins over wildcard", () => {
+    const pathBlocks: ContentBlock[] = [
+      { urlPattern: "/*", server: "http://127.0.0.1:8787", licenseXml: "<license/>" },
+      { urlPattern: "/article/foo", server: "http://127.0.0.1:8787", licenseXml: "<license/>" },
+    ];
+    const result = findBestMatchingContent(
+      pathBlocks,
+      "http://127.0.0.1:7676/article/foo"
+    );
+    expect(result).not.toBeNull();
+    expect(result!.urlPattern).toBe("/article/foo");
+  });
+
+  it("path-only patterns match any host", () => {
+    const pathBlocks: ContentBlock[] = [
+      { urlPattern: "/article/*", server: "http://127.0.0.1:8787", licenseXml: "<license/>" },
+    ];
+    const result = findBestMatchingContent(
+      pathBlocks,
+      "http://totally-different-host.com/article/foo"
+    );
+    expect(result).not.toBeNull();
+    expect(result!.urlPattern).toBe("/article/*");
+  });
+
+  it("mixes full-URL and path-only blocks", () => {
+    const mixedBlocks: ContentBlock[] = [
+      { urlPattern: "http://127.0.0.1:7676/*", server: "http://127.0.0.1:8787", licenseXml: "<license/>" },
+      { urlPattern: "/article/*", server: "http://127.0.0.1:8787", licenseXml: "<license/>" },
+    ];
+    const result = findBestMatchingContent(
+      mixedBlocks,
+      "http://127.0.0.1:7676/article/foo"
+    );
+    expect(result).not.toBeNull();
+    // /article/* is more specific than /*
+    expect(result!.urlPattern).toBe("/article/*");
+  });
+
   it("skips invalid URL patterns gracefully", () => {
     const blocksWithBad: ContentBlock[] = [
       { urlPattern: "not-a-valid-url", server: "http://x", licenseXml: "<license/>" },

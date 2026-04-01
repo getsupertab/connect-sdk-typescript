@@ -248,24 +248,31 @@ function findBestMatchingContent(
   let bestSpecificity = -1;
 
   for (const block of contentBlocks) {
-    let patternUrl: URL;
-    try {
-      patternUrl = new URL(block.urlPattern);
-    } catch {
-      if (debug) {
-        console.debug(`Skipping block with invalid URL pattern: ${block.urlPattern}`);
-      }
-      continue;
-    }
+    let patternPath: string;
+    const isPathOnly = block.urlPattern.startsWith("/");
 
-    if (patternUrl.host !== host) {
-      if (debug) {
-        console.debug(`Skipping block: host mismatch (pattern=${patternUrl.host}, resource=${host})`);
+    if (isPathOnly) {
+      patternPath = block.urlPattern;
+    } else {
+      let patternUrl: URL;
+      try {
+        patternUrl = new URL(block.urlPattern);
+      } catch {
+        if (debug) {
+          console.debug(`Skipping block with invalid URL pattern: ${block.urlPattern}`);
+        }
+        continue;
       }
-      continue;
-    }
 
-    const patternPath = patternUrl.pathname;
+      if (patternUrl.host !== host) {
+        if (debug) {
+          console.debug(`Skipping block: host mismatch (pattern=${patternUrl.host}, resource=${host})`);
+        }
+        continue;
+      }
+
+      patternPath = patternUrl.pathname;
+    }
 
     // Exact match — highest priority, return immediately
     if (patternPath === path) {
@@ -346,7 +353,7 @@ export async function obtainLicenseToken({
   const payload = new URLSearchParams({
     grant_type: "client_credentials",
     license: matchedContent.licenseXml,
-    resource: matchedContent.urlPattern,
+    resource: resourceUrl,
   });
 
   const requestOptions: RequestInit = {
