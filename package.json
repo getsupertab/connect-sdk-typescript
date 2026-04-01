@@ -1,6 +1,6 @@
 {
   "name": "@getsupertab/supertab-connect-sdk",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Supertab Connect SDK (beta)",
   "type": "module",
   "main": "./dist/index.cjs",
