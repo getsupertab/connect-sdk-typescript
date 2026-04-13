@@ -1,7 +1,11 @@
 import { readFileSync } from "fs";
+import { dirname, resolve } from "path";
+import { fileURLToPath } from "url";
 import { defineConfig } from "tsup";
 
-const pkg = JSON.parse(readFileSync("./package.json", "utf-8"));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const pkg = JSON.parse(readFileSync(resolve(__dirname, "package.json"), "utf-8"));
 
 export default defineConfig({
   entry: ["src/index.ts"],
