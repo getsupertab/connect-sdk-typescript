@@ -356,6 +356,7 @@ export type VerifyAndRecordEventParams = {
   debug: boolean;
   apiKey: string;
   ctx?: ExecutionContext;
+  requestHeaders?: Record<string, string>;
 };
 
 export async function verifyAndRecordEvent(
@@ -377,6 +378,9 @@ export async function verifyAndRecordEvent(
       user_agent: params.userAgent,
       verification_status: verification.valid ? "valid" : "invalid",
       verification_reason: verification.valid ? "success" : verification.reason,
+      ...Object.fromEntries(
+        Object.entries(params.requestHeaders ?? {}).map(([k, v]) => [`h_${k}`, v])
+      ),
     },
     licenseId: verification.licenseId,
     debug: params.debug,
