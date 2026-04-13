@@ -340,7 +340,7 @@ export async function hostRSLicenseXML(
 
     return new Response(licenseXml, {
       status: 200,
-      headers: new Headers({ "Content-Type": "application/xml" }),
+      headers: new Headers({ "Content-Type": "application/rsl+xml" }),
     });
   } catch (err) {
     console.error("[SupertabConnect] hostRSLicenseXML failed:", err);
