@@ -1,5 +1,6 @@
 import type { JSONWebKeySet } from "jose";
 import { FASTLY_BACKEND, FetchOptions } from "./types";
+import { SDK_USER_AGENT } from "./version";
 
 type JwksCacheEntry = { data: JSONWebKeySet; cachedAt: number };
 const jwksCache = new Map<string, JwksCacheEntry>();
@@ -21,7 +22,7 @@ type FetchJwksParams = {
 };
 
 function buildFetchOptions(): FetchOptions {
-  let options: FetchOptions = { method: "GET" };
+  let options: FetchOptions = { method: "GET", headers: { "User-Agent": SDK_USER_AGENT } };
   if (globalThis.fastly) {
     options = { ...options, backend: FASTLY_BACKEND };
   }

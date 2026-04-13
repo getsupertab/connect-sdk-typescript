@@ -1,4 +1,5 @@
 import { EventPayload, FASTLY_BACKEND, FetchOptions } from "./types";
+import { SDK_USER_AGENT } from "./version";
 
 export async function recordEvent({
   apiKey,
@@ -27,6 +28,7 @@ export async function recordEvent({
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
+        "User-Agent": SDK_USER_AGENT,
       },
       body: JSON.stringify(payload),
     };

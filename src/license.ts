@@ -15,6 +15,7 @@ import {
 } from "./types";
 import { fetchPlatformJwks, clearJwksCache, JwksKeyNotFoundError } from "./jwks";
 import { recordEvent } from "./events";
+import { SDK_USER_AGENT } from "./version";
 
 const stripTrailingSlash = (value: string) => value.trim().replace(/\/+$/, "");
 
@@ -317,7 +318,7 @@ export function buildBlockResult({
 }
 
 function buildFetchOptions(): FetchOptions {
-  let options: FetchOptions = { method: "GET" };
+  let options: FetchOptions = { method: "GET", headers: { "User-Agent": SDK_USER_AGENT } };
   if (globalThis.fastly) {
     options = { ...options, backend: FASTLY_BACKEND };
   }
