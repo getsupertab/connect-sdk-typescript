@@ -5,8 +5,23 @@ type SupportedAlg = "RS256" | "ES256";
 
 type CachedToken = { token: string; exp: number };
 
-// In-memory cache for license tokens, keyed by "clientId:resourceUrl"
+// In-memory cache for license tokens, keyed by "clientId:server:urlPattern"
 const licenseTokenCache = new Map<string, CachedToken>();
+
+type CachedLicenseXml = { xml: string; fetchedAt: number };
+const LICENSE_XML_TTL_SECONDS = 15 * 60; // 15 minutes
+
+// In-memory cache for license.xml content, keyed by origin (e.g. "https://example.com")
+const licenseXmlCache = new Map<string, CachedLicenseXml>();
+
+function evictExpiredLicenseXml(): void {
+  const now = Math.floor(Date.now() / 1000);
+  for (const [origin, entry] of licenseXmlCache) {
+    if (now - entry.fetchedAt >= LICENSE_XML_TTL_SECONDS) {
+      licenseXmlCache.delete(origin);
+    }
+  }
+}
 
 function getCachedToken(
   cacheKey: string,
@@ -172,8 +187,23 @@ async function fetchLicenseXml(
   debug: boolean | undefined
 ): Promise<string> {
   const origin = new URL(resourceUrl).origin;
-  const licenseXmlUrl = `${origin}/license.xml`;
 
+  const cached = licenseXmlCache.get(origin);
+  if (cached) {
+    const now = Math.floor(Date.now() / 1000);
+    if (now - cached.fetchedAt < LICENSE_XML_TTL_SECONDS) {
+      if (debug) {
+        console.debug(`Using cached license.xml for origin ${origin} (expires in ${LICENSE_XML_TTL_SECONDS - (now - cached.fetchedAt)}s)`);
+      }
+      return cached.xml;
+    }
+    if (debug) {
+      console.debug(`Cached license.xml for origin ${origin} expired, re-fetching`);
+    }
+    licenseXmlCache.delete(origin);
+  }
+
+  const licenseXmlUrl = `${origin}/license.xml`;
   const response = await fetch(licenseXmlUrl);
   if (!response.ok) {
     if (debug) {
@@ -188,6 +218,8 @@ async function fetchLicenseXml(
   if (debug) {
     console.debug("Fetched license.xml from", licenseXmlUrl);
   }
+  evictExpiredLicenseXml();
+  licenseXmlCache.set(origin, { xml, fetchedAt: Math.floor(Date.now() / 1000) });
   return xml;
 }
 
@@ -310,10 +342,6 @@ export async function obtainLicenseToken({
   resourceUrl,
   debug,
 }: ObtainLicenseTokenParams): Promise<string> {
-  const cacheKey = `${clientId}:${resourceUrl}`;
-  const cached = getCachedToken(cacheKey, debug);
-  if (cached) return cached;
-
   const xml = await fetchLicenseXml(resourceUrl, debug);
   if (debug) {
     console.debug(`Fetched license.xml (${xml.length} chars)`);
@@ -344,6 +372,12 @@ export async function obtainLicenseToken({
     console.debug("Matched content block for resource URL:", resourceUrl);
     console.debug("Using license XML:", matchedContent.licenseXml);
   }
+
+  // Cache tokens by server + urlPattern so path-only patterns (e.g. "/articles/*")
+  // on different origins/servers don't collide with each other.
+  const cacheKey = `${clientId}:${matchedContent.server}:${matchedContent.urlPattern}`;
+  const cached = getCachedToken(cacheKey, debug);
+  if (cached) return cached;
 
   const tokenEndpoint = matchedContent.server + '/token';
   if (debug) {
