@@ -5,7 +5,7 @@ type SupportedAlg = "RS256" | "ES256";
 
 type CachedToken = { token: string; exp: number };
 
-// In-memory cache for license tokens, keyed by "clientId:urlPattern"
+// In-memory cache for license tokens, keyed by "clientId:server:urlPattern"
 const licenseTokenCache = new Map<string, CachedToken>();
 
 type CachedLicenseXml = { xml: string; fetchedAt: number };
@@ -13,6 +13,15 @@ const LICENSE_XML_TTL_SECONDS = 15 * 60; // 15 minutes
 
 // In-memory cache for license.xml content, keyed by origin (e.g. "https://example.com")
 const licenseXmlCache = new Map<string, CachedLicenseXml>();
+
+function evictExpiredLicenseXml(): void {
+  const now = Math.floor(Date.now() / 1000);
+  for (const [origin, entry] of licenseXmlCache) {
+    if (now - entry.fetchedAt >= LICENSE_XML_TTL_SECONDS) {
+      licenseXmlCache.delete(origin);
+    }
+  }
+}
 
 function getCachedToken(
   cacheKey: string,
@@ -209,6 +218,7 @@ async function fetchLicenseXml(
   if (debug) {
     console.debug("Fetched license.xml from", licenseXmlUrl);
   }
+  evictExpiredLicenseXml();
   licenseXmlCache.set(origin, { xml, fetchedAt: Math.floor(Date.now() / 1000) });
   return xml;
 }
@@ -363,8 +373,9 @@ export async function obtainLicenseToken({
     console.debug("Using license XML:", matchedContent.licenseXml);
   }
 
-  // Cache tokens by urlPattern — all URLs matching the same pattern share one token
-  const cacheKey = `${clientId}:${matchedContent.urlPattern}`;
+  // Cache tokens by server + urlPattern so path-only patterns (e.g. "/articles/*")
+  // on different origins/servers don't collide with each other.
+  const cacheKey = `${clientId}:${matchedContent.server}:${matchedContent.urlPattern}`;
   const cached = getCachedToken(cacheKey, debug);
   if (cached) return cached;
 
