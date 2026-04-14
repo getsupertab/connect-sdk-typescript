@@ -188,9 +188,10 @@ declare class SupertabConnect {
      * @param request The incoming HTTP request
      * @param ctx Execution context for non-blocking event recording.
      *   Pass this from your platform (e.g. Cloudflare Workers)
+     * @param originalUrl Optional original URL (e.g. in Fastly chain case)
      * @returns A promise that resolves with the handler result indicating ALLOW or  BLOCK request
      */
-    handleRequest(request: Request, ctx?: ExecutionContext): Promise<HandlerResult>;
+    handleRequest(request: Request, ctx?: ExecutionContext, originalUrl?: string): Promise<HandlerResult>;
     /**
      * Request a license token from the Supertab Connect token endpoint.
      * @param options.clientId OAuth client identifier.
