@@ -40,11 +40,11 @@ addEventListener("fetch", (event) =>
     const configDict = new SecretStore("demo");
     const merchantApiKey = await configDict.get("MERCHANT_API_KEY");
 
-    SupertabConnect.fastlyHandleRequests(
+    return SupertabConnect.fastlyHandleRequests(
       event.request,
       merchantApiKey,
       "origin-backend"
-    )
+    );
   })())
 );
 ```
