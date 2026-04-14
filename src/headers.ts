@@ -1,8 +1,16 @@
 const DENIED_HEADERS = new Set([
+  // Credentials
   "authorization",
   "cookie",
   "set-cookie",
   "proxy-authorization",
+  "x-api-key",
+  "x-amz-security-token",
+  // Client IP / PII
+  "x-forwarded-for",
+  "x-real-ip",
+  "cf-connecting-ip",
+  "true-client-ip",
 ]);
 
 /**
@@ -27,4 +35,17 @@ export function collectRequestHeaders(request: Request): Record<string, string> 
     headers[key] = value;
   });
   return filterHeaders(headers);
+}
+
+/**
+ * Apply the `h_` prefix to header keys for inclusion in event properties.
+ * Kept as an explicitly typed helper so `properties` stays `Record<string, string>`
+ * (Object.fromEntries widens to `any` in TS).
+ */
+export function prefixHeadersForEvent(headers: Record<string, string>): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    result[`h_${key}`] = value;
+  }
+  return result;
 }
