@@ -187,12 +187,14 @@ export class SupertabConnect {
    * @param request The incoming HTTP request
    * @param ctx Execution context for non-blocking event recording.
    *   Pass this from your platform (e.g. Cloudflare Workers)
+   * @param originalUrl Optional original URL (e.g. in Fastly chain case)
    * @returns A promise that resolves with the handler result indicating ALLOW or  BLOCK request
    */
-  async handleRequest(request: Request, ctx?: ExecutionContext): Promise<HandlerResult> {
+  async handleRequest(request: Request, ctx?: ExecutionContext, originalUrl?: string): Promise<HandlerResult> {
     const auth = request.headers.get("Authorization") || "";
     const token = auth.startsWith("License ") ? auth.slice(8) : null;
-    const url = request.url;
+    // Use specific original URL if provided (Fastly VCL CAP); fall back to default URL from request otherwise
+    const url = originalUrl || request.url;
     const userAgent = request.headers.get("User-Agent") || "unknown";
 
     // Token present → ALWAYS validate, regardless of mode or bot detection
