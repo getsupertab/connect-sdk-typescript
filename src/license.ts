@@ -15,7 +15,7 @@ import {
 } from "./types";
 import { fetchPlatformJwks, clearJwksCache, JwksKeyNotFoundError } from "./jwks";
 import { recordEvent } from "./events";
-import { filterHeaders, prefixHeadersForEvent } from "./headers";
+import { toEventProperties } from "./headers";
 
 const stripTrailingSlash = (value: string) => value.trim().replace(/\/+$/, "");
 
@@ -379,7 +379,7 @@ export async function verifyAndRecordEvent(
       user_agent: params.userAgent,
       verification_status: verification.valid ? "valid" : "invalid",
       verification_reason: verification.valid ? "success" : verification.reason,
-      ...prefixHeadersForEvent(filterHeaders(params.requestHeaders ?? {})),
+      ...toEventProperties(params.requestHeaders ?? {}),
     },
     licenseId: verification.licenseId,
     debug: params.debug,

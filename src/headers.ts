@@ -14,43 +14,18 @@ const DENIED_HEADERS = new Set([
 ]);
 
 /**
- * Normalize a headers record: lowercase all keys and drop sensitive headers.
- * Used as the single source of truth for header filtering so both automatic
- * (handleRequest) and manual (verifyAndRecord) paths enforce the same rules.
+ * Transform a raw headers record into event properties: lowercase keys,
+ * drop sensitive headers, and apply an `h_` prefix. Called from
+ * verifyAndRecordEvent so both automatic and manual paths enforce the
+ * same rules.
  */
-export function filterHeaders(headers: Record<string, string>): Record<string, string> {
-  const filtered: Record<string, string> = {};
+export function toEventProperties(headers: Record<string, string>): Record<string, string> {
+  const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
     const lowerKey = key.toLowerCase();
     if (!DENIED_HEADERS.has(lowerKey)) {
-      filtered[lowerKey] = value;
+      result[`h_${lowerKey}`] = value;
     }
-  }
-  return filtered;
-}
-
-/**
- * Convert a Request's headers into a plain record. Does NOT filter — filtering
- * is applied by the single consumer (verifyAndRecordEvent) so both automatic
- * and manual paths go through the same filter point.
- */
-export function collectRequestHeaders(request: Request): Record<string, string> {
-  const headers: Record<string, string> = {};
-  request.headers.forEach((value, key) => {
-    headers[key] = value;
-  });
-  return headers;
-}
-
-/**
- * Apply the `h_` prefix to header keys for inclusion in event properties.
- * Kept as an explicitly typed helper so `properties` stays `Record<string, string>`
- * (Object.fromEntries widens to `any` in TS).
- */
-export function prefixHeadersForEvent(headers: Record<string, string>): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const [key, value] of Object.entries(headers)) {
-    result[`h_${key}`] = value;
   }
   return result;
 }

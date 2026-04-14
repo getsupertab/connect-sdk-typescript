@@ -23,7 +23,6 @@ import {
   handleFastlyRequest,
   handleCloudfrontRequest,
 } from "./cdn";
-import { collectRequestHeaders } from "./headers";
 import {
   CloudFrontRequestEvent,
   CloudFrontRequestResult,
@@ -212,7 +211,7 @@ export class SupertabConnect {
         debug: this.debug,
         apiKey: this.apiKey!,
         ctx,
-        requestHeaders: collectRequestHeaders(request),
+        requestHeaders: Object.fromEntries(request.headers.entries()),
       });
       if (!verification.valid) {
         return buildBlockResult({
