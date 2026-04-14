@@ -67,19 +67,20 @@ describe("prefixHeadersForEvent", () => {
 });
 
 describe("collectRequestHeaders", () => {
-  it("collects headers from a Request, lowercased and filtered", () => {
+  it("collects all headers from a Request without filtering", () => {
+    // Filtering is intentionally deferred to verifyAndRecordEvent so both
+    // automatic and manual paths go through the same single filter point.
     const request = new Request("https://example.com", {
       headers: {
         "User-Agent": "GPTBot/1.0",
         Authorization: "License secret",
         Accept: "text/html",
-        Cookie: "session=xyz",
       },
     });
     const result = collectRequestHeaders(request);
-    expect(result).not.toHaveProperty("authorization");
-    expect(result).not.toHaveProperty("cookie");
+    // Request normalizes header names to lowercase already
     expect(result["user-agent"]).toBe("GPTBot/1.0");
+    expect(result["authorization"]).toBe("License secret");
     expect(result["accept"]).toBe("text/html");
   });
 });

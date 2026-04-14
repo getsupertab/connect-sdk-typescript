@@ -29,12 +29,17 @@ export function filterHeaders(headers: Record<string, string>): Record<string, s
   return filtered;
 }
 
+/**
+ * Convert a Request's headers into a plain record. Does NOT filter — filtering
+ * is applied by the single consumer (verifyAndRecordEvent) so both automatic
+ * and manual paths go through the same filter point.
+ */
 export function collectRequestHeaders(request: Request): Record<string, string> {
   const headers: Record<string, string> = {};
   request.headers.forEach((value, key) => {
     headers[key] = value;
   });
-  return filterHeaders(headers);
+  return headers;
 }
 
 /**
