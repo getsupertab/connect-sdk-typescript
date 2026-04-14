@@ -6,6 +6,8 @@ const DENIED_HEADERS = new Set([
   "proxy-authorization",
   "x-api-key",
   "x-amz-security-token",
+  // SDK-internal plumbing (not useful as analytics signal)
+  "x-license-auth",
   // Client IP / PII
   "x-forwarded-for",
   "x-real-ip",

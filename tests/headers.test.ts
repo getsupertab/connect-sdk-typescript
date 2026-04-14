@@ -15,7 +15,7 @@ describe("toEventProperties", () => {
     });
   });
 
-  it("drops credential headers regardless of casing", () => {
+  it("drops credential and SDK-internal headers regardless of casing", () => {
     const result = toEventProperties({
       Authorization: "License abc123",
       COOKIE: "session=xyz",
@@ -23,6 +23,7 @@ describe("toEventProperties", () => {
       "Proxy-Authorization": "Basic xxx",
       "X-API-Key": "sk_123",
       "X-Amz-Security-Token": "amz-token",
+      "X-License-Auth": "cf-request-id",
       Accept: "application/json",
     });
     expect(result).toEqual({ h_accept: "application/json" });
