@@ -198,7 +198,6 @@ export class SupertabConnect {
     const token = auth.startsWith("License ") ? auth.slice(8) : null;
     const url = request.url;
     const userAgent = request.headers.get("User-Agent") || "unknown";
-    const requestHeaders = collectRequestHeaders(request);
 
     // Token present → ALWAYS validate, regardless of mode or bot detection
     if (token) {
@@ -213,7 +212,7 @@ export class SupertabConnect {
         debug: this.debug,
         apiKey: this.apiKey!,
         ctx,
-        requestHeaders,
+        requestHeaders: collectRequestHeaders(request),
       });
       if (!verification.valid) {
         return buildBlockResult({
