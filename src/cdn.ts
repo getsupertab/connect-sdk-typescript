@@ -11,7 +11,7 @@ import { hostRSLicenseXML } from "./license";
 
 // Interface for what the CDN handlers need - avoids circular dependency
 interface RequestHandler {
-  handleRequest(request: Request, ctx?: ExecutionContext, originalUrl?: string): Promise<HandlerResult>;
+  handleRequest(request: Request, ctx?: ExecutionContext): Promise<HandlerResult>;
 }
 
 export async function handleCloudflareRequest(
@@ -69,7 +69,12 @@ export async function handleFastlyRequest(
     );
   }
 
-  const result = await handler.handleRequest(request, undefined, originalUrl);
+  const webRequest = new Request(originalUrl, {
+    method: request.method,
+    headers: request.headers,
+  });
+
+  const result = await handler.handleRequest(webRequest);
 
   if (result.action === HandlerAction.BLOCK) {
     return new Response(result.body, {
