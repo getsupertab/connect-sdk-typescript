@@ -35,17 +35,17 @@ export default {
 import { SecretStore } from "fastly:secret-store";
 import { SupertabConnect } from "@getsupertab/supertab-connect-sdk";
 
-const configDict = new SecretStore("demo");
-const merchantApiKey = configDict.get("MERCHANT_API_KEY");
-
 addEventListener("fetch", (event) =>
-  event.respondWith(
-    SupertabConnect.fastlyHandleRequests(
+  event.respondWith((async () => {
+    const configDict = new SecretStore("demo");
+    const merchantApiKey = await configDict.get("MERCHANT_API_KEY");
+
+    return SupertabConnect.fastlyHandleRequests(
       event.request,
       merchantApiKey,
       "origin-backend"
-    )
-  )
+    );
+  })())
 );
 ```
 

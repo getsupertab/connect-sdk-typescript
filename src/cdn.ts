@@ -42,6 +42,15 @@ export async function handleCloudflareRequest(
   return originResponse;
 }
 
+/**
+ * Handles an Origin request in Fastly. Expects `X-Original-Request-URL` header to contain the original viewer request URL.
+ * @param handler Request handler instance that inspects the request and decides whether to allow or block it.
+ * @param request Fastly request to process.
+ * @param originBackend Fastly backend name used when forwarding allowed requests to origin.
+ * @param rslOptions Optional configuration for serving `/license.xml` directly from the edge.
+ * @param rslOptions.baseUrl Base URL used when generating the hosted license XML response.
+ * @param rslOptions.merchantSystemUrn Merchant system URN for fetching License from Supertab Connect
+ */
 export async function handleFastlyRequest(
   handler: RequestHandler,
   request: Request,
@@ -51,14 +60,21 @@ export async function handleFastlyRequest(
     merchantSystemUrn: string;
   }
 ): Promise<Response> {
-  if (rslOptions && new URL(request.url).pathname === "/license.xml") {
+  const originalUrl = request.headers.get("x-original-request-url") || request.url;
+
+  if (rslOptions && new URL(originalUrl).pathname === "/license.xml") {
     return await hostRSLicenseXML(
       rslOptions.baseUrl,
       rslOptions.merchantSystemUrn
     );
   }
 
-  const result = await handler.handleRequest(request);
+  const webRequest = new Request(originalUrl, {
+    method: request.method,
+    headers: request.headers,
+  });
+
+  const result = await handler.handleRequest(webRequest);
 
   if (result.action === HandlerAction.BLOCK) {
     return new Response(result.body, {
