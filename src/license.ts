@@ -378,6 +378,7 @@ export async function verifyAndRecordEvent(
     properties: {
       page_url: params.url,
       user_agent: params.userAgent,
+      sdk_user_agent: SDK_USER_AGENT,
       verification_status: verification.valid ? "valid" : "invalid",
       verification_reason: verification.valid ? "success" : verification.reason,
       ...toEventProperties(params.requestHeaders ?? {}),
