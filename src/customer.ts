@@ -1,5 +1,6 @@
 import { loadKeyImport, loadJwtSign, loadDecodeJwt } from "./jose";
 import { scorePathPattern } from "./url-pattern";
+import { SDK_USER_AGENT } from "./version";
 
 type SupportedAlg = "RS256" | "ES256";
 
@@ -175,6 +176,7 @@ async function generateLicenseToken({
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json",
+      "User-Agent": SDK_USER_AGENT,
     },
     body: payload.toString(),
   };
@@ -204,7 +206,9 @@ async function fetchLicenseXml(
   }
 
   const licenseXmlUrl = `${origin}/license.xml`;
-  const response = await fetch(licenseXmlUrl);
+  const response = await fetch(licenseXmlUrl, {
+    headers: { "User-Agent": SDK_USER_AGENT },
+  });
   if (!response.ok) {
     if (debug) {
       console.error(`Failed to fetch license.xml from ${licenseXmlUrl}: ${response.status}`);
@@ -396,6 +400,7 @@ export async function obtainLicenseToken({
       "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json",
       Authorization: "Basic " + btoa(`${clientId}:${clientSecret}`),
+      "User-Agent": SDK_USER_AGENT,
     },
     body: payload.toString(),
   };
