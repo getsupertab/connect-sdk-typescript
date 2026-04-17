@@ -4,15 +4,21 @@ import { toEventProperties } from "../src/headers";
 describe("toEventProperties", () => {
   it("lowercases keys and applies the h_ prefix", () => {
     const result = toEventProperties({
-      "User-Agent": "Mozilla/5.0",
       "Accept-Language": "en-US",
       "X-Custom": "value",
     });
     expect(result).toEqual({
-      "h_user-agent": "Mozilla/5.0",
       "h_accept-language": "en-US",
       "h_x-custom": "value",
     });
+  });
+
+  it("drops user-agent since it is already captured as properties.user_agent", () => {
+    const result = toEventProperties({
+      "User-Agent": "GPTBot/1.0",
+      "Accept": "text/html",
+    });
+    expect(result).toEqual({ "h_accept": "text/html" });
   });
 
   it("drops credential and SDK-internal headers regardless of casing", () => {
@@ -35,9 +41,9 @@ describe("toEventProperties", () => {
       "X-Real-IP": "203.0.113.1",
       "CF-Connecting-IP": "203.0.113.1",
       "True-Client-IP": "203.0.113.1",
-      "User-Agent": "GPTBot/1.0",
+      "Accept": "text/html",
     });
-    expect(result).toEqual({ "h_user-agent": "GPTBot/1.0" });
+    expect(result).toEqual({ "h_accept": "text/html" });
   });
 
   it("returns an empty object for empty input", () => {
