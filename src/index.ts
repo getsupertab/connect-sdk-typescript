@@ -153,6 +153,7 @@ export class SupertabConnect {
    * @param options.token The license token to verify
    * @param options.resourceUrl The URL of the resource being accessed
    * @param options.userAgent Optional user agent string for event recording
+   * @param options.requestHeaders Optional request headers to include in the event properties
    * @param options.debug Enable debug logging (default: false)
    * @param options.ctx Optional execution context with waitUntil for non-blocking event recording
    * @returns A promise that resolves with the verification result
@@ -161,6 +162,7 @@ export class SupertabConnect {
     token: string;
     resourceUrl: string;
     userAgent?: string;
+    requestHeaders?: Record<string, string>;
     debug?: boolean;
     ctx?: ExecutionContext;
   }): Promise<RSLVerificationResult> {
@@ -172,6 +174,7 @@ export class SupertabConnect {
       debug: options.debug ?? this.debug,
       apiKey: this.apiKey!,
       ctx: options.ctx,
+      requestHeaders: options.requestHeaders,
     });
 
     if (result.valid) {
@@ -208,6 +211,7 @@ export class SupertabConnect {
         debug: this.debug,
         apiKey: this.apiKey!,
         ctx,
+        requestHeaders: Object.fromEntries(request.headers.entries()),
       });
       if (!verification.valid) {
         return buildBlockResult({
