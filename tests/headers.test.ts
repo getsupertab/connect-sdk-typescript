@@ -35,15 +35,19 @@ describe("toEventProperties", () => {
     expect(result).toEqual({ h_accept: "application/json" });
   });
 
-  it("drops client IP headers to avoid PII leakage", () => {
+  it("includes client IP headers for bot traffic analytics", () => {
     const result = toEventProperties({
       "X-Forwarded-For": "203.0.113.1",
-      "X-Real-IP": "203.0.113.1",
-      "CF-Connecting-IP": "203.0.113.1",
-      "True-Client-IP": "203.0.113.1",
-      "Accept": "text/html",
+      "X-Real-IP": "203.0.113.2",
+      "CF-Connecting-IP": "203.0.113.3",
+      "True-Client-IP": "203.0.113.4",
     });
-    expect(result).toEqual({ "h_accept": "text/html" });
+    expect(result).toEqual({
+      "h_x-forwarded-for": "203.0.113.1",
+      "h_x-real-ip": "203.0.113.2",
+      "h_cf-connecting-ip": "203.0.113.3",
+      "h_true-client-ip": "203.0.113.4",
+    });
   });
 
   it("returns an empty object for empty input", () => {

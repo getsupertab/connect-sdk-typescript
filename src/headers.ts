@@ -10,11 +10,6 @@ const DENIED_HEADERS = new Set([
   "user-agent",
   // SDK-internal plumbing (not useful as analytics signal)
   "x-license-auth",
-  // Client IP / PII
-  "x-forwarded-for",
-  "x-real-ip",
-  "cf-connecting-ip",
-  "true-client-ip",
 ]);
 
 /**
