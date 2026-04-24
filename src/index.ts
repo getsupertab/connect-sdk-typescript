@@ -256,6 +256,7 @@ export class SupertabConnect {
 
   /**
    * Request a license token from the Supertab Connect token endpoint.
+   * If usage type is specified and matching serverless content permits it, skips token request and returns undefined.
    * @param options.clientId OAuth client identifier.
    * @param options.clientSecret OAuth client secret for client_credentials flow.
    * @param options.resourceUrl Resource URL attempting to access with a License.
