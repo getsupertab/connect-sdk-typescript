@@ -11,7 +11,10 @@ import {
   Env,
   FastlyHandlerOptions,
 } from "./types";
-import { obtainLicenseToken as obtainLicenseTokenHelper } from "./customer";
+import {
+  obtainLicenseToken as obtainLicenseTokenHelper,
+  UsageType,
+} from "./customer";
 import {
   buildBlockResult,
   buildSignalResult,
@@ -29,7 +32,13 @@ import {
   CloudfrontHandlerOptions,
 } from "./types";
 
-export { EnforcementMode, HandlerAction, LicenseTokenInvalidReason, CDNStatusDescription };
+export {
+  EnforcementMode,
+  HandlerAction,
+  LicenseTokenInvalidReason,
+  CDNStatusDescription,
+  UsageType,
+};
 export type {
   SupertabConnectConfig,
   RSLVerificationResult,
@@ -250,19 +259,22 @@ export class SupertabConnect {
    * @param options.clientId OAuth client identifier.
    * @param options.clientSecret OAuth client secret for client_credentials flow.
    * @param options.resourceUrl Resource URL attempting to access with a License.
+   * @param options.usage Optional usage type. `UsageType.SEARCH` may not require a token.
    * @param options.debug Enable debug logging (default: false).
-   * @returns Promise resolving to the issued license access token string.
+   * @returns Promise resolving to the issued license access token string, or `undefined` when no token is needed.
    */
   static async obtainLicenseToken(options: {
     clientId: string;
     clientSecret: string;
     resourceUrl: string;
+    usage?: UsageType;
     debug?: boolean;
-  }): Promise<string> {
+  }): Promise<string | undefined> {
     return obtainLicenseTokenHelper({
       clientId: options.clientId,
       clientSecret: options.clientSecret,
       resourceUrl: options.resourceUrl,
+      usage: options.usage,
       debug: options.debug,
     });
   }
