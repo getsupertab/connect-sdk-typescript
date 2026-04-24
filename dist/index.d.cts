@@ -208,7 +208,8 @@ declare class SupertabConnect {
      * @param options.clientId OAuth client identifier.
      * @param options.clientSecret OAuth client secret for client_credentials flow.
      * @param options.resourceUrl Resource URL attempting to access with a License.
-     * @param options.usage Optional usage type. `UsageType.SEARCH` may not require a token.
+     * @param options.usage Optional usage type.
+     *   If specified and a matching serverless content exists in license, no token is issued
      * @param options.debug Enable debug logging (default: false).
      * @returns Promise resolving to the issued license access token string, or `undefined` when no token is needed.
      */
