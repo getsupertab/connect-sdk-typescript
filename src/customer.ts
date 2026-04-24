@@ -276,6 +276,11 @@ function parseContentElements(xml: string, debug?: boolean): ContentBlock[] {
   return contentBlocks;
 }
 
+/**
+ * Check if <license> section permits the chosen usage type without prohibiting it
+ * @param licenseXml
+ * @param usage
+ */
 function licensePermitsUsage(
   licenseXml: string,
   usage: UsageType
@@ -391,6 +396,13 @@ function findBestMatchingContent(
 export { parseContentElements, findBestMatchingContent };
 export type { ContentBlock };
 
+/**
+ * Find serverless content with <permits> section for the selected usage type that matches with the requested resource.
+ * @param contentBlocks Parsed content blocks of the processed License XML
+ * @param resourceUrl Requested resource
+ * @param usage One of usage types as defined in RSL Specification
+ * @param debug Enables debug printouts if true
+ */
 function findServerlessUsageContent(
   contentBlocks: ContentBlock[],
   resourceUrl: string,
