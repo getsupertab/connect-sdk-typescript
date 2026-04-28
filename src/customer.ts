@@ -58,17 +58,27 @@ type GenerateLicenseTokenParams = {
   debug?: boolean;
 };
 
+export enum UsageType {
+  ALL = "all",
+  SEARCH = "search",
+  AI_ALL = "ai-all",
+  AI_TRAIN = "ai-train",
+  AI_INDEX = "ai-index",
+  AI_INPUT = "ai-input",
+}
+
 type ObtainLicenseTokenParams = {
   clientId: string;
   clientSecret: string;
   resourceUrl: string;
+  usage?: UsageType;
   debug?: boolean;
 };
 
 type ContentBlock = {
   urlPattern: string;
   licenseXml: string;
-  server: string;
+  server?: string;
 };
 
 async function retrieveLicenseToken(
@@ -244,16 +254,15 @@ function parseContentElements(xml: string, debug?: boolean): ContentBlock[] {
     const serverMatch = attrs.match(serverRegex);
     const licenseMatch = body.match(licenseRegex);
 
-    if (urlMatch && serverMatch && licenseMatch) {
+    if (urlMatch && licenseMatch) {
       contentBlocks.push({
         urlPattern: urlMatch[1],
-        server: serverMatch[1],
+        server: serverMatch?.[1],
         licenseXml: licenseMatch[0],
       });
     } else if (debug) {
       const missing = [
         !urlMatch && "url",
-        !serverMatch && "server",
         !licenseMatch && "<license>",
       ].filter(Boolean).join(", ");
       console.debug(`Skipping <content> element #${elementCount}: missing ${missing}`);
@@ -265,6 +274,53 @@ function parseContentElements(xml: string, debug?: boolean): ContentBlock[] {
   }
 
   return contentBlocks;
+}
+
+/**
+ * Check if <license> section permits the chosen usage type without prohibiting it
+ * @param licenseXml
+ * @param usage
+ */
+function licensePermitsUsage(
+  licenseXml: string,
+  usage: UsageType
+): boolean {
+  const permitsRegex = /<permits\b[^>]*type\s*=\s*"usage"[^>]*>([\s\S]*?)<\/permits>/gi;
+  const prohibitsRegex = /<prohibits\b[^>]*type\s*=\s*"usage"[^>]*>([\s\S]*?)<\/prohibits>/gi;
+
+  let match: RegExpExecArray | null;
+
+  // Check for <prohibits> first - it takes precedence
+  while ((match = prohibitsRegex.exec(licenseXml)) !== null) {
+    const prohibitedUsages = match[1]
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+
+    if (
+      prohibitedUsages.includes(UsageType.ALL) ||
+      prohibitedUsages.includes(usage)
+    ) {
+      return false;
+    }
+  }
+
+  // Now we can safely look for <permits>
+  while ((match = permitsRegex.exec(licenseXml)) !== null) {
+    const permittedUsages = match[1]
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+
+    if (
+      permittedUsages.includes(UsageType.ALL) ||
+      permittedUsages.includes(usage)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function findBestMatchingContent(
@@ -340,12 +396,33 @@ function findBestMatchingContent(
 export { parseContentElements, findBestMatchingContent };
 export type { ContentBlock };
 
+/**
+ * Find serverless content with <permits> section for the selected usage type that matches with the requested resource.
+ * @param contentBlocks Parsed content blocks of the processed License XML
+ * @param resourceUrl Requested resource
+ * @param usage One of usage types as defined in RSL Specification
+ * @param debug Enables debug printouts if true
+ */
+function findServerlessUsageContent(
+  contentBlocks: ContentBlock[],
+  resourceUrl: string,
+  usage: UsageType,
+  debug?: boolean
+): ContentBlock | null {
+  const matchingUsageBlocks = contentBlocks.filter(
+    (block) => !block.server && licensePermitsUsage(block.licenseXml, usage)
+  );
+
+  return findBestMatchingContent(matchingUsageBlocks, resourceUrl, debug);
+}
+
 export async function obtainLicenseToken({
   clientId,
   clientSecret,
   resourceUrl,
+  usage,
   debug,
-}: ObtainLicenseTokenParams): Promise<string> {
+}: ObtainLicenseTokenParams): Promise<string | undefined> {
   const xml = await fetchLicenseXml(resourceUrl, debug);
   if (debug) {
     console.debug(`Fetched license.xml (${xml.length} chars)`);
@@ -361,10 +438,28 @@ export async function obtainLicenseToken({
     );
   }
 
-  const matchedContent = findBestMatchingContent(contentBlocks, resourceUrl, debug);
+  if (usage) {
+    const serverlessUsageContent = findServerlessUsageContent(
+      contentBlocks,
+      resourceUrl,
+      usage,
+      debug
+    );
+
+    if (serverlessUsageContent) {
+      if (debug) {
+        console.debug("Matched serverless content to usage and resource URL combination, skipping license token request. ");
+        console.debug("URL: " + resourceUrl + ", Usage: " + usage);
+      }
+      return undefined;
+    }
+  }
+
+  const tokenContentBlocks = contentBlocks.filter((block) => !!block.server);
+  const matchedContent = findBestMatchingContent(tokenContentBlocks, resourceUrl, debug);
   if (!matchedContent) {
     if (debug) {
-      const patterns = contentBlocks.map(b => b.urlPattern).join(", ");
+      const patterns = tokenContentBlocks.map(b => b.urlPattern).join(", ");
       console.error(`No <content> element matches resource URL: ${resourceUrl}. Available patterns: ${patterns}`);
     }
     throw new Error(

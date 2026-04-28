@@ -111,6 +111,15 @@ interface FastlyHandlerWithoutRSL extends FastlyHandlerBaseOptions {
 }
 type FastlyHandlerOptions = FastlyHandlerWithRSL | FastlyHandlerWithoutRSL;
 
+declare enum UsageType {
+    ALL = "all",
+    SEARCH = "search",
+    AI_ALL = "ai-all",
+    AI_TRAIN = "ai-train",
+    AI_INDEX = "ai-index",
+    AI_INPUT = "ai-input"
+}
+
 /**
  * Default bot detection logic using multiple signals.
  * Checks User-Agent patterns, headless browser indicators, missing headers, and Cloudflare bot scores.
@@ -171,6 +180,7 @@ declare class SupertabConnect {
      * @param options.token The license token to verify
      * @param options.resourceUrl The URL of the resource being accessed
      * @param options.userAgent Optional user agent string for event recording
+     * @param options.requestHeaders Optional request headers to include in the event properties
      * @param options.debug Enable debug logging (default: false)
      * @param options.ctx Optional execution context with waitUntil for non-blocking event recording
      * @returns A promise that resolves with the verification result
@@ -179,6 +189,7 @@ declare class SupertabConnect {
         token: string;
         resourceUrl: string;
         userAgent?: string;
+        requestHeaders?: Record<string, string>;
         debug?: boolean;
         ctx?: ExecutionContext;
     }): Promise<RSLVerificationResult>;
@@ -193,18 +204,22 @@ declare class SupertabConnect {
     handleRequest(request: Request, ctx?: ExecutionContext): Promise<HandlerResult>;
     /**
      * Request a license token from the Supertab Connect token endpoint.
+     * If usage type is specified and matching serverless content permits it, skips token request and returns undefined.
      * @param options.clientId OAuth client identifier.
      * @param options.clientSecret OAuth client secret for client_credentials flow.
      * @param options.resourceUrl Resource URL attempting to access with a License.
+     * @param options.usage Optional usage type.
+     *   If specified and a matching serverless content exists in license, no token is issued
      * @param options.debug Enable debug logging (default: false).
-     * @returns Promise resolving to the issued license access token string.
+     * @returns Promise resolving to the issued license access token string, or `undefined` when no token is needed.
      */
     static obtainLicenseToken(options: {
         clientId: string;
         clientSecret: string;
         resourceUrl: string;
+        usage?: UsageType;
         debug?: boolean;
-    }): Promise<string>;
+    }): Promise<string | undefined>;
     /**
      * Handle incoming requests for Cloudflare Workers.
      * Pass this directly as your Worker's fetch handler.
@@ -240,4 +255,4 @@ declare class SupertabConnect {
     static cloudfrontHandleRequests<TRequest extends Record<string, any>>(event: CloudFrontRequestEvent<TRequest>, options: CloudfrontHandlerOptions): Promise<CloudFrontRequestResult<TRequest>>;
 }
 
-export { type BotDetector, CDNStatusDescription, type CloudFrontRequestEvent, type CloudFrontRequestResult, type CloudfrontHandlerOptions, EnforcementMode, type Env, type ExecutionContext, type FastlyHandlerOptions, HandlerAction, type HandlerResult, LicenseTokenInvalidReason, type RSLVerificationResult, SupertabConnect, type SupertabConnectConfig, defaultBotDetector };
+export { type BotDetector, CDNStatusDescription, type CloudFrontRequestEvent, type CloudFrontRequestResult, type CloudfrontHandlerOptions, EnforcementMode, type Env, type ExecutionContext, type FastlyHandlerOptions, HandlerAction, type HandlerResult, LicenseTokenInvalidReason, type RSLVerificationResult, SupertabConnect, type SupertabConnectConfig, UsageType, defaultBotDetector };
