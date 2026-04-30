@@ -9,9 +9,25 @@ import {
 } from "./types";
 import { hostRSLicenseXML } from "./license";
 
+export interface HandleRequestContext {
+  ctx?: ExecutionContext;
+  sourceCdn: "cloudflare" | "fastly" | "cloudfront";
+  clientIp?: string;
+  requestId?: string;
+}
+
 // Interface for what the CDN handlers need - avoids circular dependency
 interface RequestHandler {
-  handleRequest(request: Request, ctx?: ExecutionContext): Promise<HandlerResult>;
+  handleRequest(request: Request, context?: HandleRequestContext): Promise<HandlerResult>;
+}
+
+function applyResponseHeaders(response: Response, headers?: Record<string, string>): Response {
+  if (!headers) return response;
+  const merged = new Response(response.body, response);
+  for (const [key, value] of Object.entries(headers)) {
+    merged.headers.set(key, value);
+  }
+  return merged;
 }
 
 export async function handleCloudflareRequest(
@@ -19,27 +35,24 @@ export async function handleCloudflareRequest(
   request: Request,
   ctx: ExecutionContext
 ): Promise<Response> {
-  const result = await handler.handleRequest(request, ctx);
+  const result = await handler.handleRequest(request, {
+    ctx,
+    sourceCdn: "cloudflare",
+    clientIp: request.headers.get("cf-connecting-ip") ?? undefined,
+  });
 
-  if (result.action === HandlerAction.BLOCK) {
-    return new Response(result.body, {
-      status: result.status,
-      headers: new Headers(result.headers),
-    });
-  }
-
-  // action === HandlerAction.ALLOW
-  const originResponse = await fetch(request);
-
-  if (result.headers) {
-    const response = new Response(originResponse.body, originResponse);
-    for (const [key, value] of Object.entries(result.headers)) {
-      response.headers.set(key, value);
+  switch (result.action) {
+    case HandlerAction.BLOCK:
+      return new Response(result.body, {
+        status: result.status,
+        headers: new Headers(result.headers),
+      });
+    case HandlerAction.ALLOW:
+    case HandlerAction.OBSERVE: {
+      const originResponse = await fetch(request);
+      return applyResponseHeaders(originResponse, result.headers);
     }
-    return response;
   }
-
-  return originResponse;
 }
 
 /**
@@ -74,29 +87,23 @@ export async function handleFastlyRequest(
     headers: request.headers,
   });
 
-  const result = await handler.handleRequest(webRequest);
+  const result = await handler.handleRequest(webRequest, {
+    sourceCdn: "fastly",
+    clientIp: request.headers.get("fastly-client-ip") ?? undefined,
+  });
 
-  if (result.action === HandlerAction.BLOCK) {
-    return new Response(result.body, {
-      status: result.status,
-      headers: new Headers(result.headers),
-    });
-  }
-
-  // action === HandlerAction.ALLOW
-  const originResponse = await fetch(request, {
-    backend: originBackend,
-  } as RequestInit);
-
-  if (result.headers) {
-    const response = new Response(originResponse.body, originResponse);
-    for (const [key, value] of Object.entries(result.headers)) {
-      response.headers.set(key, value);
+  switch (result.action) {
+    case HandlerAction.BLOCK:
+      return new Response(result.body, {
+        status: result.status,
+        headers: new Headers(result.headers),
+      });
+    case HandlerAction.ALLOW:
+    case HandlerAction.OBSERVE: {
+      const originResponse = await fetch(request, { backend: originBackend } as RequestInit);
+      return applyResponseHeaders(originResponse, result.headers);
     }
-    return response;
   }
-
-  return originResponse;
 }
 
 function statusDescription(status: number): CDNStatusDescription {
@@ -135,7 +142,10 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
     headers: headers,
   });
 
-  const result = await handler.handleRequest(webRequest);
+  const result = await handler.handleRequest(webRequest, {
+    sourceCdn: "cloudfront",
+    clientIp: cfRequest.clientIp,
+  });
 
   if (result.action === HandlerAction.BLOCK) {
     const responseHeaders: CloudFrontHeaders = {};
@@ -151,6 +161,6 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
     };
   }
 
-  // Allow request to continue to origin
+  // Allow request to continue to origin (ALLOW or OBSERVE)
   return cfRequest;
 }

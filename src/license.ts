@@ -253,7 +253,7 @@ export function generateLicenseLink({
 export function buildSignalResult(requestUrl: string): HandlerResult {
   const licenseLink = generateLicenseLink({ requestUrl });
   return {
-    action: HandlerAction.ALLOW,
+    action: HandlerAction.OBSERVE,
     headers: {
       Link: `<${licenseLink}>; rel="license"; type="application/rsl+xml"`,
       "X-RSL-Status": "token_required",

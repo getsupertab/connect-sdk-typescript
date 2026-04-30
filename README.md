@@ -97,7 +97,8 @@ The SDK is configured using the `SupertabConnectConfig` object:
 
 | Parameter           | Type               | Required | Default  | Description                                                        |
 | ------------------- | ------------------ | -------- | -------- | ------------------------------------------------------------------ |
-| `apiKey`            | `string`           | Yes      | -        | Your Supertab merchant API key                                     |
+| `apiKey`            | `string`           | Yes      | -        | Your Supertab merchant API key (rotatable credential)              |
+| `merchantId`        | `string`           | Yes      | -        | Stable merchant identifier stamped on analytics events             |
 | `enforcement`       | `EnforcementMode`  | No       | `SOFT`   | Enforcement mode: `DISABLED`, `SOFT`, or `STRICT`                  |
 | `botDetector`       | `BotDetector`      | No       | -        | Custom bot detection function `(request, ctx?) => boolean`         |
 | `debug`             | `boolean`          | No       | `false`  | Enable debug logging                                               |
@@ -206,5 +207,15 @@ Request a license token from the Supertab Connect token endpoint using OAuth2 cl
 | `clientSecret` | `string`  | Yes      | OAuth client secret for client_credentials flow |
 | `resourceUrl`  | `string`  | Yes      | Resource URL to obtain a license for            |
 | `debug`        | `boolean` | No       | Enable debug logging                            |
+
+## Known Limitations
+
+### Write-side multi-tenancy is enforced by trust
+
+The analytics emission path POSTs directly to Tinybird's Events API using a static, append-scoped token (`DATASOURCES:APPEND:bot_events_raw`). Tinybird does not support write-side row-level capabilities — the `merchantId` field is just another value in the JSON body, and any holder of the analytics token can technically write rows under any `merchantId`.
+
+This means write-side isolation between merchants is currently a trust assumption, not an enforced boundary. Read-side isolation works correctly via JWT `PIPES:READ` tokens bound with `--fixed-params merchant_id=<id>`.
+
+This will be hardened — most likely by routing analytics through the Supertab Connect backend so the merchant identifier is stamped server-side from the authenticated `apiKey` rather than asserted by the SDK — before broader merchant rollout. At that point `merchantId` is expected to move out of SDK config and become backend-derived. Treat the current SDK config field as a transitional shape.
 
 ```

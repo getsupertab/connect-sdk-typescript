@@ -1,17 +1,56 @@
+type SourceCdn = "cloudflare" | "fastly" | "cloudfront";
+type BotVerdict = "unknown" | "human" | "verified_bot" | "unverified_bot" | "suspicious";
+type TokenOutcome = "absent" | "valid" | "expired" | "invalid_signature" | "invalid_audience" | "invalid_resource" | "invalid_issuer" | "malformed" | "server_error";
+type FinalAction = "allow" | "observe" | "block";
+interface AnalyticsEvent {
+    merchant_id: string;
+    timestamp: string;
+    request_id: string;
+    schema_version: number;
+    source_cdn: SourceCdn;
+    user_agent: string;
+    client_ip: string;
+    path: string;
+    method: string;
+    referer: string;
+    accept_language: string;
+    has_token: boolean;
+    token_outcome: TokenOutcome;
+    bot_detector_result: BotVerdict;
+    final_action: FinalAction;
+    enforcement_mode: "observe" | "enforce" | "disabled";
+}
+interface AnalyticsTransport {
+    emit(event: AnalyticsEvent, ctx?: ExecutionContext): void;
+}
+
 declare enum EnforcementMode {
     DISABLED = "disabled",
-    SOFT = "soft",
-    STRICT = "strict"
+    OBSERVE = "observe",
+    ENFORCE = "enforce"
 }
 interface ExecutionContext {
     waitUntil(promise: Promise<void>): void;
 }
-type BotDetector = (request: Request, ctx?: ExecutionContext) => boolean;
+type BotDetector = (request: Request, ctx?: ExecutionContext) => BotVerdict;
 interface SupertabConnectConfig {
     apiKey: string;
+    /**
+     * Stable merchant identifier stamped on analytics events. Distinct from `apiKey`,
+     * which is a rotatable credential. Required so analytics rows survive key rotation.
+     */
+    merchantId: string;
     enforcement?: EnforcementMode;
     botDetector?: BotDetector;
     debug?: boolean;
+    /** Enables analytics emission. Default: false. */
+    analyticsEnabled?: boolean;
+    /** Tinybird Events API token. When absent and analyticsEnabled is true, a warning is logged once and emission no-ops. */
+    analyticsToken?: string;
+    /** Override the default Tinybird endpoint (region-specific). */
+    analyticsEndpoint?: string;
+    /** DI hook for tests/custom transports. Overrides the default HttpAnalyticsTransport when provided. */
+    analyticsTransport?: AnalyticsTransport;
 }
 /**
  * Defines the shape for environment variables (used in CloudFlare integration).
@@ -20,7 +59,11 @@ interface SupertabConnectConfig {
 interface Env {
     /** The API key for authenticating with the Supertab Connect. */
     MERCHANT_API_KEY: string;
-    [key: string]: string;
+    /** Stable merchant identifier stamped on analytics events. */
+    MERCHANT_ID: string;
+    /** Optional Tinybird Events API token for analytics emission. */
+    SUPERTAB_ANALYTICS_TOKEN?: string;
+    [key: string]: string | undefined;
 }
 declare enum LicenseTokenInvalidReason {
     MISSING_TOKEN = "missing_license_token",
@@ -38,11 +81,15 @@ declare global {
 }
 declare enum HandlerAction {
     ALLOW = "allow",
+    OBSERVE = "observe",
     BLOCK = "block"
 }
 type HandlerResult = {
     action: HandlerAction.ALLOW;
     headers?: Record<string, string>;
+} | {
+    action: HandlerAction.OBSERVE;
+    headers: Record<string, string>;
 } | {
     action: HandlerAction.BLOCK;
     status: number;
@@ -83,6 +130,7 @@ interface CloudFrontRequestEvent<TRequest = Record<string, any>> {
                 method: string;
                 querystring: string;
                 headers: CloudFrontHeaders;
+                clientIp?: string;
             };
         };
     }>;
@@ -90,16 +138,24 @@ interface CloudFrontRequestEvent<TRequest = Record<string, any>> {
 type CloudFrontRequestResult<TRequest = Record<string, any>> = TRequest | CloudFrontResultResponse;
 interface CloudfrontHandlerOptions {
     apiKey: string;
+    merchantId: string;
     botDetector?: BotDetector;
     enforcement?: EnforcementMode;
+    analyticsEnabled?: boolean;
+    analyticsToken?: string;
+    analyticsEndpoint?: string;
 }
 type RSLVerificationResult = {
     valid: boolean;
     error?: string;
 };
 interface FastlyHandlerBaseOptions {
+    merchantId: string;
     botDetector?: BotDetector;
     enforcement?: EnforcementMode;
+    analyticsEnabled?: boolean;
+    analyticsToken?: string;
+    analyticsEndpoint?: string;
 }
 interface FastlyHandlerWithRSL extends FastlyHandlerBaseOptions {
     enableRSL: true;
@@ -120,13 +176,26 @@ declare enum UsageType {
     AI_INPUT = "ai-input"
 }
 
+interface HandleRequestContext {
+    ctx?: ExecutionContext;
+    sourceCdn: "cloudflare" | "fastly" | "cloudfront";
+    clientIp?: string;
+    requestId?: string;
+}
+
 /**
- * Default bot detection logic using multiple signals.
- * Checks User-Agent patterns, headless browser indicators, missing headers, and Cloudflare bot scores.
- * @param request The incoming request to analyze
- * @returns true if the request appears to be from a bot, false otherwise
+ * Heuristic bot classification using UA, headers, and Cloudflare bot score.
+ *
+ * Returns one of:
+ *   - 'human'           — request looks like an interactive browser
+ *   - 'unverified_bot'  — UA matches a known bot string (not cryptographically verified)
+ *   - 'suspicious'      — headless indicators or suspicious header gaps
+ *   - 'unknown'         — request has no UA / cannot be classified
+ *
+ * NOTE: 'verified_bot' is reserved for server-side verification (CAP, HTTP
+ * Message Signatures) and is unreachable from this client-side detector.
  */
-declare function defaultBotDetector(request: Request): boolean;
+declare function defaultBotDetector(request: Request): BotVerdict;
 
 /**
  * SupertabConnect class provides higher level methods
@@ -135,10 +204,12 @@ declare function defaultBotDetector(request: Request): boolean;
  */
 declare class SupertabConnect {
     private apiKey?;
+    private merchantId;
     private static baseUrl;
     private enforcement;
     private botDetector?;
     private debug;
+    private analyticsTransport;
     private static _instance;
     /**
      * Create a new SupertabConnect instance (singleton).
@@ -148,6 +219,7 @@ declare class SupertabConnect {
      * @throws If an instance with different config already exists and reset is false
      */
     constructor(config: SupertabConnectConfig, reset?: boolean);
+    private static buildAnalyticsTransport;
     /**
      * Clear the singleton instance, allowing a new one to be created with different config.
      */
@@ -197,11 +269,10 @@ declare class SupertabConnect {
      * Handle an incoming request by extracting the license token, verifying it, and recording an analytics event.
      * When no token is present, bot detection and enforcement mode determine the response.
      * @param request The incoming HTTP request
-     * @param ctx Execution context for non-blocking event recording.
-     *   Pass this from your platform which has/requires this context (e.g. Cloudflare Workers)
-     * @returns A promise that resolves with the handler result indicating ALLOW or  BLOCK request
+     * @param context CDN-supplied request context (sourceCdn, clientIp, ctx, requestId)
+     * @returns A promise that resolves with the handler result indicating ALLOW, OBSERVE, or BLOCK
      */
-    handleRequest(request: Request, ctx?: ExecutionContext): Promise<HandlerResult>;
+    handleRequest(request: Request, context?: HandleRequestContext): Promise<HandlerResult>;
     /**
      * Request a license token from the Supertab Connect token endpoint.
      * If usage type is specified and matching serverless content permits it, skips token request and returns undefined.
@@ -217,7 +288,14 @@ declare class SupertabConnect {
         clientId: string;
         clientSecret: string;
         resourceUrl: string;
-        usage?: UsageType;
+        usage?: undefined;
+        debug?: boolean;
+    }): Promise<string>;
+    static obtainLicenseToken(options: {
+        clientId: string;
+        clientSecret: string;
+        resourceUrl: string;
+        usage: UsageType;
         debug?: boolean;
     }): Promise<string | undefined>;
     /**
@@ -228,11 +306,15 @@ declare class SupertabConnect {
      * @param ctx Worker execution context for non-blocking event recording
      * @param options Optional configuration items
      * @param options.botDetector Custom bot detection function
-     * @param options.enforcement Enforcement mode (default: SOFT)
+     * @param options.enforcement Enforcement mode (default: OBSERVE)
+     * @param options.analyticsEnabled Toggle Tinybird analytics emission (default: false)
+     * @param options.analyticsEndpoint Override Tinybird endpoint
      */
     static cloudflareHandleRequests(request: Request, env: Env, ctx: ExecutionContext, options?: {
         botDetector?: BotDetector;
         enforcement?: EnforcementMode;
+        analyticsEnabled?: boolean;
+        analyticsEndpoint?: string;
     }): Promise<Response>;
     /**
      * Handle incoming requests for Fastly Compute.
@@ -243,16 +325,19 @@ declare class SupertabConnect {
      * @param options.enableRSL Serve license.xml at /license.xml for RSL-compliant clients (default: false)
      * @param options.merchantSystemUrn Required when enableRSL is true; the merchant system URN used to fetch license.xml
      * @param options.botDetector Custom bot detection function
-     * @param options.enforcement Enforcement mode (default: SOFT)
+     * @param options.enforcement Enforcement mode (default: OBSERVE)
+     * @param options.analyticsEnabled Toggle Tinybird analytics emission (default: false)
+     * @param options.analyticsToken Tinybird Events API token
+     * @param options.analyticsEndpoint Override Tinybird endpoint
      */
-    static fastlyHandleRequests(request: Request, merchantApiKey: string, originBackend: string, options?: FastlyHandlerOptions): Promise<Response>;
+    static fastlyHandleRequests(request: Request, merchantApiKey: string, originBackend: string, options: FastlyHandlerOptions): Promise<Response>;
     /**
      * Handle incoming requests for AWS CloudFront Lambda@Edge.
      * Use as the handler for an origin-request LambdaEdge function.
      * @param event The CloudFront origin-request event
-     * @param options Configuration including apiKey and optional botDetector/enforcement
+     * @param options Configuration including apiKey and optional botDetector/enforcement/analytics fields
      */
     static cloudfrontHandleRequests<TRequest extends Record<string, any>>(event: CloudFrontRequestEvent<TRequest>, options: CloudfrontHandlerOptions): Promise<CloudFrontRequestResult<TRequest>>;
 }
 
-export { type BotDetector, CDNStatusDescription, type CloudFrontRequestEvent, type CloudFrontRequestResult, type CloudfrontHandlerOptions, EnforcementMode, type Env, type ExecutionContext, type FastlyHandlerOptions, HandlerAction, type HandlerResult, LicenseTokenInvalidReason, type RSLVerificationResult, SupertabConnect, type SupertabConnectConfig, UsageType, defaultBotDetector };
+export { type AnalyticsEvent, type AnalyticsTransport, type BotDetector, type BotVerdict, CDNStatusDescription, type CloudFrontRequestEvent, type CloudFrontRequestResult, type CloudfrontHandlerOptions, EnforcementMode, type Env, type ExecutionContext, type FastlyHandlerOptions, HandlerAction, type HandlerResult, LicenseTokenInvalidReason, type RSLVerificationResult, SupertabConnect, type SupertabConnectConfig, UsageType, defaultBotDetector };

@@ -1,22 +1,36 @@
 import type { JWTPayload } from "jose";
+import type { AnalyticsTransport, BotVerdict } from "./analytics/types";
 
 export enum EnforcementMode {
   DISABLED = "disabled",
-  SOFT = "soft",
-  STRICT = "strict",
+  OBSERVE = "observe",
+  ENFORCE = "enforce",
 }
 
 export interface ExecutionContext {
   waitUntil(promise: Promise<void>): void;
 }
 
-export type BotDetector = (request: Request, ctx?: ExecutionContext) => boolean;
+export type BotDetector = (request: Request, ctx?: ExecutionContext) => BotVerdict;
 
 export interface SupertabConnectConfig {
   apiKey: string;
+  /**
+   * Stable merchant identifier stamped on analytics events. Distinct from `apiKey`,
+   * which is a rotatable credential. Required so analytics rows survive key rotation.
+   */
+  merchantId: string;
   enforcement?: EnforcementMode;
   botDetector?: BotDetector;
   debug?: boolean;
+  /** Enables analytics emission. Default: false. */
+  analyticsEnabled?: boolean;
+  /** Tinybird Events API token. When absent and analyticsEnabled is true, a warning is logged once and emission no-ops. */
+  analyticsToken?: string;
+  /** Override the default Tinybird endpoint (region-specific). */
+  analyticsEndpoint?: string;
+  /** DI hook for tests/custom transports. Overrides the default HttpAnalyticsTransport when provided. */
+  analyticsTransport?: AnalyticsTransport;
 }
 
 /**
@@ -26,7 +40,11 @@ export interface SupertabConnectConfig {
 export interface Env {
 	/** The API key for authenticating with the Supertab Connect. */
 	MERCHANT_API_KEY: string;
-	[key: string]: string;
+	/** Stable merchant identifier stamped on analytics events. */
+	MERCHANT_ID: string;
+	/** Optional Tinybird Events API token for analytics emission. */
+	SUPERTAB_ANALYTICS_TOKEN?: string;
+	[key: string]: string | undefined;
 }
 
 export interface EventPayload {
@@ -65,11 +83,13 @@ export interface FetchOptions extends RequestInit {
 
 export enum HandlerAction {
   ALLOW = "allow",
+  OBSERVE = "observe",
   BLOCK = "block",
 }
 
 export type HandlerResult =
   | { action: HandlerAction.ALLOW; headers?: Record<string, string> }
+  | { action: HandlerAction.OBSERVE; headers: Record<string, string> }
   | { action: HandlerAction.BLOCK; status: number; body: string; headers: Record<string, string> };
 
 export enum CDNStatusDescription {
@@ -109,6 +129,7 @@ export interface CloudFrontRequestEvent<TRequest = Record<string, any>> {
         method: string;
         querystring: string;
         headers: CloudFrontHeaders;
+        clientIp?: string;
       };
     };
   }>;
@@ -120,8 +141,12 @@ export type CloudFrontRequestResult<TRequest = Record<string, any>> = TRequest |
 
 export interface CloudfrontHandlerOptions {
   apiKey: string;
+  merchantId: string;
   botDetector?: BotDetector;
   enforcement?: EnforcementMode;
+  analyticsEnabled?: boolean;
+  analyticsToken?: string;
+  analyticsEndpoint?: string;
 }
 
 export type RSLVerificationResult = {
@@ -130,8 +155,12 @@ export type RSLVerificationResult = {
 };
 
 interface FastlyHandlerBaseOptions {
+  merchantId: string;
   botDetector?: BotDetector;
   enforcement?: EnforcementMode;
+  analyticsEnabled?: boolean;
+  analyticsToken?: string;
+  analyticsEndpoint?: string;
 }
 
 interface FastlyHandlerWithRSL extends FastlyHandlerBaseOptions {

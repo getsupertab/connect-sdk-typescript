@@ -53,7 +53,7 @@ SupertabConnect.fastlyHandleRequests(
     merchantSystemUrn: MERCHANT_SYSTEM_URN,
     // For bot-detection modes:
     botDetector: defaultBotDetector,
-    enforcement: EnforcementMode.SOFT,  // or STRICT
+    enforcement: EnforcementMode.OBSERVE,  // or ENFORCE
   }
 )
 ```
