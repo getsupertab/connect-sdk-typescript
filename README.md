@@ -2,6 +2,12 @@
 
 Check our [documentation](https://supertab-connect.mintlify.app/introduction/about-supertab-connect) for more information on Supertab Connect.
 
+[![npm](https://img.shields.io/npm/v/%40getsupertab%2Fsupertab-connect-sdk.svg)](https://www.npmjs.com/package/%40getsupertab%2Fsupertab-connect-sdk)
+[![License](https://img.shields.io/npm/l/%40getsupertab%2Fsupertab-connect-sdk.svg)](https://github.com/getsupertab/connect-sdk-typescript/blob/main/LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/getsupertab/connect-sdk-typescript/ci.yml?branch=main)](https://github.com/getsupertab/connect-sdk-typescript/actions/workflows/ci.yml)
+[![TypeScript Types](https://img.shields.io/npm/types/%40getsupertab%2Fsupertab-connect-sdk.svg)](https://www.npmjs.com/package/%40getsupertab%2Fsupertab-connect-sdk)
+[![Node.js Version](https://img.shields.io/node/v/%40getsupertab%2Fsupertab-connect-sdk.svg)](https://www.npmjs.com/package/%40getsupertab%2Fsupertab-connect-sdk)
+
 ## Installation
 
 ```
