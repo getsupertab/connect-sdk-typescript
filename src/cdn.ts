@@ -33,7 +33,8 @@ function applyResponseHeaders(response: Response, headers?: Record<string, strin
 export async function handleCloudflareRequest(
   handler: RequestHandler,
   request: Request,
-  ctx: ExecutionContext
+  ctx: ExecutionContext,
+  originUrl?: string
 ): Promise<Response> {
   const result = await handler.handleRequest(request, {
     ctx,
@@ -49,7 +50,19 @@ export async function handleCloudflareRequest(
       });
     case HandlerAction.ALLOW:
     case HandlerAction.OBSERVE: {
-      const originResponse = await fetch(request);
+      // When `originUrl` is provided, forward to that host while preserving
+      // path / query / method / headers / body. Decouples validation URL
+      // (request.url, used for token audience checks) from fetch destination.
+      // Production Cloudflare deployments can omit this — Workers Routes put
+      // the Worker on the publisher's hostname, so `fetch(request)` already
+      // resolves to the origin via the edge.
+      const fetchTarget = originUrl
+        ? new Request(
+            `${new URL(originUrl).origin}${new URL(request.url).pathname}${new URL(request.url).search}`,
+            request
+          )
+        : request;
+      const originResponse = await fetch(fetchTarget);
       return applyResponseHeaders(originResponse, result.headers);
     }
   }

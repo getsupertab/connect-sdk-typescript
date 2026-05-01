@@ -23,7 +23,7 @@ const DEFAULT_TEST_MODE = TestMode.SOFT_NO_BOT_DETECTION;
 const TEST_MODE = process.env.TEST_MODE || DEFAULT_TEST_MODE;
 
 // Environment selection - single var picks full config
-const TEST_ENV = process.env.TEST_ENV || "sandbox-cloudfront";
+const TEST_ENV = process.env.TEST_ENV || "local-cloudflare";
 
 const config = ENVIRONMENTS[TEST_ENV] || ENVIRONMENTS.local;
 

@@ -433,6 +433,12 @@ export class SupertabConnect {
    * @param options.enforcement Enforcement mode (default: OBSERVE)
    * @param options.analyticsEnabled Toggle Tinybird analytics emission (default: false)
    * @param options.analyticsEndpoint Override Tinybird endpoint
+   * @param options.originUrl Override the upstream origin for ALLOW/OBSERVE pass-through.
+   *   When set, the Worker's `fetch` for forwarded traffic targets `${originUrl}${path}${query}`
+   *   instead of `request.url`. License audience / resource verification still uses `request.url`,
+   *   so the Worker URL clients hit and the origin URL the Worker forwards to can differ.
+   *   Production Cloudflare deployments using Workers Routes can omit this — `fetch(request)`
+   *   already resolves to the origin via Cloudflare's edge.
    */
   static async cloudflareHandleRequests(
     request: Request,
@@ -443,6 +449,7 @@ export class SupertabConnect {
        enforcement?: EnforcementMode;
        analyticsEnabled?: boolean;
        analyticsEndpoint?: string;
+       originUrl?: string;
     }
   ): Promise<Response> {
     try {
@@ -455,7 +462,7 @@ export class SupertabConnect {
         analyticsToken: env.SUPERTAB_ANALYTICS_TOKEN,
         analyticsEndpoint: options?.analyticsEndpoint,
       });
-      return await handleCloudflareRequest(instance, request, ctx);
+      return await handleCloudflareRequest(instance, request, ctx, options?.originUrl);
     } catch (err) {
       console.error("[SupertabConnect] cloudflareHandleRequests failed:", err);
       return await fetch(request);

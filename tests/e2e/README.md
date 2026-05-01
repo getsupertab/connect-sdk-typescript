@@ -2,6 +2,30 @@
 
 Integration tests for verifying SDK enforcement behavior against a running server.
 
+## Files
+
+| File | What it does | How to run |
+|------|--------------|-----------|
+| `enforcement.test.ts` | Vitest suite — Worker HTTP behavior (status codes, headers, license token verification) | `npm test` |
+| `cloudflare-e2e.ts` | Standalone harness — analytics pipeline (Tinybird rows land correctly through workerd, all 6 SDK emit branches) | `TB_ADMIN_TOKEN=… npx tsx tests/e2e/cloudflare-e2e.ts` |
+| `read-isolation.ts` | Standalone harness — Tinybird JWT `fixed_params` read-side multi-tenancy | `TB_ADMIN_TOKEN=… npx tsx tests/e2e/read-isolation.ts` |
+| `demo.ts` / `production_test_script.ts` | Manual / ad-hoc | per script |
+
+The two `.ts` harnesses live alongside the vitest tests but aren't
+picked up by `npm test` (only `*.test.ts` is). They're standalone tsx
+scripts because their orchestration (preflight, scenario sweep, polling
+Tinybird) doesn't fit cleanly into vitest's it/expect shape.
+
+## Coverage map
+
+| Layer | Covered by |
+|-------|------------|
+| Worker HTTP behavior (status / headers / license verification) | `enforcement.test.ts` |
+| SDK emit → Tinybird write API → datasource | `cloudflare-e2e.ts` |
+| Tinybird read pipe + JWT `fixed_params` | `read-isolation.ts` |
+
+Each is the only test of its slice — they don't overlap.
+
 ## Setup
 
 1. Copy the config template and add your credentials:
