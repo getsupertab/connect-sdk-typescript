@@ -7,7 +7,7 @@ import {
 import { AnalyticsEvent } from "../../src/analytics/types";
 
 const fixtureEvent: AnalyticsEvent = {
-  merchant_id: "merchant-abc",
+  merchant_system_urn: "urn:stc:merchant:system:abc",
   timestamp: "2026-04-29T12:00:00.000Z",
   request_id: "req-1",
   schema_version: 1,

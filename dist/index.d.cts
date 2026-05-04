@@ -3,7 +3,7 @@ type BotVerdict = "unknown" | "human" | "verified_bot" | "unverified_bot" | "sus
 type TokenOutcome = "absent" | "valid" | "expired" | "invalid_signature" | "invalid_audience" | "invalid_resource" | "invalid_issuer" | "malformed" | "server_error";
 type FinalAction = "allow" | "observe" | "block";
 interface AnalyticsEvent {
-    merchant_id: string;
+    merchant_system_urn: string;
     timestamp: string;
     request_id: string;
     schema_version: number;
@@ -36,10 +36,11 @@ type BotDetector = (request: Request, ctx?: ExecutionContext) => BotVerdict;
 interface SupertabConnectConfig {
     apiKey: string;
     /**
-     * Stable merchant identifier stamped on analytics events. Distinct from `apiKey`,
-     * which is a rotatable credential. Required so analytics rows survive key rotation.
+     * Merchant system URN (e.g. `urn:stc:merchant:system:<uuid>`) stamped on
+     * analytics events. Distinct from `apiKey`, which is a rotatable credential —
+     * the URN survives key rotation, so historical rows stay attributable.
      */
-    merchantId: string;
+    merchantSystemUrn: string;
     enforcement?: EnforcementMode;
     botDetector?: BotDetector;
     debug?: boolean;
@@ -59,8 +60,8 @@ interface SupertabConnectConfig {
 interface Env {
     /** The API key for authenticating with the Supertab Connect. */
     MERCHANT_API_KEY: string;
-    /** Stable merchant identifier stamped on analytics events. */
-    MERCHANT_ID: string;
+    /** Merchant system URN stamped on analytics events (e.g. `urn:stc:merchant:system:<uuid>`). */
+    MERCHANT_SYSTEM_URN: string;
     /** Optional Tinybird Events API token for analytics emission. */
     SUPERTAB_ANALYTICS_TOKEN?: string;
     [key: string]: string | undefined;
@@ -138,7 +139,7 @@ interface CloudFrontRequestEvent<TRequest = Record<string, any>> {
 type CloudFrontRequestResult<TRequest = Record<string, any>> = TRequest | CloudFrontResultResponse;
 interface CloudfrontHandlerOptions {
     apiKey: string;
-    merchantId: string;
+    merchantSystemUrn: string;
     botDetector?: BotDetector;
     enforcement?: EnforcementMode;
     analyticsEnabled?: boolean;
@@ -149,23 +150,15 @@ type RSLVerificationResult = {
     valid: boolean;
     error?: string;
 };
-interface FastlyHandlerBaseOptions {
-    merchantId: string;
+interface FastlyHandlerOptions {
+    merchantSystemUrn: string;
     botDetector?: BotDetector;
     enforcement?: EnforcementMode;
     analyticsEnabled?: boolean;
     analyticsToken?: string;
     analyticsEndpoint?: string;
+    enableRSL?: boolean;
 }
-interface FastlyHandlerWithRSL extends FastlyHandlerBaseOptions {
-    enableRSL: true;
-    merchantSystemUrn: string;
-}
-interface FastlyHandlerWithoutRSL extends FastlyHandlerBaseOptions {
-    enableRSL?: false;
-    merchantSystemUrn?: never;
-}
-type FastlyHandlerOptions = FastlyHandlerWithRSL | FastlyHandlerWithoutRSL;
 
 declare enum UsageType {
     ALL = "all",
@@ -204,7 +197,7 @@ declare function defaultBotDetector(request: Request): BotVerdict;
  */
 declare class SupertabConnect {
     private apiKey?;
-    private merchantId;
+    private merchantSystemUrn;
     private static baseUrl;
     private enforcement;
     private botDetector?;
@@ -214,7 +207,7 @@ declare class SupertabConnect {
     /**
      * Create a new SupertabConnect instance (singleton).
      * Returns the existing instance if one exists with the same config.
-     * @param config SDK configuration including apiKey
+     * @param config SDK configuration including apiKey and merchantSystemUrn
      * @param reset Pass true to replace an existing instance with different config
      * @throws If an instance with different config already exists and reset is false
      */
@@ -328,9 +321,9 @@ declare class SupertabConnect {
      * @param request The incoming Fastly request
      * @param merchantApiKey The merchant API key for authentication
      * @param originBackend The Fastly backend name to forward allowed requests to
-     * @param options Optional configuration items
+     * @param options Configuration items
+     * @param options.merchantSystemUrn Merchant system URN stamped on analytics events; also used to fetch license.xml when enableRSL is true
      * @param options.enableRSL Serve license.xml at /license.xml for RSL-compliant clients (default: false)
-     * @param options.merchantSystemUrn Required when enableRSL is true; the merchant system URN used to fetch license.xml
      * @param options.botDetector Custom bot detection function
      * @param options.enforcement Enforcement mode (default: OBSERVE)
      * @param options.analyticsEnabled Toggle Tinybird analytics emission (default: false)

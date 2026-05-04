@@ -1,19 +1,19 @@
 /**
- * Read-isolation harness: SDK → Tinybird → assert per-merchant JWT isolation.
+ * Read-isolation harness: SDK → Tinybird → assert per-merchant-system JWT isolation.
  *
- * Validates the read-side multi-tenancy story: each merchant gets a
- * PIPES:READ JWT with --fixed-params merchant_id=<id>, and that JWT
+ * Validates the read-side multi-tenancy story: each merchant system gets a
+ * PIPES:READ JWT with --fixed-params merchant_system_urn=<urn>, and that JWT
  * cannot — even with deliberate URL-parameter override attempts — observe
- * another merchant's rows.
+ * another merchant system's rows.
  *
  * Strategy:
- *   1. Append synthetic rows for two merchants (counts differ so we can
- *      distinguish them) directly to bot_events_raw via the admin token.
+ *   1. Append synthetic rows for two merchant systems (counts differ so we
+ *      can distinguish them) directly to bot_events_raw via the admin token.
  *   2. Mint two short-TTL JWTs scoped PIPES:READ:merchant_event_count,
- *      each with --fixed-params merchant_id=<that merchant's id>.
+ *      each with --fixed-params merchant_system_urn=<that system's urn>.
  *   3. Query merchant_event_count.json with each JWT and assert row counts.
- *   4. Probe override: with token A, pass &merchant_id=<B>. Tinybird must
- *      ignore the URL value and apply the JWT-bound one.
+ *   4. Probe override: with token A, pass &merchant_system_urn=<B>. Tinybird
+ *      must ignore the URL value and apply the JWT-bound one.
  *
  * `merchant_event_count` is a one-node helper pipe — see
  * tinybird/tinybird/pipes/merchant_event_count.pipe. The production
@@ -51,10 +51,10 @@ if (!TB_ADMIN_TOKEN) {
   process.exit(1);
 }
 
-// Unique per-run merchant ids so reruns don't accumulate cross-merchant noise.
+// Unique per-run merchant system urns so reruns don't accumulate cross-tenant noise.
 const RUN_ID = Date.now().toString(36);
-const MERCHANT_A = `ri_alpha_${RUN_ID}`;
-const MERCHANT_B = `ri_beta_${RUN_ID}`;
+const URN_A = `urn:stc:merchant:system:ri-alpha-${RUN_ID}`;
+const URN_B = `urn:stc:merchant:system:ri-beta-${RUN_ID}`;
 const COUNT_A = 3;
 const COUNT_B = 5;
 
@@ -68,15 +68,15 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-async function appendEvents(merchantId: string, count: number): Promise<void> {
+async function appendEvents(urn: string, count: number): Promise<void> {
   const ts = nowIso();
   const lines: string[] = [];
   for (let i = 0; i < count; i++) {
     lines.push(
       JSON.stringify({
-        merchant_id: merchantId,
+        merchant_system_urn: urn,
         timestamp: ts,
-        request_id: `${merchantId}-req-${i}`,
+        request_id: `${urn}-req-${i}`,
         schema_version: 1,
         source_cdn: "cloudflare",
         user_agent: "Mozilla/5.0",
@@ -102,11 +102,11 @@ async function appendEvents(merchantId: string, count: number): Promise<void> {
     body: lines.join("\n") + "\n",
   });
   if (!res.ok) {
-    throw new Error(`append failed for ${merchantId}: ${res.status} ${await res.text()}`);
+    throw new Error(`append failed for ${urn}: ${res.status} ${await res.text()}`);
   }
 }
 
-function mintJwt(label: string, merchantId: string): string {
+function mintJwt(label: string, urn: string): string {
   const tokenName = `read_isolation_${label}_${RUN_ID}`;
   // tb prints a token line; we extract the JWT-shaped substring (eyJ...).
   const cmd = [
@@ -123,7 +123,7 @@ function mintJwt(label: string, merchantId: string): string {
     "--resource",
     "merchant_event_count",
     "--fixed-params",
-    `merchant_id=${merchantId}`,
+    `merchant_system_urn=${urn}`,
   ].join(" ");
   const out = execSync(cmd, { encoding: "utf8", cwd: TB_PROJECT_DIR });
   // JWTs always start with eyJ; capture the longest match.
@@ -155,7 +155,7 @@ function totalRequests(resp: PipeResponse): number {
   return resp.data.reduce((sum, row) => sum + (row.total ?? 0), 0);
 }
 
-async function waitForRows(merchantId: string, expected: number, jwt: string): Promise<void> {
+async function waitForRows(urn: string, expected: number, jwt: string): Promise<void> {
   const deadline = Date.now() + 5000;
   let last = -1;
   while (Date.now() < deadline) {
@@ -165,7 +165,7 @@ async function waitForRows(merchantId: string, expected: number, jwt: string): P
     await new Promise((r) => setTimeout(r, 250));
   }
   throw new Error(
-    `timed out waiting for ${expected} rows for ${merchantId}; last seen ${last}`,
+    `timed out waiting for ${expected} rows for ${urn}; last seen ${last}`,
   );
 }
 
@@ -178,21 +178,21 @@ function expect(label: string, actual: unknown, expected: unknown): void {
 
 async function main(): Promise<void> {
   console.log(`run_id=${RUN_ID}`);
-  console.log(`merchant_a=${MERCHANT_A} (${COUNT_A} rows)`);
-  console.log(`merchant_b=${MERCHANT_B} (${COUNT_B} rows)`);
+  console.log(`urn_a=${URN_A} (${COUNT_A} rows)`);
+  console.log(`urn_b=${URN_B} (${COUNT_B} rows)`);
   console.log("---");
 
   console.log("seeding bot_events_raw…");
-  await appendEvents(MERCHANT_A, COUNT_A);
-  await appendEvents(MERCHANT_B, COUNT_B);
+  await appendEvents(URN_A, COUNT_A);
+  await appendEvents(URN_B, COUNT_B);
 
   console.log("minting JWTs…");
-  const jwtA = mintJwt("a", MERCHANT_A);
-  const jwtB = mintJwt("b", MERCHANT_B);
+  const jwtA = mintJwt("a", URN_A);
+  const jwtB = mintJwt("b", URN_B);
 
   console.log("waiting for rows to settle…");
-  await waitForRows(MERCHANT_A, COUNT_A, jwtA);
-  await waitForRows(MERCHANT_B, COUNT_B, jwtB);
+  await waitForRows(URN_A, COUNT_A, jwtA);
+  await waitForRows(URN_B, COUNT_B, jwtB);
   console.log("---");
 
   // 1. Each token sees its own rows.
@@ -202,12 +202,12 @@ async function main(): Promise<void> {
   const bSelf = await queryEventCount(jwtB);
   expect("token B sees B's row count", totalRequests(bSelf), COUNT_B);
 
-  // 2. Override probe: token A passes merchant_id=<B> in the URL.
+  // 2. Override probe: token A passes merchant_system_urn=<B> in the URL.
   // JWT fixed_params must win — A still sees only A's rows.
   let overrideOutcome: "ignored" | "rejected" | "leaked" = "ignored";
   let aOverrideTotal: number | null = null;
   try {
-    const resp = await queryEventCount(jwtA, { merchant_id: MERCHANT_B });
+    const resp = await queryEventCount(jwtA, { merchant_system_urn: URN_B });
     aOverrideTotal = totalRequests(resp);
     if (aOverrideTotal === COUNT_B) overrideOutcome = "leaked";
   } catch {

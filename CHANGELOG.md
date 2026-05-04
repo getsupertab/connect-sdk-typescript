@@ -17,8 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New `SupertabConnectConfig` fields: `analyticsEnabled`, `analyticsToken`,
   `analyticsEndpoint`, `analyticsTransport` (DI hook for tests / custom
   transports).
-- New `Env.SUPERTAB_ANALYTICS_TOKEN` and `Env.MERCHANT_ID` for Cloudflare
-  Workers.
+- New `Env.SUPERTAB_ANALYTICS_TOKEN` and `Env.MERCHANT_SYSTEM_URN` for
+  Cloudflare Workers.
 - New `analyticsEnabled` / `analyticsToken` / `analyticsEndpoint` options on
   `cloudflareHandleRequests`, `fastlyHandleRequests`, `cloudfrontHandleRequests`.
 - Per-request `request_id` (`crypto.randomUUID()`) generated inside
@@ -58,17 +58,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   callers (not going through the CDN convenience methods) must update.
 - **Default `enforcement` value** is `EnforcementMode.OBSERVE` (renamed from
   `SOFT`); behavior is unchanged.
-- **New required `merchantId` config field.** `SupertabConnectConfig` now
-  requires `merchantId: string` in addition to `apiKey`. The merchantId is
-  the stable identifier stamped on analytics events; the apiKey remains a
+- **New required `merchantSystemUrn` config field.** `SupertabConnectConfig`
+  now requires `merchantSystemUrn: string` (e.g.
+  `urn:stc:merchant:system:<uuid>`) in addition to `apiKey`. The URN is the
+  stable identifier stamped on analytics events; the apiKey remains a
   rotatable credential. Previously the SDK reused `apiKey` as the analytics
-  merchant_id, which meant rotating a key orphaned all prior analytics rows.
+  identifier, which meant rotating a key orphaned all prior analytics rows.
   All three CDN entry points now require it: Cloudflare reads it from
-  `env.MERCHANT_ID`; Fastly and CloudFront accept it on their `options`
-  object as `merchantId`. The constructor throws if missing.
+  `env.MERCHANT_SYSTEM_URN`; Fastly and CloudFront accept it on their
+  `options` object as `merchantSystemUrn`. The constructor throws if missing.
+  Tinybird `bot_events_raw` exposes the value as the `merchant_system_urn`
+  column (renamed from `merchant_id`); JWT `--fixed-params` for read-side
+  isolation now binds `merchant_system_urn=<urn>`. The Fastly options
+  discriminated union (RSL on/off requiring distinct fields) collapses —
+  the URN is now required for analytics on every request, and is reused
+  for the license.xml fetch when `enableRSL: true`.
 - **`fastlyHandleRequests` `options` parameter is now required** (it was
-  optional). `merchantId` lives on the options object, so the parameter can
-  no longer be omitted.
+  optional). `merchantSystemUrn` lives on the options object, so the
+  parameter can no longer be omitted.
 
 ### Notes
 

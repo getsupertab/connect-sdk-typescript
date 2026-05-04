@@ -3,7 +3,7 @@ import { normalizeClientIp } from "./ip";
 import { AnalyticsEvent, Decision, SCHEMA_VERSION, SourceCdn } from "./types";
 
 export interface BuildAnalyticsEventContext {
-  merchantId: string;
+  merchantSystemUrn: string;
   requestId: string;
   sourceCdn: SourceCdn;
   clientIp?: string | null;
@@ -31,7 +31,7 @@ export function buildAnalyticsEvent(
   const timestamp = context.timestamp ?? new Date();
 
   return {
-    merchant_id: context.merchantId,
+    merchant_system_urn: context.merchantSystemUrn,
     timestamp: isoUtc(timestamp),
     request_id: context.requestId,
     schema_version: SCHEMA_VERSION,

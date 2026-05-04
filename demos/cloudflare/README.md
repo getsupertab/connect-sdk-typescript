@@ -42,7 +42,7 @@ What this demo exercises:
 
    ```
    MERCHANT_API_KEY=<merchant key registered in local supertab-connect>
-   MERCHANT_ID=phase2_merch_local
+   MERCHANT_SYSTEM_URN=urn:stc:merchant:system:<uuid>
    SUPERTAB_ANALYTICS_TOKEN=<paste from `tb --local token ls`>
    SUPERTAB_ANALYTICS_ENDPOINT=http://localhost:7181/v0/events?name=bot_events_raw
    SUPERTAB_BASE_URL=http://localhost:8000
@@ -202,7 +202,7 @@ Run from `supertab-connect/tinybird/` (the `tb` CLI resolves resources from cwd)
 ```sh
 cd /Users/hassaanelgarem/supertab/supertab-connect/tinybird
 
-tb --local sql "SELECT request_id, source_cdn, client_ip, has_token, token_outcome, bot_detector_result, final_action, enforcement_mode FROM bot_events_raw WHERE merchant_id = 'phase2_merch_local' ORDER BY timestamp DESC LIMIT 5"
+tb --local sql "SELECT request_id, source_cdn, client_ip, has_token, token_outcome, bot_detector_result, final_action, enforcement_mode FROM bot_events_raw WHERE merchant_system_urn = '<your urn>' ORDER BY timestamp DESC LIMIT 5"
 ```
 
 Expected rows after running scenarios 1–3:
@@ -239,9 +239,8 @@ You will see these in `wrangler dev` output. They do not affect Phase 2:
 ## What changed from the pre-Phase-2 demo
 
 - SDK dep switched from npm (`^0.1.0-beta.19`) to `file:../..` (local build)
-- `.dev.vars` gained `MERCHANT_ID`, `SUPERTAB_ANALYTICS_TOKEN`,
-  `SUPERTAB_ANALYTICS_ENDPOINT`, `SUPERTAB_BASE_URL`,
-  `MERCHANT_SYSTEM_URN`, `ORIGIN_URL`
+- `.dev.vars` gained `MERCHANT_SYSTEM_URN`, `SUPERTAB_ANALYTICS_TOKEN`,
+  `SUPERTAB_ANALYTICS_ENDPOINT`, `SUPERTAB_BASE_URL`, `ORIGIN_URL`
 - `src/index.ts`:
   - Calls `SupertabConnect.setBaseUrl(env.SUPERTAB_BASE_URL)` per request
     when set, so the SDK's billing/event-record path and JWKS fetches hit

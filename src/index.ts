@@ -80,7 +80,7 @@ const BOT_VERDICTS_TO_BLOCK: ReadonlySet<BotVerdict> = new Set(["unverified_bot"
  */
 export class SupertabConnect {
   private apiKey?: string;
-  private merchantId!: string;
+  private merchantSystemUrn!: string;
   private static baseUrl: string = "https://api-connect.supertab.co";
   private enforcement!: EnforcementMode;
   private botDetector?: BotDetector;
@@ -92,7 +92,7 @@ export class SupertabConnect {
   /**
    * Create a new SupertabConnect instance (singleton).
    * Returns the existing instance if one exists with the same config.
-   * @param config SDK configuration including apiKey
+   * @param config SDK configuration including apiKey and merchantSystemUrn
    * @param reset Pass true to replace an existing instance with different config
    * @throws If an instance with different config already exists and reset is false
    */
@@ -101,7 +101,7 @@ export class SupertabConnect {
       // If reset was not requested and an instance conflicts with the provided config, throw an error
       if (
         config.apiKey !== SupertabConnect._instance.apiKey ||
-        config.merchantId !== SupertabConnect._instance.merchantId
+        config.merchantSystemUrn !== SupertabConnect._instance.merchantSystemUrn
       ) {
         throw new Error(
           "Cannot create a new instance with different configuration. Use resetInstance to clear the existing instance."
@@ -121,13 +121,13 @@ export class SupertabConnect {
         "Missing required configuration: apiKey is required"
       );
     }
-    if (!config.merchantId) {
+    if (!config.merchantSystemUrn) {
       throw new Error(
-        "Missing required configuration: merchantId is required"
+        "Missing required configuration: merchantSystemUrn is required"
       );
     }
     this.apiKey = config.apiKey;
-    this.merchantId = config.merchantId;
+    this.merchantSystemUrn = config.merchantSystemUrn;
     this.enforcement = config.enforcement ?? EnforcementMode.OBSERVE;
     this.botDetector = config.botDetector;
     this.debug = config.debug ?? false;
@@ -267,7 +267,7 @@ export class SupertabConnect {
     const emit = (decision: Decision): void => {
       try {
         const event = buildAnalyticsEvent(request, decision, {
-          merchantId: this.merchantId,
+          merchantSystemUrn: this.merchantSystemUrn,
           requestId,
           sourceCdn,
           clientIp,
@@ -455,7 +455,7 @@ export class SupertabConnect {
     try {
       const instance = new SupertabConnect({
         apiKey: env.MERCHANT_API_KEY,
-        merchantId: env.MERCHANT_ID,
+        merchantSystemUrn: env.MERCHANT_SYSTEM_URN,
         botDetector: options?.botDetector,
         enforcement: options?.enforcement,
         analyticsEnabled: options?.analyticsEnabled,
@@ -474,9 +474,9 @@ export class SupertabConnect {
    * @param request The incoming Fastly request
    * @param merchantApiKey The merchant API key for authentication
    * @param originBackend The Fastly backend name to forward allowed requests to
-   * @param options Optional configuration items
+   * @param options Configuration items
+   * @param options.merchantSystemUrn Merchant system URN stamped on analytics events; also used to fetch license.xml when enableRSL is true
    * @param options.enableRSL Serve license.xml at /license.xml for RSL-compliant clients (default: false)
-   * @param options.merchantSystemUrn Required when enableRSL is true; the merchant system URN used to fetch license.xml
    * @param options.botDetector Custom bot detection function
    * @param options.enforcement Enforcement mode (default: OBSERVE)
    * @param options.analyticsEnabled Toggle Tinybird analytics emission (default: false)
@@ -490,11 +490,11 @@ export class SupertabConnect {
     options: FastlyHandlerOptions
   ): Promise<Response> {
     try {
-      const { merchantId, botDetector, enforcement, analyticsEnabled, analyticsToken, analyticsEndpoint } = options;
+      const { merchantSystemUrn, botDetector, enforcement, analyticsEnabled, analyticsToken, analyticsEndpoint } = options;
 
       const instance = new SupertabConnect({
         apiKey: merchantApiKey,
-        merchantId,
+        merchantSystemUrn,
         botDetector,
         enforcement,
         analyticsEnabled,
@@ -506,7 +506,7 @@ export class SupertabConnect {
       if (options.enableRSL) {
         rslOptions = {
           baseUrl: SupertabConnect.baseUrl,
-          merchantSystemUrn: options.merchantSystemUrn,
+          merchantSystemUrn,
         };
       }
 
@@ -542,7 +542,7 @@ export class SupertabConnect {
       }
       const instance = new SupertabConnect({
         apiKey: options.apiKey,
-        merchantId: options.merchantId,
+        merchantSystemUrn: options.merchantSystemUrn,
         enforcement: options.enforcement,
         analyticsEnabled: options.analyticsEnabled,
         analyticsToken: options.analyticsToken,

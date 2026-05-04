@@ -11,7 +11,7 @@
  *       the NDJSON fixture line count.
  *   (b) Canonical labeling — for each (UA, expected_label, expected_category):
  *         - insert a synthetic row into bot_events_raw under a unique
- *           per-case merchant_id
+ *           per-case merchant_system_urn
  *         - assert traffic_summary returns expected_label (the merchant path)
  *         - assert direct argMin(bot_category, pattern_id) on bot_ua_patterns
  *           returns expected_category (bypass the pipe — keeps traffic_summary
@@ -140,15 +140,15 @@ async function winningPattern(ua: string): Promise<WinningPattern> {
 }
 
 async function insertEvent(
-  merchantId: string,
+  urn: string,
   userAgent: string,
   path: string,
 ): Promise<void> {
   const ts = clickhouseDatetime(new Date());
   const row = {
-    merchant_id: merchantId,
+    merchant_system_urn: urn,
     timestamp: ts,
-    request_id: `${merchantId}-${Math.random().toString(36).slice(2, 10)}`,
+    request_id: `${urn}-${Math.random().toString(36).slice(2, 10)}`,
     schema_version: 1,
     source_cdn: "cloudflare",
     user_agent: userAgent,
@@ -183,7 +183,7 @@ interface SummaryRow {
   total_requests: number | string;
 }
 
-async function trafficSummaryLabel(merchantId: string): Promise<string | null> {
+async function trafficSummaryLabel(urn: string): Promise<string | null> {
   // Wide window so we don't miss the freshly-inserted row regardless of
   // clock skew between this process and Tinybird.
   const fromTs = clickhouseDatetime(new Date(Date.now() - 5 * 60_000));
@@ -193,18 +193,18 @@ async function trafficSummaryLabel(merchantId: string): Promise<string | null> {
   let last: SummaryRow[] = [];
   while (Date.now() < deadline) {
     const resp = await queryPipe("traffic_summary", {
-      merchant_id: merchantId,
+      merchant_system_urn: urn,
       from_ts: fromTs,
       to_ts: toTs,
     });
     last = (resp.data ?? []) as unknown as SummaryRow[];
     if (last.length > 0) {
-      // We insert exactly one event per merchant_id; one row out is the
-      // happy path. If the pipe ever returns multiple, surface a clear
+      // We insert exactly one event per merchant_system_urn; one row out is
+      // the happy path. If the pipe ever returns multiple, surface a clear
       // failure rather than silently picking one.
       if (last.length > 1) {
         throw new Error(
-          `traffic_summary returned ${last.length} rows for ${merchantId}; ` +
+          `traffic_summary returned ${last.length} rows for ${urn}; ` +
             `expected 1: ${JSON.stringify(last)}`,
         );
       }
@@ -320,10 +320,10 @@ async function blockB_canonicalLabeling(): Promise<void> {
   console.log("(b) canonical UA labeling");
   for (const [i, c] of canonical.entries()) {
     console.log(`  case: ${c.name}`);
-    const merchantId = `cls_${RUN_ID}_${String(i).padStart(2, "0")}`;
-    await insertEvent(merchantId, c.ua, `/cls/${RUN_ID}/${i}`);
+    const urn = `urn:stc:merchant:system:cls-${RUN_ID}-${String(i).padStart(2, "0")}`;
+    await insertEvent(urn, c.ua, `/cls/${RUN_ID}/${i}`);
 
-    const labelFromPipe = await trafficSummaryLabel(merchantId);
+    const labelFromPipe = await trafficSummaryLabel(urn);
     expect(`    traffic_summary.bot_label`, labelFromPipe, c.expected_label);
 
     const winning = await winningPattern(c.ua);
@@ -342,9 +342,9 @@ async function blockC_disambiguation(): Promise<void> {
   expect("  winning bot_category", winning.bot_category, "ai_training");
 
   // Belt-and-braces: also assert via the real pipe (one merchant, one row).
-  const merchantId = `cls_${RUN_ID}_disambig`;
-  await insertEvent(merchantId, ua, `/cls/${RUN_ID}/disambig`);
-  const labelFromPipe = await trafficSummaryLabel(merchantId);
+  const urn = `urn:stc:merchant:system:cls-${RUN_ID}-disambig`;
+  await insertEvent(urn, ua, `/cls/${RUN_ID}/disambig`);
+  const labelFromPipe = await trafficSummaryLabel(urn);
   expect("  traffic_summary returns specific (not generic) label", labelFromPipe, "GPTBot");
 }
 

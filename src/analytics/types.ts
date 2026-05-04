@@ -33,7 +33,7 @@ export interface Decision {
 }
 
 export interface AnalyticsEvent {
-  merchant_id: string;
+  merchant_system_urn: string;
   timestamp: string;
   request_id: string;
   schema_version: number;

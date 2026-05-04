@@ -6,11 +6,10 @@ import {
 
 interface DemoEnv {
 	MERCHANT_API_KEY: string;
-	MERCHANT_ID: string;
+	MERCHANT_SYSTEM_URN: string;
 	SUPERTAB_ANALYTICS_TOKEN?: string;
 	SUPERTAB_ANALYTICS_ENDPOINT?: string;
 	SUPERTAB_BASE_URL?: string;
-	MERCHANT_SYSTEM_URN?: string;
 	/** Upstream origin URL for the SDK's ALLOW/OBSERVE pass-through. The
 	 *  Worker URL stays as `request.url` (so token `aud` matches the
 	 *  publisher URL); the SDK fetches forwarded traffic from this URL
@@ -63,7 +62,7 @@ export default {
 		if (incoming.pathname === "/__debug") {
 			return new Response(JSON.stringify({
 				ALLOW_TEST_OVERRIDES: env.ALLOW_TEST_OVERRIDES,
-				MERCHANT_ID: env.MERCHANT_ID,
+				MERCHANT_SYSTEM_URN: env.MERCHANT_SYSTEM_URN,
 				ORIGIN_URL: env.ORIGIN_URL,
 				SUPERTAB_BASE_URL: env.SUPERTAB_BASE_URL,
 				has_analytics_token: !!env.SUPERTAB_ANALYTICS_TOKEN,

@@ -16,10 +16,11 @@ export type BotDetector = (request: Request, ctx?: ExecutionContext) => BotVerdi
 export interface SupertabConnectConfig {
   apiKey: string;
   /**
-   * Stable merchant identifier stamped on analytics events. Distinct from `apiKey`,
-   * which is a rotatable credential. Required so analytics rows survive key rotation.
+   * Merchant system URN (e.g. `urn:stc:merchant:system:<uuid>`) stamped on
+   * analytics events. Distinct from `apiKey`, which is a rotatable credential —
+   * the URN survives key rotation, so historical rows stay attributable.
    */
-  merchantId: string;
+  merchantSystemUrn: string;
   enforcement?: EnforcementMode;
   botDetector?: BotDetector;
   debug?: boolean;
@@ -40,8 +41,8 @@ export interface SupertabConnectConfig {
 export interface Env {
 	/** The API key for authenticating with the Supertab Connect. */
 	MERCHANT_API_KEY: string;
-	/** Stable merchant identifier stamped on analytics events. */
-	MERCHANT_ID: string;
+	/** Merchant system URN stamped on analytics events (e.g. `urn:stc:merchant:system:<uuid>`). */
+	MERCHANT_SYSTEM_URN: string;
 	/** Optional Tinybird Events API token for analytics emission. */
 	SUPERTAB_ANALYTICS_TOKEN?: string;
 	[key: string]: string | undefined;
@@ -141,7 +142,7 @@ export type CloudFrontRequestResult<TRequest = Record<string, any>> = TRequest |
 
 export interface CloudfrontHandlerOptions {
   apiKey: string;
-  merchantId: string;
+  merchantSystemUrn: string;
   botDetector?: BotDetector;
   enforcement?: EnforcementMode;
   analyticsEnabled?: boolean;
@@ -154,23 +155,12 @@ export type RSLVerificationResult = {
   error?: string;
 };
 
-interface FastlyHandlerBaseOptions {
-  merchantId: string;
+export interface FastlyHandlerOptions {
+  merchantSystemUrn: string;
   botDetector?: BotDetector;
   enforcement?: EnforcementMode;
   analyticsEnabled?: boolean;
   analyticsToken?: string;
   analyticsEndpoint?: string;
+  enableRSL?: boolean;
 }
-
-interface FastlyHandlerWithRSL extends FastlyHandlerBaseOptions {
-  enableRSL: true;
-  merchantSystemUrn: string;
-}
-
-interface FastlyHandlerWithoutRSL extends FastlyHandlerBaseOptions {
-  enableRSL?: false;
-  merchantSystemUrn?: never;
-}
-
-export type FastlyHandlerOptions = FastlyHandlerWithRSL | FastlyHandlerWithoutRSL;

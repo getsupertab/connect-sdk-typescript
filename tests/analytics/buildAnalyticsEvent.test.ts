@@ -4,7 +4,7 @@ import { Decision, SCHEMA_VERSION, TOKEN_OUTCOME_BY_REASON } from "../../src/ana
 import { EnforcementMode, LicenseTokenInvalidReason } from "../../src/types";
 
 const FIXED_TIME = new Date("2026-04-29T12:00:00.000Z");
-const MERCHANT_ID = "merchant-abc";
+const MERCHANT_SYSTEM_URN = "urn:stc:merchant:system:abc";
 const REQUEST_ID = "req-123";
 
 function makeRequest(opts?: {
@@ -20,7 +20,7 @@ function makeRequest(opts?: {
 
 function ctx(extra?: Partial<Parameters<typeof buildAnalyticsEvent>[2]>) {
   return {
-    merchantId: MERCHANT_ID,
+    merchantSystemUrn: MERCHANT_SYSTEM_URN,
     requestId: REQUEST_ID,
     sourceCdn: "cloudflare" as const,
     timestamp: FIXED_TIME,
@@ -49,7 +49,7 @@ describe("buildAnalyticsEvent", () => {
     const event = buildAnalyticsEvent(req, baseDecision, ctx({ clientIp: "1.2.3.4" }));
 
     expect(event).toEqual({
-      merchant_id: MERCHANT_ID,
+      merchant_system_urn: MERCHANT_SYSTEM_URN,
       timestamp: "2026-04-29T12:00:00.000Z",
       request_id: REQUEST_ID,
       schema_version: SCHEMA_VERSION,

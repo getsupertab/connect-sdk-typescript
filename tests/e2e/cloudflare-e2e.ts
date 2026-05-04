@@ -24,10 +24,10 @@
  *
  * Optional env:
  *   TB_LOCAL_URL     — defaults to http://localhost:7181
- *   WORKER_URL       — defaults to http://127.0.0.1:8788
- *   MERCHANT_ID      — defaults to demos/cloudflare/.dev.vars MERCHANT_ID;
- *                      override if you've changed that.
- *   ORIGIN_PORT      — defaults to 8789
+ *   WORKER_URL          — defaults to http://127.0.0.1:8788
+ *   MERCHANT_SYSTEM_URN — defaults to the demo's .dev.vars value; override if
+ *                         you've changed that.
+ *   ORIGIN_PORT         — defaults to 8789
  *
  * Prerequisites:
  *   - Tinybird Local: `cd ../supertab-connect/tinybird && tb dev`
@@ -45,8 +45,8 @@ import { startOrigin, OriginHandle } from "../../demos/cloudflare/origin";
 const TB_URL = process.env.TB_LOCAL_URL ?? "http://localhost:7181";
 const TB_ADMIN_TOKEN = process.env.TB_ADMIN_TOKEN;
 const WORKER_URL = process.env.WORKER_URL ?? "http://127.0.0.1:8788";
-const MERCHANT_ID =
-  process.env.MERCHANT_ID ?? "merchant:system:ca7cd003-37d0-4401-9be8-a27b5974cc5b";
+const MERCHANT_SYSTEM_URN =
+  process.env.MERCHANT_SYSTEM_URN ?? "urn:stc:merchant:system:ca7cd003-37d0-4401-9be8-a27b5974cc5b";
 const ORIGIN_PORT = Number(process.env.ORIGIN_PORT ?? 8789);
 
 if (!TB_ADMIN_TOKEN) {
@@ -277,7 +277,7 @@ async function fetchRowsForRun(): Promise<SqlRow[]> {
            has_token, token_outcome, bot_detector_result,
            final_action, enforcement_mode
     FROM bot_events_raw
-    WHERE merchant_id = '${MERCHANT_ID}'
+    WHERE merchant_system_urn = '${MERCHANT_SYSTEM_URN}'
       AND path LIKE '${PATH_PREFIX}/%'
     ORDER BY timestamp ASC
   `;
@@ -325,7 +325,7 @@ function expect(label: string, actual: unknown, expected: unknown): void {
 
 async function main(): Promise<void> {
   console.log(`run_id=${RUN_ID}`);
-  console.log(`merchant_id=${MERCHANT_ID}`);
+  console.log(`merchant_system_urn=${MERCHANT_SYSTEM_URN}`);
   console.log(`worker=${WORKER_URL}`);
   console.log(`tinybird=${TB_URL}`);
   console.log(`path_prefix=${PATH_PREFIX}`);

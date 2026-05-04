@@ -31,4 +31,4 @@ demos/fastly/src/config.js
 tests/e2e/config.ts
 demos/cloudflront/dist/trust-policy.json
 AWSCLIV2.pkg
-scratch/
+# scratch/
