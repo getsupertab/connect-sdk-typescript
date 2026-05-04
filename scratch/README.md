@@ -1,23 +1,26 @@
 # scratch/
 
-Strategic / narrative documentation for the SDK v2.0 work. **No
-executable scripts here anymore** — those were consolidated into
-`tests/e2e/` (see `tests/e2e/README.md`).
+Working notes for the SDK v2.0 / bot traffic analytics work. Two files,
+each with a clear job. Read this first to know which one to open.
 
-| File | Purpose |
-|------|---------|
-| `HANDOFF.md` | File/code-level "what shipped" for SDK v2.0 (Phase 1) |
-| `ANALYTICS_MVP_STATE.md` | Strategic / forward-looking; phased plan, deferred work, Phase 2 / 2.5 outcomes |
-| `analytics-mvp-implementation-followup.md` | Chronological narrative of how decisions were reached |
+| File | Open this when... | Updated when... |
+|------|-------------------|-----------------|
+| **`STATE.md`** | You want to know **what's built, where it lives, or how to run it.** Day-to-day reference: file inventory, Tinybird schema, SDK config, cheatsheet, deferred work, dropped ideas, open questions. | A phase ships, a deferred item gets a trigger, a command in the cheatsheet stops working, or a piece of state changes (schema, env vars, ports). |
+| **`DECISIONS.md`** | You want to know **why we chose X over Y** at some point in the past. Chronological narrative of the non-obvious calls (`Step 1..N`). Rarely needed week-to-week. | A new non-obvious decision gets made. Append a new `Step N` — don't retroactively edit prior steps; their value is being a snapshot of what was decided *at the time*. |
 
-## Where the harnesses live now
+The runnable test harnesses live in `tests/e2e/` (see
+`tests/e2e/README.md`). Strategic source docs that predate this work —
+`analytics-mvp-build-plan.md` and `supertab-tinybird-setup.md` — are
+referenced from `DECISIONS.md` for original intent; both are partially
+superseded.
 
-| Harness | Location | Purpose |
-|---------|----------|---------|
-| Cloudflare analytics pipeline E2E (workerd, all 6 emit branches) | `tests/e2e/cloudflare-e2e.ts` | Verifies Tinybird rows land correctly through the production runtime. |
-| Read-side multi-tenancy (Tinybird JWT `fixed_params`) | `tests/e2e/read-isolation.ts` | Verifies per-merchant read isolation. |
+## Conventions
 
-The earlier `scratch/local-emit.ts` was retired in the consolidation —
-its six-branch coverage now runs through the Cloudflare harness in
-workerd, so we're testing the actual production runtime instead of
-plain Node. See `ANALYTICS_MVP_STATE.md` for the full story.
+- These files are gitignored (the whole `scratch/` directory is). They
+  exist for the developer's own reference, not as project documentation.
+- `STATE.md` should be **kept current** — stale state is worse than no
+  state.
+- `DECISIONS.md` should be **append-only** — old steps don't get
+  retroactively rewritten when terminology changes (e.g.,
+  `merchantId` → `merchantSystemUrn` is captured as `Step 13`, not by
+  rewriting Steps 1–12 to use the new name).
