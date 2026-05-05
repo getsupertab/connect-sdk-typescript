@@ -12,7 +12,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@getsupertab/supertab-connect-sdk": "1.3.1"
+    "@getsupertab/supertab-connect-sdk": "^2.0.0"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.160",
