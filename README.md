@@ -2,6 +2,12 @@
 
 Check our [documentation](https://supertab-connect.mintlify.app/introduction/about-supertab-connect) for more information on Supertab Connect.
 
+[![npm](https://img.shields.io/npm/v/%40getsupertab%2Fsupertab-connect-sdk.svg)](https://www.npmjs.com/package/%40getsupertab%2Fsupertab-connect-sdk)
+[![License](https://img.shields.io/npm/l/%40getsupertab%2Fsupertab-connect-sdk.svg)](https://github.com/getsupertab/connect-sdk-typescript/blob/main/LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/getsupertab/connect-sdk-typescript/ci.yml?branch=main)](https://github.com/getsupertab/connect-sdk-typescript/actions/workflows/ci.yml)
+[![TypeScript Types](https://img.shields.io/npm/types/%40getsupertab%2Fsupertab-connect-sdk.svg)](https://www.npmjs.com/package/%40getsupertab%2Fsupertab-connect-sdk)
+[![Node.js Version](https://img.shields.io/node/v/%40getsupertab%2Fsupertab-connect-sdk.svg)](https://www.npmjs.com/package/%40getsupertab%2Fsupertab-connect-sdk)
+
 ## Installation
 
 ```
@@ -10,7 +16,30 @@ npm install @getsupertab/supertab-connect-sdk
 yarn add @getsupertab/supertab-connect-sdk
 ```
 
-## Basic Usage
+## Customer Usage
+
+Obtain a license token for a resource URL:
+
+```ts
+import { SupertabConnect, UsageType } from "@getsupertab/supertab-connect-sdk";
+
+const token = await SupertabConnect.obtainLicenseToken({
+  clientId: "your_client_id",
+  clientSecret: "your_client_secret",
+  resourceUrl: "https://example.com/premium/article",
+  usage: UsageType.SEARCH,
+});
+
+if (token) {
+  // Send the token as: Authorization: License <token>
+} else {
+  // No token is required for this resource and usage.
+}
+```
+
+## Merchant Usage
+
+Supertab Connect SDK offers various CDN-attuned implementations of CAP ([Crawler Authentication Protocol](https://supertab-connect.mintlify.app/licensing/crawler-authentication-protocol)).
 
 ### Cloudflare Workers
 
@@ -68,6 +97,8 @@ export async function handler(
 ```
 
 ### Manual Setup
+
+If you want to do a manual integration, the SDK also provides low-level methods for token verification and event recording.
 
 ```ts
 import { SupertabConnect } from "@getsupertab/supertab-connect-sdk";
@@ -145,6 +176,7 @@ Verifies a license token and records an analytics event. Uses the instance's `ap
 | `token`       | `string`           | Yes      | The license token to verify                                      |
 | `resourceUrl` | `string`           | Yes      | The URL of the resource being accessed                            |
 | `userAgent`   | `string`           | No       | User agent string for event recording                            |
+| `requestHeaders` | `Record<string, string>` | No | Request headers to include in event properties                    |
 | `debug`       | `boolean`          | No       | Enable debug logging                                             |
 | `ctx`         | `ExecutionContext`  | No       | Execution context for non-blocking event recording               |
 
@@ -194,17 +226,36 @@ Convenience handler for AWS CloudFront Lambda@Edge viewer-request functions.
 - `event` (`CloudFrontRequestEvent`): The CloudFront viewer-request event
 - `options` (`CloudfrontHandlerOptions`): Configuration object with `apiKey` and optional `botDetector`/`enforcement`
 
-### `obtainLicenseToken(options): Promise<string>` (static)
+### `obtainLicenseToken(options): Promise<string | undefined>` (static)
 
 Request a license token from the Supertab Connect token endpoint using OAuth2 client credentials.
 
+If `usage` is provided and a matching `<content>` block permits that usage without requiring a license token,
+the SDK returns `undefined` instead of requesting a token as this is the valid behavior.
+
 **Parameters (options object):**
 
-| Parameter      | Type      | Required | Description                                     |
-| -------------- | --------- | -------- | ----------------------------------------------- |
-| `clientId`     | `string`  | Yes      | OAuth client identifier                         |
-| `clientSecret` | `string`  | Yes      | OAuth client secret for client_credentials flow |
-| `resourceUrl`  | `string`  | Yes      | Resource URL to obtain a license for            |
-| `debug`        | `boolean` | No       | Enable debug logging                            |
+| Parameter      | Type        | Required | Description                                              |
+| -------------- | ----------- | -------- | -------------------------------------------------------- |
+| `clientId`     | `string`    | Yes      | OAuth client identifier                                  |
+| `clientSecret` | `string`    | Yes      | OAuth client secret for client_credentials flow          |
+| `resourceUrl`  | `string`    | Yes      | Resource URL to obtain a license for                     |
+| `usage`        | `UsageType` | No       | Usage being requested; enables serverless usage matching |
+| `debug`        | `boolean`   | No       | Enable debug logging                                     |
 
+```ts
+import { SupertabConnect, UsageType } from "@getsupertab/supertab-connect-sdk";
+
+const token = await SupertabConnect.obtainLicenseToken({
+  clientId: "your_client_id",
+  clientSecret: "your_client_secret",
+  resourceUrl: "https://example.com/articles/post-1",
+  usage: UsageType.SEARCH,
+});
+
+if (token === undefined) {
+  // The matching serverless license already permits this usage.
+} else {
+  // Use the token in the Authorization header.
+}
 ```
