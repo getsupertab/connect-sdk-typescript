@@ -1,6 +1,6 @@
 # Supertab Connect SDK
 
-Check our [documentation](https://supertab-connect.mintlify.app/introduction/about-supertab-connect) for more information on Supertab Connect.
+Check our [documentation](https://connect-docs.supertab.co/introduction/about-supertab-connect) for more information on Supertab Connect.
 
 [![npm](https://img.shields.io/npm/v/%40getsupertab%2Fsupertab-connect-sdk.svg)](https://www.npmjs.com/package/%40getsupertab%2Fsupertab-connect-sdk)
 [![License](https://img.shields.io/npm/l/%40getsupertab%2Fsupertab-connect-sdk.svg)](https://github.com/getsupertab/connect-sdk-typescript/blob/main/LICENSE)
@@ -39,7 +39,7 @@ if (token) {
 
 ## Merchant Usage
 
-Supertab Connect SDK offers various CDN-attuned implementations of CAP ([Crawler Authentication Protocol](https://supertab-connect.mintlify.app/licensing/crawler-authentication-protocol)).
+Supertab Connect SDK offers various CDN-attuned implementations of CAP ([Crawler Authentication Protocol](https://connect-docs.supertab.co/licensing/crawler-authentication-protocol)).
 
 ### Cloudflare Workers
 
