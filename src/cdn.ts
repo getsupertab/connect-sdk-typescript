@@ -9,37 +9,77 @@ import {
 } from "./types";
 import { hostRSLicenseXML } from "./license";
 
+/** Parse a CDN ASN header (e.g. "13335" or "AS13335") to a positive integer, or null. */
+export function parseAsn(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  const n = Number(raw.trim().replace(/^as/i, ""));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+export interface HandleRequestContext {
+  ctx?: ExecutionContext;
+  sourceCdn: "cloudflare" | "fastly" | "cloudfront";
+  clientIp?: string;
+  requestId?: string;
+  requestCountry?: string | null;
+  requestAsn?: number | null;
+  tlsFingerprint?: string | null;
+}
+
 // Interface for what the CDN handlers need - avoids circular dependency
 interface RequestHandler {
-  handleRequest(request: Request, ctx?: ExecutionContext): Promise<HandlerResult>;
+  handleRequest(request: Request, context?: HandleRequestContext): Promise<HandlerResult>;
+}
+
+function applyResponseHeaders(response: Response, headers?: Record<string, string>): Response {
+  if (!headers) return response;
+  const merged = new Response(response.body, response);
+  for (const [key, value] of Object.entries(headers)) {
+    merged.headers.set(key, value);
+  }
+  return merged;
 }
 
 export async function handleCloudflareRequest(
   handler: RequestHandler,
   request: Request,
-  ctx: ExecutionContext
+  ctx: ExecutionContext,
+  originUrl?: string
 ): Promise<Response> {
-  const result = await handler.handleRequest(request, ctx);
+  const cf = (request as unknown as { cf?: Record<string, any> }).cf;
+  const result = await handler.handleRequest(request, {
+    ctx,
+    sourceCdn: "cloudflare",
+    requestId: request.headers.get("cf-ray") ?? undefined,
+    clientIp: request.headers.get("cf-connecting-ip") ?? undefined,
+    requestCountry: request.headers.get("cf-ipcountry") ?? cf?.country ?? null,
+    requestAsn: typeof cf?.asn === "number" ? cf.asn : null,
+    tlsFingerprint: cf?.botManagement?.ja3Hash ?? null,
+  });
 
-  if (result.action === HandlerAction.BLOCK) {
-    return new Response(result.body, {
-      status: result.status,
-      headers: new Headers(result.headers),
-    });
-  }
-
-  // action === HandlerAction.ALLOW
-  const originResponse = await fetch(request);
-
-  if (result.headers) {
-    const response = new Response(originResponse.body, originResponse);
-    for (const [key, value] of Object.entries(result.headers)) {
-      response.headers.set(key, value);
+  switch (result.action) {
+    case HandlerAction.BLOCK:
+      return new Response(result.body, {
+        status: result.status,
+        headers: new Headers(result.headers),
+      });
+    case HandlerAction.ALLOW: {
+      // When `originUrl` is provided, forward to that host while preserving
+      // path / query / method / headers / body. Decouples validation URL
+      // (request.url, used for token audience checks) from fetch destination.
+      // Production Cloudflare deployments can omit this — Workers Routes put
+      // the Worker on the publisher's hostname, so `fetch(request)` already
+      // resolves to the origin via the edge.
+      const fetchTarget = originUrl
+        ? new Request(
+            `${new URL(originUrl).origin}${new URL(request.url).pathname}${new URL(request.url).search}`,
+            request
+          )
+        : request;
+      const originResponse = await fetch(fetchTarget);
+      return applyResponseHeaders(originResponse, result.headers);
     }
-    return response;
   }
-
-  return originResponse;
 }
 
 /**
@@ -49,7 +89,7 @@ export async function handleCloudflareRequest(
  * @param originBackend Fastly backend name used when forwarding allowed requests to origin.
  * @param rslOptions Optional configuration for serving `/license.xml` directly from the edge.
  * @param rslOptions.baseUrl Base URL used when generating the hosted license XML response.
- * @param rslOptions.merchantSystemUrn Merchant system URN for fetching License from Supertab Connect
+ * @param rslOptions.merchantSystemUrn Merchant system URN for fetching the license from Supertab Connect.
  */
 export async function handleFastlyRequest(
   handler: RequestHandler,
@@ -69,34 +109,31 @@ export async function handleFastlyRequest(
     );
   }
 
+  const asnHeader = request.headers.get("fastly-client-asn");
   const webRequest = new Request(originalUrl, {
     method: request.method,
     headers: request.headers,
   });
 
-  const result = await handler.handleRequest(webRequest);
+  const result = await handler.handleRequest(webRequest, {
+    sourceCdn: "fastly",
+    clientIp: request.headers.get("fastly-client-ip") ?? undefined,
+    requestCountry: request.headers.get("fastly-client-country-code") ?? null,
+    requestAsn: parseAsn(asnHeader),
+    tlsFingerprint: request.headers.get("fastly-client-ja3") ?? null,
+  });
 
-  if (result.action === HandlerAction.BLOCK) {
-    return new Response(result.body, {
-      status: result.status,
-      headers: new Headers(result.headers),
-    });
-  }
-
-  // action === HandlerAction.ALLOW
-  const originResponse = await fetch(request, {
-    backend: originBackend,
-  } as RequestInit);
-
-  if (result.headers) {
-    const response = new Response(originResponse.body, originResponse);
-    for (const [key, value] of Object.entries(result.headers)) {
-      response.headers.set(key, value);
+  switch (result.action) {
+    case HandlerAction.BLOCK:
+      return new Response(result.body, {
+        status: result.status,
+        headers: new Headers(result.headers),
+      });
+    case HandlerAction.ALLOW: {
+      const originResponse = await fetch(request, { backend: originBackend } as RequestInit);
+      return applyResponseHeaders(originResponse, result.headers);
     }
-    return response;
   }
-
-  return originResponse;
 }
 
 function statusDescription(status: number): CDNStatusDescription {
@@ -119,6 +156,7 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
   event: CloudFrontRequestEvent<TRequest>
 ): Promise<CloudFrontRequestResult<TRequest>> {
   const cfRequest = event.Records[0].cf.request;
+  const config = event.Records[0].cf.config;
 
   // Convert CloudFront request to Web API Request
   const viewerRequestUrl = cfRequest.headers?.["x-original-request-url"]?.[0]?.value;
@@ -135,7 +173,15 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
     headers: headers,
   });
 
-  const result = await handler.handleRequest(webRequest);
+  const asnHeader = headers.get("cloudfront-viewer-asn");
+  const result = await handler.handleRequest(webRequest, {
+    sourceCdn: "cloudfront",
+    requestId: config?.requestId ?? undefined,
+    clientIp: cfRequest.clientIp,
+    requestCountry: headers.get("cloudfront-viewer-country") ?? null,
+    requestAsn: parseAsn(asnHeader),
+    tlsFingerprint: headers.get("cloudfront-viewer-ja3-fingerprint") ?? null,
+  });
 
   if (result.action === HandlerAction.BLOCK) {
     const responseHeaders: CloudFrontHeaders = {};
@@ -151,6 +197,6 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
     };
   }
 
-  // Allow request to continue to origin
+  // Allow request to continue to origin (ALLOW or OBSERVE)
   return cfRequest;
 }

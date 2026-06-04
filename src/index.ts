@@ -25,12 +25,26 @@ import {
   handleCloudflareRequest,
   handleFastlyRequest,
   handleCloudfrontRequest,
+  HandleRequestContext,
 } from "./cdn";
 import {
   CloudFrontRequestEvent,
   CloudFrontRequestResult,
   CloudfrontHandlerOptions,
 } from "./types";
+import {
+  AnalyticsEvent,
+  AnalyticsTransport,
+  Decision,
+  TOKEN_OUTCOME_BY_REASON,
+  TokenOutcome,
+} from "./analytics/types";
+import {
+  ANALYTICS_EVENTS_PATH,
+  HttpAnalyticsTransport,
+  NoopAnalyticsTransport,
+} from "./analytics/transport";
+import { buildAnalyticsEvent } from "./analytics/buildAnalyticsEvent";
 
 export {
   EnforcementMode,
@@ -50,8 +64,12 @@ export type {
   CloudFrontRequestEvent,
   CloudFrontRequestResult,
   CloudfrontHandlerOptions,
+  AnalyticsEvent,
+  AnalyticsTransport,
 };
 export { defaultBotDetector } from "./bots";
+
+const LICENSE_PREFIX = "License ";
 
 /**
  * SupertabConnect class provides higher level methods
@@ -64,6 +82,7 @@ export class SupertabConnect {
   private enforcement!: EnforcementMode;
   private botDetector?: BotDetector;
   private debug!: boolean;
+  private analyticsTransport!: AnalyticsTransport;
 
   private static _instance: SupertabConnect | null = null;
 
@@ -97,12 +116,27 @@ export class SupertabConnect {
       );
     }
     this.apiKey = config.apiKey;
-    this.enforcement = config.enforcement ?? EnforcementMode.SOFT;
+    this.enforcement = config.enforcement ?? EnforcementMode.OBSERVE;
     this.botDetector = config.botDetector;
     this.debug = config.debug ?? false;
+    this.analyticsTransport = SupertabConnect.buildAnalyticsTransport(config);
 
     // Register this as the singleton instance
     SupertabConnect._instance = this;
+  }
+
+  private static buildAnalyticsTransport(config: SupertabConnectConfig): AnalyticsTransport {
+    if (config.analyticsTransport) {
+      return config.analyticsTransport;
+    }
+    if (!config.analyticsEnabled) {
+      return new NoopAnalyticsTransport();
+    }
+    return new HttpAnalyticsTransport({
+      url: `${SupertabConnect.baseUrl}${ANALYTICS_EVENTS_PATH}`,
+      apiKey: config.apiKey,
+      debug: config.debug ?? false,
+    });
   }
 
   /**
@@ -197,19 +231,51 @@ export class SupertabConnect {
    * Handle an incoming request by extracting the license token, verifying it, and recording an analytics event.
    * When no token is present, bot detection and enforcement mode determine the response.
    * @param request The incoming HTTP request
-   * @param ctx Execution context for non-blocking event recording.
-   *   Pass this from your platform which has/requires this context (e.g. Cloudflare Workers)
-   * @returns A promise that resolves with the handler result indicating ALLOW or  BLOCK request
+   * @param context CDN-supplied request context (sourceCdn, clientIp, ctx, requestId)
+   * @returns A promise that resolves with the handler result indicating ALLOW, OBSERVE, or BLOCK
    */
-  async handleRequest(request: Request, ctx?: ExecutionContext): Promise<HandlerResult> {
+  async handleRequest(request: Request, context?: HandleRequestContext): Promise<HandlerResult> {
     const auth = request.headers.get("Authorization") || "";
-    const token = auth.startsWith("License ") ? auth.slice(8) : null;
+    const token = auth.startsWith(LICENSE_PREFIX) ? auth.slice(LICENSE_PREFIX.length) : null;
+    const hasToken = token !== null;
     const url = request.url;
     const userAgent = request.headers.get("User-Agent") || "unknown";
+
+    const requestId = context?.requestId ?? crypto.randomUUID();
+    const sourceCdn = context?.sourceCdn ?? "cloudflare";
+    const clientIp = context?.clientIp;
+    const ctx = context?.ctx;
+    const requestCountry = context?.requestCountry;
+    const requestAsn = context?.requestAsn;
+    const tlsFingerprint = context?.tlsFingerprint;
+
+    const emit = (decision: Decision): void => {
+      try {
+        const event = buildAnalyticsEvent(request, decision, {
+          requestId,
+          sourceCdn,
+          clientIp,
+          requestCountry,
+          requestAsn,
+          tlsFingerprint,
+        });
+        this.analyticsTransport.emit(event, ctx);
+      } catch (err) {
+        if (this.debug) {
+          console.error("[SupertabConnect] failed to build/emit analytics event:", err);
+        }
+      }
+    };
 
     // Token present → ALWAYS validate, regardless of mode or bot detection
     if (token) {
       if (this.enforcement === EnforcementMode.DISABLED) {
+        emit({
+          hasToken,
+          tokenOutcome: "valid",
+          finalAction: "allow",
+          enforcementMode: this.enforcement,
+        });
         return { action: HandlerAction.ALLOW };
       }
       const verification = await verifyAndRecordEvent({
@@ -222,13 +288,29 @@ export class SupertabConnect {
         ctx,
         requestHeaders: Object.fromEntries(request.headers.entries()),
       });
+      const tokenOutcome: TokenOutcome = verification.valid
+        ? "valid"
+        : TOKEN_OUTCOME_BY_REASON[verification.reason as LicenseTokenInvalidReason] ?? "malformed";
+
       if (!verification.valid) {
+        emit({
+          hasToken,
+          tokenOutcome,
+          finalAction: "block",
+          enforcementMode: this.enforcement,
+        });
         return buildBlockResult({
           reason: verification.reason,
           error: verification.error,
           requestUrl: url,
         });
       }
+      emit({
+        hasToken,
+        tokenOutcome,
+        finalAction: "allow",
+        enforcementMode: this.enforcement,
+      });
       return { action: HandlerAction.ALLOW };
     }
 
@@ -236,20 +318,44 @@ export class SupertabConnect {
     const isBot = this.botDetector?.(request, ctx) ?? false;
 
     if (!isBot) {
+      emit({
+        hasToken,
+        tokenOutcome: "absent",
+        finalAction: "allow",
+        enforcementMode: this.enforcement,
+      });
       return { action: HandlerAction.ALLOW };
     }
 
     // Bot detected, no token — enforcement mode decides
     switch (this.enforcement) {
-      case EnforcementMode.STRICT:
+      case EnforcementMode.ENFORCE:
+        emit({
+          hasToken,
+          tokenOutcome: "absent",
+          finalAction: "block",
+          enforcementMode: this.enforcement,
+        });
         return buildBlockResult({
           reason: LicenseTokenInvalidReason.MISSING_TOKEN,
           error: "Authorization header missing or malformed",
           requestUrl: url,
         });
-      case EnforcementMode.SOFT:
+      case EnforcementMode.OBSERVE:
+        emit({
+          hasToken,
+          tokenOutcome: "absent",
+          finalAction: "observe",
+          enforcementMode: this.enforcement,
+        });
         return buildSignalResult(url);
       default: // DISABLED
+        emit({
+          hasToken,
+          tokenOutcome: "absent",
+          finalAction: "allow",
+          enforcementMode: this.enforcement,
+        });
         return { action: HandlerAction.ALLOW };
     }
   }
@@ -289,7 +395,14 @@ export class SupertabConnect {
    * @param ctx Worker execution context for non-blocking event recording
    * @param options Optional configuration items
    * @param options.botDetector Custom bot detection function
-   * @param options.enforcement Enforcement mode (default: SOFT)
+   * @param options.enforcement Enforcement mode (default: OBSERVE)
+   * @param options.analyticsEnabled Toggle relay analytics emission (default: false)
+   * @param options.originUrl Override the upstream origin for ALLOW/OBSERVE pass-through.
+   *   When set, the Worker's `fetch` for forwarded traffic targets `${originUrl}${path}${query}`
+   *   instead of `request.url`. License audience / resource verification still uses `request.url`,
+   *   so the Worker URL clients hit and the origin URL the Worker forwards to can differ.
+   *   Production Cloudflare deployments using Workers Routes can omit this — `fetch(request)`
+   *   already resolves to the origin via Cloudflare's edge.
    */
   static async cloudflareHandleRequests(
     request: Request,
@@ -298,6 +411,8 @@ export class SupertabConnect {
     options?: {
        botDetector?: BotDetector;
        enforcement?: EnforcementMode;
+       analyticsEnabled?: boolean;
+       originUrl?: string;
     }
   ): Promise<Response> {
     try {
@@ -305,8 +420,9 @@ export class SupertabConnect {
         apiKey: env.MERCHANT_API_KEY,
         botDetector: options?.botDetector,
         enforcement: options?.enforcement,
+        analyticsEnabled: options?.analyticsEnabled,
       });
-      return await handleCloudflareRequest(instance, request, ctx);
+      return await handleCloudflareRequest(instance, request, ctx, options?.originUrl);
     } catch (err) {
       console.error("[SupertabConnect] cloudflareHandleRequests failed:", err);
       return await fetch(request);
@@ -320,23 +436,24 @@ export class SupertabConnect {
    * @param originBackend The Fastly backend name to forward allowed requests to
    * @param options Optional configuration items
    * @param options.enableRSL Serve license.xml at /license.xml for RSL-compliant clients (default: false)
-   * @param options.merchantSystemUrn Required when enableRSL is true; the merchant system URN used to fetch license.xml
    * @param options.botDetector Custom bot detection function
-   * @param options.enforcement Enforcement mode (default: SOFT)
+   * @param options.enforcement Enforcement mode (default: OBSERVE)
+   * @param options.analyticsEnabled Toggle relay analytics emission (default: false)
    */
   static async fastlyHandleRequests(
     request: Request,
     merchantApiKey: string,
     originBackend: string,
-    options?: FastlyHandlerOptions
+    options: FastlyHandlerOptions = {}
   ): Promise<Response> {
     try {
-      const { botDetector, enforcement } = options ?? {};
+      const { botDetector, enforcement, analyticsEnabled } = options;
 
       const instance = new SupertabConnect({
         apiKey: merchantApiKey,
         botDetector,
         enforcement,
+        analyticsEnabled,
       });
 
       let rslOptions: { baseUrl: string; merchantSystemUrn: string } | undefined;
@@ -346,7 +463,7 @@ export class SupertabConnect {
           merchantSystemUrn: options.merchantSystemUrn,
         };
       }
-
+  
       return await handleFastlyRequest(
         instance,
         request,
@@ -363,7 +480,8 @@ export class SupertabConnect {
    * Handle incoming requests for AWS CloudFront Lambda@Edge.
    * Use as the handler for an origin-request LambdaEdge function.
    * @param event The CloudFront origin-request event
-   * @param options Configuration including apiKey and optional botDetector/enforcement
+   * @param options Configuration including apiKey and optional botDetector/enforcement fields.
+   *   Relay analytics is not supported on CloudFront — only Cloudflare and Fastly emit events.
    */
   static async cloudfrontHandleRequests<TRequest extends Record<string, any>>(
     event: CloudFrontRequestEvent<TRequest>,
@@ -377,9 +495,12 @@ export class SupertabConnect {
         // No reasons to waste compute resources on the rest of the checks.
         return request;
       }
+      // Relay analytics is intentionally not wired for CloudFront yet (Cloudflare and Fastly only);
+      // the instance is built without analytics so it uses the no-op transport.
       const instance = new SupertabConnect({
         apiKey: options.apiKey,
-        enforcement: options.enforcement
+        botDetector: options.botDetector,
+        enforcement: options.enforcement,
       });
       return await handleCloudfrontRequest(instance, event);
     } catch (err) {

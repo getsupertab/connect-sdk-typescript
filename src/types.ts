@@ -1,9 +1,10 @@
 import type { JWTPayload } from "jose";
+import type { AnalyticsTransport } from "./analytics/types";
 
 export enum EnforcementMode {
   DISABLED = "disabled",
-  SOFT = "soft",
-  STRICT = "strict",
+  OBSERVE = "observe",
+  ENFORCE = "enforce",
 }
 
 export interface ExecutionContext {
@@ -17,6 +18,16 @@ export interface SupertabConnectConfig {
   enforcement?: EnforcementMode;
   botDetector?: BotDetector;
   debug?: boolean;
+  /** Enables analytics emission to the Supertab Connect relay. Default: false. */
+  analyticsEnabled?: boolean;
+  /**
+   * @internal
+   * Internal dependency-injection seam: overrides the default HttpAnalyticsTransport when provided.
+   * Used by tests (to inject in-memory transports) and by internal transport selection. NOT a
+   * merchant-facing option — the public CDN handlers do not expose it; merchants configure analytics
+   * declaratively via `analyticsEnabled`.
+   */
+  analyticsTransport?: AnalyticsTransport;
 }
 
 /**
@@ -109,6 +120,7 @@ export interface CloudFrontRequestEvent<TRequest = Record<string, any>> {
         method: string;
         querystring: string;
         headers: CloudFrontHeaders;
+        clientIp?: string;
       };
     };
   }>;
@@ -132,10 +144,12 @@ export type RSLVerificationResult = {
 interface FastlyHandlerBaseOptions {
   botDetector?: BotDetector;
   enforcement?: EnforcementMode;
+  analyticsEnabled?: boolean;
 }
 
 interface FastlyHandlerWithRSL extends FastlyHandlerBaseOptions {
   enableRSL: true;
+  /** Merchant system URN — required only for RSL license.xml hosting (unrelated to analytics, which is keyed by apiKey). */
   merchantSystemUrn: string;
 }
 
