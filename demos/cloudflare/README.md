@@ -43,13 +43,13 @@ You can test the worker both with and without credentials:
 
 ### 1. Test Without Credentials
 
-This should be allowed by the worker in default SOFT enforcement mode:
+This should be allowed by the worker in the default OBSERVE enforcement mode:
 
 ```sh
 curl -H "" http://127.0.0.1:8787
 ```
 
-Change the enforcement mode to STRICT in order to see this request blocked.
+Change the enforcement mode to ENFORCE in order to see this request blocked.
 
 ### 2. Test With a Valid Customer System Token
 

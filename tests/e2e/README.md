@@ -50,10 +50,10 @@ SupertabConnect.fastlyHandleRequests(
   "origin",
   {
     enableRSL: true,
-    merchantSystemUrn: MERCHANT_SYSTEM_URN,
+    merchantSystemUrn: "urn:stc:merchant:system:<uuid>", // required when enableRSL is true (RSL license.xml hosting)
     // For bot-detection modes:
     botDetector: defaultBotDetector,
-    enforcement: EnforcementMode.SOFT,  // or STRICT
+    enforcement: EnforcementMode.OBSERVE,  // or ENFORCE
   }
 )
 ```

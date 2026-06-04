@@ -32,8 +32,9 @@ addEventListener("fetch", (event) =>
       {
         enableRSL: true,
         merchantSystemUrn: MERCHANT_SYSTEM_URN,
+        analyticsEnabled: true,
         // botDetector: defaultBotDetector,
-        // enforcement: EnforcementMode.STRICT,
+        // enforcement: EnforcementMode.ENFORCE,
       }
     )
   })())

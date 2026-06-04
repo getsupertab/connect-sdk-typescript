@@ -96,6 +96,11 @@ export async function handler(
 }
 ```
 
+> **Analytics is not supported on CloudFront.** The Lambda@Edge handler performs
+> verification and enforcement only — it does not emit analytics events. Relay
+> analytics is available on Cloudflare and Fastly, which emit one event per
+> request (Fastly is the primary edge target for analytics).
+
 ### Manual Setup
 
 If you want to do a manual integration, the SDK also provides low-level methods for token verification and event recording.
@@ -126,12 +131,50 @@ if (result.valid) {
 
 The SDK is configured using the `SupertabConnectConfig` object:
 
-| Parameter           | Type               | Required | Default  | Description                                                        |
-| ------------------- | ------------------ | -------- | -------- | ------------------------------------------------------------------ |
-| `apiKey`            | `string`           | Yes      | -        | Your Supertab merchant API key                                     |
-| `enforcement`       | `EnforcementMode`  | No       | `SOFT`   | Enforcement mode: `DISABLED`, `SOFT`, or `STRICT`                  |
-| `botDetector`       | `BotDetector`      | No       | -        | Custom bot detection function `(request, ctx?) => boolean`         |
-| `debug`             | `boolean`          | No       | `false`  | Enable debug logging                                               |
+| Parameter            | Type                 | Required | Default     | Description                                                                          |
+| -------------------- | -------------------- | -------- | ----------- | ------------------------------------------------------------------------------------ |
+| `apiKey`             | `string`             | Yes      | -           | Your Supertab merchant API key                                                       |
+| `enforcement`        | `EnforcementMode`    | No       | `OBSERVE`   | Enforcement mode: `DISABLED`, `OBSERVE`, or `ENFORCE`                                 |
+| `botDetector`        | `BotDetector`        | No       | -           | Custom bot detection function `(request, ctx?) => boolean`                           |
+| `debug`              | `boolean`            | No       | `false`     | Enable debug logging                                                                 |
+| `analyticsEnabled`   | `boolean`            | No       | `false`     | Emit one analytics event per request to the Supertab Connect relay (see [Analytics](#analytics)) |
+
+## Analytics
+
+The SDK can emit one analytics event per request to the Supertab Connect
+**relay** endpoint at `{baseUrl}/ingest/events`. This is **off by default** — enable
+it by passing `analyticsEnabled: true`:
+
+```ts
+const supertabConnect = new SupertabConnect({
+  apiKey: "stc_live_your_api_key",
+  analyticsEnabled: true,
+});
+```
+
+The same flag is available on the Cloudflare and Fastly convenience handlers
+(`cloudflareHandleRequests`, `fastlyHandleRequests`) via their `options` object.
+Analytics is not supported on CloudFront.
+
+**No extra credentials are required.** Analytics requests are authenticated with
+your configured merchant `apiKey` using `Authorization: Bearer <apiKey>`. The
+backend derives merchant identity from the API key, so the SDK sends **no
+merchant identifier** in the analytics payload.
+
+Each event captures the request id, source CDN, a normalized client IP, and —
+when the CDN exposes them — the request country, ASN, TLS fingerprint, and HTTP
+Message Signature headers, along with the verification/enforcement decision for
+the request.
+
+**Fail-open:** analytics emission is fire-and-forget and can never block, slow,
+or alter request handling. If emission fails, the error is swallowed and the
+request proceeds exactly as it would with analytics disabled. Analytics is also
+fully isolated from billing — it is sent only to the relay at `/ingest/events`.
+
+> The relay endpoint is `POST /ingest/events` on the Supertab Connect backend.
+
+Analytics is sent to `{baseUrl}/ingest/events`; point it at another environment
+with `setBaseUrl()`.
 
 ## Public API Reference
 
@@ -182,16 +225,16 @@ Verifies a license token and records an analytics event. Uses the instance's `ap
 
 **Returns:** `{ valid: boolean; error?: string }`
 
-### `handleRequest(request, ctx?): Promise<HandlerResult>`
+### `handleRequest(request, context?): Promise<HandlerResult>`
 
-Handles an incoming request end-to-end: extracts the license token from the `Authorization` header, verifies it, records an analytics event, and applies bot detection and enforcement mode when no token is present.
+Handles an incoming request end-to-end: extracts the license token from the `Authorization` header, verifies it, optionally emits a relay analytics event, and applies bot detection and enforcement mode when no token is present.
 
 **Parameters:**
 
 - `request` (`Request`): The incoming HTTP request
-- `ctx` (`ExecutionContext`, optional): Execution context for non-blocking event recording
+- `context` (`HandleRequestContext`, optional): Per-request context object. Carries the execution context (`ctx`) for non-blocking work, the `sourceCdn`, and CDN-supplied analytics signals (`clientIp`, `requestId`, `requestCountry`, `requestAsn`, `tlsFingerprint`).
 
-**Returns:** `HandlerResult` — either `{ action: "allow" }` or `{ action: "block", status, body, headers }`.
+**Returns:** `HandlerResult` — either `{ action: "allow", headers? }` or `{ action: "block", status, body, headers }`. In observe mode, a bot without a token is allowed through with RSL signal headers (`X-RSL-Status: token_required`); the analytics event still records `final_action: "observe"`.
 
 ### `cloudflareHandleRequests(request, env, ctx): Promise<Response>` (static)
 
@@ -215,7 +258,10 @@ Convenience handler for Fastly Compute.
 - `options.enableRSL` (`boolean`, optional): Serve `license.xml` at `/license.xml` for RSL-compliant clients (default: `false`)
 - `options.merchantSystemUrn` (`string`): Required when `enableRSL` is `true`; the merchant system URN used to fetch `license.xml`. Enforced at the type level via a discriminated union (`FastlyHandlerOptions`).
 - `options.botDetector` (`BotDetector`, optional): Custom bot detection function
-- `options.enforcement` (`EnforcementMode`, optional): Enforcement mode
+- `options.enforcement` (`EnforcementMode`, optional): Enforcement mode (default `OBSERVE`)
+- `options.analyticsEnabled` (`boolean`, optional): Emit relay analytics events (default `false`)
+
+The `options` parameter is optional. RSL hosting (`enableRSL` + `merchantSystemUrn`) is independent of analytics — `merchantSystemUrn` is used only to build the `license.xml` backend path and is never sent in analytics payloads.
 
 ### `cloudfrontHandleRequests(event, options): Promise<CloudFrontRequestResult>` (static)
 
@@ -224,7 +270,7 @@ Convenience handler for AWS CloudFront Lambda@Edge viewer-request functions.
 **Parameters:**
 
 - `event` (`CloudFrontRequestEvent`): The CloudFront viewer-request event
-- `options` (`CloudfrontHandlerOptions`): Configuration object with `apiKey` and optional `botDetector`/`enforcement`
+- `options` (`CloudfrontHandlerOptions`): Configuration object with `apiKey` and optional `botDetector`/`enforcement`. CloudFront does not emit analytics events.
 
 ### `obtainLicenseToken(options): Promise<string | undefined>` (static)
 
