@@ -22,7 +22,7 @@ interface SupertabConnectConfig {
 interface Env {
     /** The API key for authenticating with the Supertab Connect. */
     MERCHANT_API_KEY: string;
-    [key: string]: string | undefined;
+    [key: string]: string;
 }
 declare enum LicenseTokenInvalidReason {
     MISSING_TOKEN = "missing_license_token",
@@ -244,7 +244,7 @@ declare class SupertabConnect {
      * When no token is present, bot detection and enforcement mode determine the response.
      * @param request The incoming HTTP request
      * @param context CDN-supplied request context (sourceCdn, clientIp, ctx, requestId)
-     * @returns A promise that resolves with the handler result indicating ALLOW, OBSERVE, or BLOCK
+     * @returns A promise that resolves with the handler result indicating ALLOW or BLOCK
      */
     handleRequest(request: Request, context?: HandleRequestContext): Promise<HandlerResult>;
     /**
