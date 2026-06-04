@@ -18,13 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Authorization: Bearer <apiKey>`. The backend derives merchant identity from
   the API key, so the SDK sends **no merchant identifier** in the analytics
   payload.
-- New configuration options on `SupertabConnectConfig` (and the CDN handler
-  option objects):
-  - `analyticsEnabled` (`boolean`, default `false`) — toggles analytics emission.
-  - `analyticsTransport` (`AnalyticsTransport`, optional) — dependency-injection
-    hook for tests/custom transports.
-- Pluggable `AnalyticsTransport` abstraction with `HttpAnalyticsTransport` as
-  the default implementation.
+- New `analyticsEnabled` (`boolean`, default `false`) configuration option on
+  `SupertabConnectConfig` and on the Cloudflare/Fastly convenience handlers,
+  toggling analytics emission.
 - Analytics events capture `request_id`, `source_cdn`, a normalized IPv6
   `client_ip`, and the per-CDN classification signals `request_country`,
   `request_asn`, and `tls_fingerprint`, plus HTTP Message Signature headers
@@ -49,7 +45,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   handling. Emission is fire-and-forget and all errors are swallowed.
 - The relay endpoint `POST /ingest/events` is an assumed backend contract pending
   confirmation as the backend implementation is finalized.
-- **CloudFront analytics coverage:** the Lambda@Edge handler returns early when
-  the `x-license-auth` header is absent, so analytics events are emitted only
-  for token-bearing requests on CloudFront. Cloudflare and Fastly emit one event
-  per request; Fastly is the primary edge target for analytics.
+- **CloudFront does not emit analytics.** The Lambda@Edge handler performs
+  verification and enforcement only. Relay analytics is wired for Cloudflare and
+  Fastly, which emit one event per request (Fastly is the primary edge target).
