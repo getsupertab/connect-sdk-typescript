@@ -232,7 +232,7 @@ export class SupertabConnect {
    * When no token is present, bot detection and enforcement mode determine the response.
    * @param request The incoming HTTP request
    * @param context CDN-supplied request context (sourceCdn, clientIp, ctx, requestId)
-   * @returns A promise that resolves with the handler result indicating ALLOW, OBSERVE, or BLOCK
+   * @returns A promise that resolves with the handler result indicating ALLOW or BLOCK
    */
   async handleRequest(request: Request, context?: HandleRequestContext): Promise<HandlerResult> {
     const auth = request.headers.get("Authorization") || "";
