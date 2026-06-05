@@ -267,12 +267,16 @@ export class SupertabConnect {
       }
     };
 
-    // Token present → ALWAYS validate, regardless of mode or bot detection
+    // Token present → validate, regardless of bot detection — except in DISABLED
+    // mode, which short-circuits to ALLOW without verification.
     if (token) {
       if (this.enforcement === EnforcementMode.DISABLED) {
+        // DISABLED short-circuits to ALLOW without verifying the token, so we
+        // cannot honestly claim "valid". Emit "not_validated" so the token is
+        // not counted as a licensed request in analytics.
         emit({
           hasToken,
-          tokenOutcome: "valid",
+          tokenOutcome: "not_validated",
           finalAction: "allow",
           enforcementMode: this.enforcement,
         });

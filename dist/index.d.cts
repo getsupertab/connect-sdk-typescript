@@ -136,7 +136,7 @@ interface HandleRequestContext {
 }
 
 type SourceCdn = "cloudflare" | "fastly" | "cloudfront";
-type TokenOutcome = "absent" | "valid" | "expired" | "invalid_signature" | "invalid_audience" | "invalid_resource" | "invalid_issuer" | "malformed" | "server_error";
+type TokenOutcome = "absent" | "valid" | "expired" | "invalid_signature" | "invalid_audience" | "invalid_resource" | "invalid_issuer" | "malformed" | "server_error" | "not_validated";
 type FinalAction = "allow" | "observe" | "block";
 interface AnalyticsEvent {
     timestamp: string;

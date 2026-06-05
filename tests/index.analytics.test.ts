@@ -61,6 +61,31 @@ describe("SupertabConnect analytics wiring", () => {
     expect(event.token_outcome).toBe("absent");
   });
 
+  it("emits token_outcome 'not_validated' for a token-bearing request in DISABLED mode (no verification)", async () => {
+    const transport = new RecordingTransport();
+    const sdk = new SupertabConnect({
+      apiKey: "merchant-key",
+      enforcement: EnforcementMode.DISABLED,
+      analyticsTransport: transport,
+    });
+
+    const request = new Request("https://example.com/article", {
+      method: "GET",
+      headers: { Authorization: "License some-token" },
+    });
+
+    const result = await sdk.handleRequest(request, { sourceCdn: "cloudflare" });
+
+    expect(result.action).toBe(HandlerAction.ALLOW);
+    expect(transport.events).toHaveLength(1);
+
+    const event = transport.events[0];
+    expect(event.has_token).toBe(true);
+    expect(event.token_outcome).toBe("not_validated");
+    expect(event.final_action).toBe("allow");
+    expect(event.enforcement_mode).toBe("disabled");
+  });
+
   it("forwards classification signals from context into the emitted event", async () => {
     const transport = new RecordingTransport();
     const sdk = new SupertabConnect({

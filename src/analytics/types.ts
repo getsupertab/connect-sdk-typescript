@@ -13,7 +13,8 @@ export type TokenOutcome =
   | "invalid_resource"
   | "invalid_issuer"
   | "malformed"
-  | "server_error";
+  | "server_error"
+  | "not_validated";
 
 export type FinalAction = "allow" | "observe" | "block";
 

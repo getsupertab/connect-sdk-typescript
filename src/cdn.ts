@@ -197,6 +197,6 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
     };
   }
 
-  // Allow request to continue to origin (ALLOW or OBSERVE)
+  // Allow request to continue to origin
   return cfRequest;
 }
