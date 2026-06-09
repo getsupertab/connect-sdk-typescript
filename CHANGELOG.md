@@ -33,7 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The default `enforcement` mode is now `OBSERVE`.
 - `handleRequest`'s second argument is now a `HandleRequestContext` object
   (previously a bare `ExecutionContext`).
-- `fastlyHandleRequests`' `options` parameter is now optional.
 
 ### Notes
 
