@@ -28,13 +28,40 @@
 	"vars": {
 		"BASE_URL": "http://localhost:8000"
 	},
-	// Define environment-specific configurations
+	// Define environment-specific configurations.
+	//
+	// Default (no --env): LOCAL development — `wrangler dev` in front of the
+	//   local origin (origin.ts on :8789), backend on :8000. Config comes from
+	//   .dev.vars (SUPERTAB_BASE_URL / ORIGIN_URL / ANALYTICS_ENABLED / etc.).
+	//
+	// --env production: the DEPLOYED worker on contribute.app (Workers Route).
+	//   Same code, driven by the vars below: proxies ALLOW traffic to ORIGIN_URL
+	//   (example.com), analytics on, prod backend. `name` matches the live
+	//   worker so `wrangler deploy --env production` updates it in place; the
+	//   MERCHANT_API_KEY secret must be set on that worker.
 	"env": {
 		"sbx": {
 			"name": "sbx",
 			"vars": {
 				"BASE_URL": "https://api-connect.sbx.supertab.co/"
 			}
+		},
+		"production": {
+			"name": "supertab-sdk-worker",
+			"account_id": "06de381d8b2841eb41914422b148e403",
+			"compatibility_date": "2026-06-08",
+			"compatibility_flags": ["nodejs_compat"],
+			"vars": {
+				"SUPERTAB_BASE_URL": "https://api-connect.supertab.co",
+				"ORIGIN_URL": "https://example.com",
+				"ANALYTICS_ENABLED": "true"
+			},
+			"routes": [
+				{
+					"pattern": "*contribute.app/*",
+					"zone_id": "e0866d3cb32e848b71bb670c82c8d772"
+				}
+			]
 		}
 	},
 	/**

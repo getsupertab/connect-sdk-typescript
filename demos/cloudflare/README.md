@@ -1,103 +1,69 @@
 # Cloudflare Worker Demo
 
-This demo uses a Cloudflare Worker to demonstrate how to block and monetize bots for a publisher site. The worker logic blocks all traffic unless valid credentials are provided, and logs all events to Supertab Connect.
+One Cloudflare Worker demo that runs in **two modes** from the same code
+(`src/index.ts`) and the same `wrangler.jsonc`, selected by wrangler environment:
 
+| Mode | Command | What it is |
+|---|---|---|
+| **Local** (default) | `npm run dev` (`wrangler dev`) | local development in front of `origin.ts` (:8789), backend on :8000 |
+| **Production** | `npm run deploy:production` (`wrangler deploy --env production`) | the deployed worker on `contribute.app` via a Workers Route |
 
- using [Wrangler](https://developers.cloudflare.com/workers/wrangler/).
+The worker validates each request with the SDK, **OBSERVE**s by default (records,
+never blocks), and—when `ANALYTICS_ENABLED=true`—emits one relay analytics event
+per request to `${SUPERTAB_BASE_URL}/ingest/events`, where the backend stamps the
+merchant URN and forwards it to Tinybird. ALLOW traffic is proxied to `ORIGIN_URL`
+(so it never loops back through the worker's own route).
 
- The Deployed Demo is on [https://sbx.relgarem.workers.dev/](https://sbx.relgarem.workers.dev/)
+> The SDK dependency is `file:../..` — the **local workspace build**. Deploying
+> bundles your current SDK code. If you specifically need to test the *published*
+> npm artifact, temporarily set `@getsupertab/supertab-connect-sdk` to the version
+> string in `package.json` and `npm install`.
 
-## Prerequisites
+## Configuration
 
-- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/get-started/) installed (`npm install -g wrangler`)
-- Node.js installed
+| Var | Local (`.dev.vars`) | Production (`wrangler.jsonc` → `env.production.vars`) |
+|---|---|---|
+| `SUPERTAB_BASE_URL` | `http://localhost:8000` | `https://api-connect.supertab.co` |
+| `ORIGIN_URL` | `http://127.0.0.1:8789` | `https://example.com` |
+| `ANALYTICS_ENABLED` | `true`/`false` | `true` |
+| `ALLOW_TEST_OVERRIDES` | `true` (honors `X-Test-*` headers; enables `/__debug`) | unset |
+| `MERCHANT_API_KEY` | `.dev.vars` | Wrangler **secret** on the deployed worker |
 
-## Setup
+`MERCHANT_API_KEY` must belong to the same environment as `SUPERTAB_BASE_URL` (a
+prod key with the prod backend), or the analytics relay rejects it with 401.
 
-1. **Environment Variables**
+## Local development
 
-    Create a `.dev.vars` file in the project root with the following content:
+1. Create `.dev.vars` (see `.dev.vars.example`) with at least `MERCHANT_API_KEY`,
+   plus `SUPERTAB_BASE_URL`, `ORIGIN_URL`, `ANALYTICS_ENABLED`, `ALLOW_TEST_OVERRIDES`.
+2. Start the local origin: `npx tsx origin.ts` (serves :8789).
+3. `npm run dev` — worker on :8788. Hit it:
+   ```sh
+   curl http://127.0.0.1:8788/                       # no token → 200 (OBSERVE)
+   curl -H "Authorization: License <jwt>" http://127.0.0.1:8788/   # token path
+   curl http://127.0.0.1:8788/__debug                # shows the env the worker sees
+   ```
+   (See `tests/e2e/` for the JWT-minting flow and the `local-cloudflare` test env.)
 
-    ```env
-    MERCHANT_API_KEY=stc_live_cyysbuP9nXQmQkgn-5vrhUr4lEWm_702
-    ```
-
-    > **How to get these values:**
-    > - Run the application and dashboards locally.
-    > - Register as a merchant.
-    > - Create an API key from the dashboard to get the `MERCHANT_API_KEY`.
-
-2. **Run the Worker Locally**
-
-    Start the worker with:
-
-    ```sh
-    wrangler dev
-    ```
-
-    The worker will be available at [http://localhost:8787](http://localhost:8787).
-
-## Testing the Worker
-
-You can test the worker both with and without credentials:
-
-### 1. Test Without Credentials
-
-This should be allowed by the worker in the default OBSERVE enforcement mode:
-
-```sh
-curl -H "" http://127.0.0.1:8787
-```
-
-Change the enforcement mode to ENFORCE in order to see this request blocked.
-
-### 2. Test With a Valid Customer System Token
-
-To access content as a customer, follow these steps:
-
-#### a. Register as a Customer
-
-- Sign up via the customer dashboard to get your **customer URN**.
-
-#### b. Create a Customer System
-
-- In the dashboard, create a new customer system.
-
-#### c. Create a Customer System Key
-
-- Generate a key for your customer system.
-- **Save the private key and KID (Key ID)** when shown—you won't be able to retrieve the private key again.
-
-#### d. Generate a JWT Token
-
-Use your private key and KID to generate a JWT token. Example in Python:
-
-```python
-import jwt
-from datetime import UTC, datetime, timedelta
-
-payload = {
-    "iss": "<your_customer_urn>",
-    "sub": "bot_a",
-    "jti": "1234567890",
-    "iat": int(datetime.now(tz=UTC).timestamp()),
-    "exp": int((datetime.now(tz=UTC) + timedelta(hours=1)).timestamp()),
-}
-token = jwt.encode(
-    payload,
-    "<your_private_key>",
-    algorithm="RS256",
-    headers={"kid": "<your_kid>"}
-)
-print(token)
-```
-
-#### e. Call the Worker with Your Token
-
-Replace `<token>` with the JWT you generated:
+## Production deploy
 
 ```sh
-curl -H "Authorization: License <token>" http://localhost:8787
+npm install
+npx wrangler secret put MERCHANT_API_KEY --env production   # one-time
+npm run deploy:production
 ```
 
-If the token is valid, you should get access to the protected content.
+`env.production` carries the `*contribute.app/*` route, the prod vars above, and
+`name: supertab-sdk-worker` (the live worker), so deploys update it in place.
+
+### Requirements / gotchas
+
+- The route hostname (`www.contribute.app`) must be **Proxied (orange-cloud)** in
+  Cloudflare, or the route never fires and the host serves the origin's own
+  (mismatched) TLS cert.
+- Analytics only persist if the backend relay's Tinybird token has append rights
+  on `bot_events_raw` in the target workspace — a wrong/under-scoped token shows
+  up as `403 Forbidden` on `/v0/events` in Sentry, event silently dropped (the
+  merchant request still succeeds — fail-open).
+- `/__debug` is gated behind `ALLOW_TEST_OVERRIDES`, so it is not exposed in
+  production.

@@ -1,0 +1,20 @@
+# Copy to .dev.vars and fill in real values (.dev.vars is gitignored).
+#
+# Merchant API key for the demo's merchant system. Used for license-token
+# verification, and — when ANALYTICS_ENABLED=true — as the Bearer token the
+# SDK sends to the backend relay at ${SUPERTAB_BASE_URL}/ingest/events.
+MERCHANT_API_KEY=stc_live_xxxxxxxxxxxxxxxxxxxxxxxx
+# Merchant system URN — only used by the /license.xml proxy (proxyLicenseXml).
+MERCHANT_SYSTEM_URN=urn:stc:merchant:system:xxxxxxxx
+# Backend base URL: token verification + /license.xml + the analytics relay target.
+SUPERTAB_BASE_URL=http://localhost:8000
+# Local publisher origin for ALLOW/OBSERVE pass-through.
+# Start it with: npx tsx demos/cloudflare/origin.ts
+ORIGIN_URL=http://127.0.0.1:8789
+# Honor X-Test-Enforcement / X-Test-Bot-Detection per request (e2e harness +
+# enforcement test modes). Keep unset/false in any deployed config.
+ALLOW_TEST_OVERRIDES=true
+# Relay analytics emission. When true, the SDK POSTs each request's analytics
+# event to the backend relay at ${SUPERTAB_BASE_URL}/ingest/events. Set true to
+# exercise the analytics pipeline harness (tests/e2e/cloudflare-e2e.ts).
+ANALYTICS_ENABLED=false

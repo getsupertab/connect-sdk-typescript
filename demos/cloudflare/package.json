@@ -4,6 +4,7 @@
 	"private": true,
 	"scripts": {
 		"deploy": "wrangler deploy",
+		"deploy:production": "wrangler deploy --env production",
 		"dev": "wrangler dev",
 		"start": "wrangler dev",
 		"test": "vitest",
@@ -16,6 +17,6 @@
 		"wrangler": "^4.16.0"
 	},
 	"dependencies": {
-		"@getsupertab/supertab-connect-sdk": "^2.0.1"
+		"@getsupertab/supertab-connect-sdk": "file:../.."
 	}
 }
