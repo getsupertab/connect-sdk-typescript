@@ -29,7 +29,8 @@ export interface AnalyticsEvent {
   timestamp: string;
   request_id: string;
   schema_version: number;
-  source_cdn: SourceCdn;
+  // null when the request did not pass through a CDN (e.g. invoked directly via the SDK).
+  source_cdn: SourceCdn | null;
 
   user_agent: string;
   client_ip: string;

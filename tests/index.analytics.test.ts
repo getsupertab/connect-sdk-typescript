@@ -109,6 +109,20 @@ describe("SupertabConnect analytics wiring", () => {
     expect(event.tls_fingerprint).toBe("ja3-abc");
   });
 
+  it("emits source_cdn=null when invoked without a CDN context", async () => {
+    const transport = new RecordingTransport();
+    const sdk = new SupertabConnect({
+      apiKey: "merchant-key",
+      enforcement: EnforcementMode.OBSERVE,
+      botDetector: defaultBotDetector,
+      analyticsTransport: transport,
+    });
+
+    await sdk.handleRequest(botRequest());
+
+    expect(transport.events[0].source_cdn).toBeNull();
+  });
+
   it("FAIL-OPEN: a transport whose emit throws does not change the handler action", async () => {
     const sdk = new SupertabConnect({
       apiKey: "merchant-key",

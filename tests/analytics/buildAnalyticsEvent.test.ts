@@ -229,6 +229,11 @@ describe("buildAnalyticsEvent", () => {
         expect(event.source_cdn).toBe(sourceCdn);
       }
     );
+
+    it("is null when no CDN produced the request", () => {
+      const event = buildAnalyticsEvent(makeRequest(), baseDecision, ctx({ sourceCdn: null }));
+      expect(event.source_cdn).toBeNull();
+    });
   });
 
   describe("has_token", () => {

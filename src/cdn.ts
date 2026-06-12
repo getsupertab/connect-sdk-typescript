@@ -18,7 +18,8 @@ export function parseAsn(raw: string | null | undefined): number | null {
 
 export interface HandleRequestContext {
   ctx?: ExecutionContext;
-  sourceCdn: "cloudflare" | "fastly" | "cloudfront";
+  // Omitted when the request did not pass through a CDN (e.g. invoked directly via the SDK).
+  sourceCdn?: "cloudflare" | "fastly" | "cloudfront";
   clientIp?: string;
   requestId?: string;
   requestCountry?: string | null;

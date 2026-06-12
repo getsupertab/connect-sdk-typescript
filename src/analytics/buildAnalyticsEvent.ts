@@ -4,7 +4,7 @@ import { AnalyticsEvent, Decision, SCHEMA_VERSION, SourceCdn } from "./types";
 
 export interface BuildAnalyticsEventContext {
   requestId: string;
-  sourceCdn: SourceCdn;
+  sourceCdn: SourceCdn | null;
   clientIp?: string | null;
   timestamp?: Date;
   requestCountry?: string | null;

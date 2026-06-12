@@ -127,7 +127,7 @@ declare enum UsageType {
 
 interface HandleRequestContext {
     ctx?: ExecutionContext;
-    sourceCdn: "cloudflare" | "fastly" | "cloudfront";
+    sourceCdn?: "cloudflare" | "fastly" | "cloudfront";
     clientIp?: string;
     requestId?: string;
     requestCountry?: string | null;
@@ -142,7 +142,7 @@ interface AnalyticsEvent {
     timestamp: string;
     request_id: string;
     schema_version: number;
-    source_cdn: SourceCdn;
+    source_cdn: SourceCdn | null;
     user_agent: string;
     client_ip: string;
     path: string;

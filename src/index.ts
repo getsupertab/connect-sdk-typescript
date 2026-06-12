@@ -242,7 +242,7 @@ export class SupertabConnect {
     const userAgent = request.headers.get("User-Agent") || "unknown";
 
     const requestId = context?.requestId ?? crypto.randomUUID();
-    const sourceCdn = context?.sourceCdn ?? "cloudflare";
+    const sourceCdn = context?.sourceCdn ?? null;
     const clientIp = context?.clientIp;
     const ctx = context?.ctx;
     const requestCountry = context?.requestCountry;
