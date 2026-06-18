@@ -43,6 +43,20 @@ export type {
   CloudfrontHandlerOptions,
 };
 export { defaultBotDetector } from "./bots";
+export {
+  buildBotEventRow,
+  toEnforcementOutcome,
+  toTokenOutcome,
+  BOT_EVENTS_SCHEMA_VERSION,
+} from "./bot-events";
+export type {
+  BotEventRow,
+  BotEventSignals,
+  BuildBotEventRowInput,
+  TokenOutcome,
+  FinalAction,
+  EnforcementOutcome,
+} from "./bot-events";
 
 /**
  * SupertabConnect class provides higher level methods
