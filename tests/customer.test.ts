@@ -4,6 +4,7 @@ import {
   findBestMatchingContent,
   obtainLicenseToken,
   ContentBlock,
+  UsageType,
 } from "../src/customer";
 
 const sampleXml = `
@@ -62,13 +63,19 @@ describe("parseContentElements", () => {
     expect(parseContentElements(xml)).toEqual([]);
   });
 
-  it("skips content missing server attribute", () => {
+  it("keeps serverless content when license exists", () => {
     const xml = `
       <content url="http://example.com/*">
         <license type="test"><link /></license>
       </content>
     `;
-    expect(parseContentElements(xml)).toEqual([]);
+    expect(parseContentElements(xml)).toEqual([
+      {
+        urlPattern: "http://example.com/*",
+        server: undefined,
+        licenseXml: '<license type="test"><link /></license>',
+      },
+    ]);
   });
 
   it("returns empty array for XML with no content elements", () => {
@@ -270,11 +277,11 @@ describe("obtainLicenseToken caching", () => {
   }
 
   function xmlFetches(mock: ReturnType<typeof vi.fn>) {
-    return mock.mock.calls.filter(([url]: [string]) => url.endsWith("/license.xml"));
+    return mock.mock.calls.filter(([url]) => typeof url === "string" && url.endsWith("/license.xml"));
   }
 
   function tokenFetches(mock: ReturnType<typeof vi.fn>) {
-    return mock.mock.calls.filter(([url]: [string]) => url.endsWith("/token"));
+    return mock.mock.calls.filter(([url]) => typeof url === "string" && url.endsWith("/token"));
   }
 
   it("fetches license.xml only once per origin across multiple calls", async () => {
@@ -386,5 +393,110 @@ describe("obtainLicenseToken caching", () => {
     await obtainLicenseToken({ clientId: "c6-b", clientSecret: "s", resourceUrl: `${origin}/articles/foo` });
 
     expect(xmlFetches(mock)).toHaveLength(1);
+  });
+
+  it("returns undefined for search usage when a matching serverless usage grant exists", async () => {
+    const origin = "http://search-serverless-match.com";
+    const xml = `<rsl>
+      <content url="/articles/*">
+        <license type="test">
+          <permits type="usage">search</permits>
+        </license>
+      </content>
+      <content url="/*" server="http://token-server.com">
+        <license type="test"><link rel="self" href="http://token-server.com/license"/></license>
+      </content>
+    </rsl>`;
+    const mock = mockFetch(xml, makeJwt(Math.floor(Date.now() / 1000) + 900));
+
+    const token = await obtainLicenseToken({
+      clientId: "c-search",
+      clientSecret: "s",
+      resourceUrl: `${origin}/articles/foo`,
+      usage: UsageType.SEARCH,
+    });
+
+    expect(token).toBeUndefined();
+    expect(xmlFetches(mock)).toHaveLength(1);
+    expect(tokenFetches(mock)).toHaveLength(0);
+  });
+
+  it("still requests a token for search usage when no matching serverless usage grant exists", async () => {
+    const origin = "http://search-serverless-miss.com";
+    const xml = `<rsl>
+      <content url="/news/*">
+        <license type="test">
+          <permits type="usage">search</permits>
+        </license>
+      </content>
+      <content url="/articles/*" server="http://token-server.com">
+        <license type="test"><link rel="self" href="http://token-server.com/license"/></license>
+      </content>
+    </rsl>`;
+    const mock = mockFetch(xml, makeJwt(Math.floor(Date.now() / 1000) + 900));
+
+    const token = await obtainLicenseToken({
+      clientId: "c-search-fallback",
+      clientSecret: "s",
+      resourceUrl: `${origin}/articles/foo`,
+      usage: UsageType.SEARCH,
+    });
+
+    expect(token).toBeDefined();
+    expect(xmlFetches(mock)).toHaveLength(1);
+    expect(tokenFetches(mock)).toHaveLength(1);
+  });
+
+  it("returns undefined for ai-train usage when a matching serverless usage grant exists", async () => {
+    const origin = "http://ai-train-serverless-match.com";
+    const xml = `<rsl>
+      <content url="/articles/*">
+        <license type="test">
+          <permits type="usage">ai-train</permits>
+        </license>
+      </content>
+      <content url="/*" server="http://token-server.com">
+        <license type="test"><link rel="self" href="http://token-server.com/license"/></license>
+      </content>
+    </rsl>`;
+    const mock = mockFetch(xml, makeJwt(Math.floor(Date.now() / 1000) + 900));
+
+    const token = await obtainLicenseToken({
+      clientId: "c-ai-train",
+      clientSecret: "s",
+      resourceUrl: `${origin}/articles/foo`,
+      usage: UsageType.AI_TRAIN,
+    });
+
+    expect(token).toBeUndefined();
+    expect(xmlFetches(mock)).toHaveLength(1);
+    expect(tokenFetches(mock)).toHaveLength(0);
+  });
+
+  it("requests a token when the matching serverless usage grant explicitly prohibits the chosen usage", async () => {
+    const origin = "http://usage-prohibited-fallback.com";
+    const xml = `<rsl>
+      <content url="/articles/*">
+        <license type="test">
+          <permits type="usage">ai-train search</permits>
+          <prohibits type="usage">ai-train</prohibits>
+        </license>
+      </content>
+      <content url="/*" server="http://token-server.com">
+        <license type="test"><link rel="self" href="http://token-server.com/license"/></license>
+      </content>
+    </rsl>`;
+    const mock = mockFetch(xml, makeJwt(Math.floor(Date.now() / 1000) + 900));
+
+    const token = await obtainLicenseToken({
+      clientId: "c-usage-prohibited",
+      clientSecret: "s",
+      resourceUrl: `${origin}/articles/foo`,
+      usage: UsageType.AI_TRAIN,
+    });
+
+    expect(token).toBeDefined();
+    expect(xmlFetches(mock)).toHaveLength(1);
+    expect(tokenFetches(mock)).toHaveLength(1);
   });
 });

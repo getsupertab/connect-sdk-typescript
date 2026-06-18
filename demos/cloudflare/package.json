@@ -16,6 +16,6 @@
 		"wrangler": "^4.16.0"
 	},
 	"dependencies": {
-		"@getsupertab/supertab-connect-sdk": "^0.1.0-beta.19"
+		"@getsupertab/supertab-connect-sdk": "^2.0.1"
 	}
 }
