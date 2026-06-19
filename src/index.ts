@@ -43,6 +43,7 @@ import {
   ANALYTICS_EVENTS_PATH,
   HttpAnalyticsTransport,
   NoopAnalyticsTransport,
+  FastlyLogTransport,
 } from "./analytics/transport";
 import { buildAnalyticsEvent } from "./analytics/buildAnalyticsEvent";
 
@@ -131,6 +132,25 @@ export class SupertabConnect {
     }
     if (!config.analyticsEnabled) {
       return new NoopAnalyticsTransport();
+    }
+    // On Fastly, emit via the native logging endpoint (→ S3 → Tinybird connector) instead of the
+    // HTTP relay, to keep the request-layer firehose off the backend. Needs merchantSystemUrn to
+    // stamp identity (no backend to derive it); without it, disable rather than send identity-less
+    // rows or fall back to the relay path we don't want on Fastly.
+    if (globalThis.fastly) {
+      if (!config.merchantSystemUrn) {
+        if (config.debug) {
+          console.error(
+            "[SupertabConnect] analyticsEnabled on Fastly but merchantSystemUrn is missing; analytics disabled"
+          );
+        }
+        return new NoopAnalyticsTransport();
+      }
+      return new FastlyLogTransport({
+        endpoint: config.logEndpoint,
+        merchantSystemUrn: config.merchantSystemUrn,
+        debug: config.debug ?? false,
+      });
     }
     return new HttpAnalyticsTransport({
       url: `${SupertabConnect.baseUrl}${ANALYTICS_EVENTS_PATH}`,
@@ -451,13 +471,15 @@ export class SupertabConnect {
     options: FastlyHandlerOptions = {}
   ): Promise<Response> {
     try {
-      const { botDetector, enforcement, analyticsEnabled } = options;
+      const { botDetector, enforcement, analyticsEnabled, merchantSystemUrn, logEndpoint } = options;
 
       const instance = new SupertabConnect({
         apiKey: merchantApiKey,
         botDetector,
         enforcement,
         analyticsEnabled,
+        merchantSystemUrn,
+        logEndpoint,
       });
 
       let rslOptions: { baseUrl: string; merchantSystemUrn: string } | undefined;

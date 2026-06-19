@@ -28,6 +28,17 @@ export interface SupertabConnectConfig {
    * declaratively via `analyticsEnabled`.
    */
   analyticsTransport?: AnalyticsTransport;
+  /**
+   * @internal
+   * Merchant system URN, stamped onto rows emitted by the Fastly log transport (the relay path
+   * derives identity server-side from the apiKey instead). Populated by the Fastly handler.
+   */
+  merchantSystemUrn?: string;
+  /**
+   * @internal
+   * Named Fastly logging endpoint analytics rows are written to. Default: "bot_events".
+   */
+  logEndpoint?: string;
 }
 
 /**
@@ -145,17 +156,25 @@ interface FastlyHandlerBaseOptions {
   botDetector?: BotDetector;
   enforcement?: EnforcementMode;
   analyticsEnabled?: boolean;
+  /**
+   * Merchant system URN. Stamped onto analytics rows written to the Fastly log endpoint — the
+   * relay path derives identity server-side from the apiKey, but the Fastly → S3 log path has no
+   * backend in the way, so it must carry the URN. Required when `enableRSL`; otherwise needed only
+   * when `analyticsEnabled` (without it, Fastly analytics is disabled rather than sent without identity).
+   */
+  merchantSystemUrn?: string;
+  /** Named Fastly logging endpoint analytics rows are written to. Default: "bot_events". */
+  logEndpoint?: string;
 }
 
 interface FastlyHandlerWithRSL extends FastlyHandlerBaseOptions {
   enableRSL: true;
-  /** Merchant system URN — required only for RSL license.xml hosting (unrelated to analytics, which is keyed by apiKey). */
+  /** Required for RSL license.xml hosting (also used to stamp analytics rows when enabled). */
   merchantSystemUrn: string;
 }
 
 interface FastlyHandlerWithoutRSL extends FastlyHandlerBaseOptions {
   enableRSL?: false;
-  merchantSystemUrn?: never;
 }
 
 export type FastlyHandlerOptions = FastlyHandlerWithRSL | FastlyHandlerWithoutRSL;
