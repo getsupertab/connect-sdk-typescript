@@ -1,7 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { SupertabConnect, HandlerAction, defaultBotDetector } from "../src/index";
 import { EnforcementMode } from "../src/types";
 import { AnalyticsEvent, AnalyticsTransport } from "../src/analytics/types";
+import {
+  FastlyLogTransport,
+  HttpAnalyticsTransport,
+  NoopAnalyticsTransport,
+} from "../src/analytics/transport";
 import { ExecutionContext } from "../src/types";
 
 class RecordingTransport implements AnalyticsTransport {
@@ -135,5 +140,45 @@ describe("SupertabConnect analytics wiring", () => {
 
     // The throwing transport must not affect enforcement: observe-mode bot → ALLOW pass-through.
     expect(result.action).toBe(HandlerAction.ALLOW);
+  });
+});
+
+describe("analytics transport selection", () => {
+  beforeEach(() => SupertabConnect.resetInstance());
+  afterEach(() => {
+    SupertabConnect.resetInstance();
+    vi.unstubAllGlobals();
+  });
+
+  function selected(config: ConstructorParameters<typeof SupertabConnect>[0]) {
+    return (new SupertabConnect(config) as unknown as { analyticsTransport: AnalyticsTransport })
+      .analyticsTransport;
+  }
+
+  it("analytics disabled → Noop", () => {
+    expect(selected({ apiKey: "k" })).toBeInstanceOf(NoopAnalyticsTransport);
+  });
+
+  it("Fastly + logEndpoint + merchantSystemUrn → FastlyLogTransport", () => {
+    vi.stubGlobal("fastly", {});
+    const t = selected({ apiKey: "k", analyticsEnabled: true, logEndpoint: "bot_events", merchantSystemUrn: "urn:stc:ms:abc" });
+    expect(t).toBeInstanceOf(FastlyLogTransport);
+  });
+
+  it("Fastly + analytics but no logEndpoint → HTTP relay fallback", () => {
+    vi.stubGlobal("fastly", {});
+    const t = selected({ apiKey: "k", analyticsEnabled: true, merchantSystemUrn: "urn:stc:ms:abc" });
+    expect(t).toBeInstanceOf(HttpAnalyticsTransport);
+  });
+
+  it("Fastly + logEndpoint but no merchantSystemUrn → HTTP relay fallback", () => {
+    vi.stubGlobal("fastly", {});
+    const t = selected({ apiKey: "k", analyticsEnabled: true, logEndpoint: "bot_events" });
+    expect(t).toBeInstanceOf(HttpAnalyticsTransport);
+  });
+
+  it("non-Fastly + analytics → HTTP relay", () => {
+    const t = selected({ apiKey: "k", analyticsEnabled: true, logEndpoint: "bot_events", merchantSystemUrn: "urn:stc:ms:abc" });
+    expect(t).toBeInstanceOf(HttpAnalyticsTransport);
   });
 });

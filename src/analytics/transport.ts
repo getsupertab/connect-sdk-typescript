@@ -74,9 +74,6 @@ declare module "fastly:logger" {
   }
 }
 
-/** Default named Fastly logging endpoint analytics rows are written to. */
-export const DEFAULT_FASTLY_LOG_ENDPOINT = "bot_events";
-
 /**
  * Emits events to a Fastly named logging endpoint (`fastly:logger`) → S3 → Tinybird,
  * instead of the HTTP relay (keeps the firehose off the backend). Stamps
@@ -89,8 +86,8 @@ export class FastlyLogTransport implements AnalyticsTransport {
   private readonly debug: boolean;
   private logger?: { log(message: string): void };
 
-  constructor(opts: { endpoint?: string; merchantSystemUrn: string; debug?: boolean }) {
-    this.endpoint = opts.endpoint ?? DEFAULT_FASTLY_LOG_ENDPOINT;
+  constructor(opts: { endpoint: string; merchantSystemUrn: string; debug?: boolean }) {
+    this.endpoint = opts.endpoint;
     this.merchantSystemUrn = opts.merchantSystemUrn;
     this.debug = opts.debug ?? false;
   }

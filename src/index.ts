@@ -133,18 +133,9 @@ export class SupertabConnect {
     if (!config.analyticsEnabled) {
       return new NoopAnalyticsTransport();
     }
-    // On Fastly, log natively (→ S3 → Tinybird) instead of the HTTP relay. Needs
-    // merchantSystemUrn to stamp identity; without it, disable rather than emit
-    // identity-less rows or fall back to the relay.
-    if (globalThis.fastly) {
-      if (!config.merchantSystemUrn) {
-        if (config.debug) {
-          console.error(
-            "[SupertabConnect] analyticsEnabled on Fastly but merchantSystemUrn is missing; analytics disabled"
-          );
-        }
-        return new NoopAnalyticsTransport();
-      }
+    // logEndpoint signals the merchant set up Fastly bot-events logging. With it (on Fastly,
+    // + URN to stamp identity) → log natively to S3; otherwise fall back to the HTTP relay.
+    if (globalThis.fastly && config.logEndpoint && config.merchantSystemUrn) {
       return new FastlyLogTransport({
         endpoint: config.logEndpoint,
         merchantSystemUrn: config.merchantSystemUrn,

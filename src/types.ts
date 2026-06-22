@@ -30,7 +30,7 @@ export interface SupertabConnectConfig {
   analyticsTransport?: AnalyticsTransport;
   /** @internal Stamped onto rows by the Fastly log transport (the relay derives it server-side). */
   merchantSystemUrn?: string;
-  /** @internal Named Fastly logging endpoint for analytics rows. Default: "bot_events". */
+  /** @internal When set (on Fastly), log to this named endpoint instead of the HTTP relay. */
   logEndpoint?: string;
 }
 
@@ -155,7 +155,11 @@ interface FastlyHandlerBaseOptions {
    * analytics (without it, analytics is disabled rather than emitted without identity).
    */
   merchantSystemUrn?: string;
-  /** Named Fastly logging endpoint for analytics rows. Default: "bot_events". */
+  /**
+   * Named Fastly logging endpoint to emit bot events to — must match the endpoint configured on
+   * the Fastly service. Set it to enable native Fastly logging; without it, analytics falls back
+   * to the HTTP relay.
+   */
   logEndpoint?: string;
 }
 

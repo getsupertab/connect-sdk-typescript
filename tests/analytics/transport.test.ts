@@ -3,7 +3,6 @@ import {
   HttpAnalyticsTransport,
   NoopAnalyticsTransport,
   FastlyLogTransport,
-  DEFAULT_FASTLY_LOG_ENDPOINT,
   ANALYTICS_EVENTS_PATH,
 } from "../../src/analytics/transport";
 import { AnalyticsEvent } from "../../src/analytics/types";
@@ -179,14 +178,6 @@ describe("FastlyLogTransport", () => {
     expect(parsed.final_action).toBe(fixtureEvent.final_action);
     // One JSON object per line — no trailing newline (Fastly batches lines into NDJSON).
     expect(line.endsWith("\n")).toBe(false);
-  });
-
-  it("defaults to the bot_events endpoint when none is given", async () => {
-    const transport = new FastlyLogTransport({ merchantSystemUrn: "urn:stc:merchant:system:abc" });
-
-    await emitAndAwait(transport);
-
-    expect(fastlyLogSpy.mock.calls[0][0]).toBe(DEFAULT_FASTLY_LOG_ENDPOINT);
   });
 
   it("invokes ctx.waitUntil when an ExecutionContext is provided", () => {
