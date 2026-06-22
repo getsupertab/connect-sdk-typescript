@@ -87,6 +87,7 @@ export class FastlyLogTransport implements AnalyticsTransport {
   private readonly endpoint: string;
   private readonly merchantSystemUrn: string;
   private readonly debug: boolean;
+  private logger?: { log(message: string): void };
 
   constructor(opts: { endpoint?: string; merchantSystemUrn: string; debug?: boolean }) {
     this.endpoint = opts.endpoint ?? DEFAULT_FASTLY_LOG_ENDPOINT;
@@ -98,14 +99,24 @@ export class FastlyLogTransport implements AnalyticsTransport {
     // One JSON object per line (Fastly batches them into NDJSON for S3).
     const line = JSON.stringify({ merchant_system_urn: this.merchantSystemUrn, ...event });
 
+    // Steady state: Logger cached → synchronous, no import/alloc per event.
+    if (this.logger) {
+      try {
+        this.logger.log(line);
+      } catch (err) {
+        if (this.debug) console.error("[SupertabConnect] fastly log emit error:", err);
+      }
+      return;
+    }
+
+    // First event: load the built-in once, cache the Logger, then log.
     const promise = (async () => {
       try {
         const { Logger } = await import("fastly:logger");
-        new Logger(this.endpoint).log(line);
+        this.logger ??= new Logger(this.endpoint);
+        this.logger.log(line);
       } catch (err) {
-        if (this.debug) {
-          console.error("[SupertabConnect] fastly log emit error:", err);
-        }
+        if (this.debug) console.error("[SupertabConnect] fastly log emit error:", err);
       }
     })();
 
