@@ -133,10 +133,9 @@ export class SupertabConnect {
     if (!config.analyticsEnabled) {
       return new NoopAnalyticsTransport();
     }
-    // On Fastly, emit via the native logging endpoint (→ S3 → Tinybird connector) instead of the
-    // HTTP relay, to keep the request-layer firehose off the backend. Needs merchantSystemUrn to
-    // stamp identity (no backend to derive it); without it, disable rather than send identity-less
-    // rows or fall back to the relay path we don't want on Fastly.
+    // On Fastly, log natively (→ S3 → Tinybird) instead of the HTTP relay. Needs
+    // merchantSystemUrn to stamp identity; without it, disable rather than emit
+    // identity-less rows or fall back to the relay.
     if (globalThis.fastly) {
       if (!config.merchantSystemUrn) {
         if (config.debug) {

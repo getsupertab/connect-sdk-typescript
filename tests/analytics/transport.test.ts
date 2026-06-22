@@ -154,8 +154,7 @@ describe("FastlyLogTransport", () => {
     fastlyLogSpy.mockReset();
   });
 
-  // emit() does the logging inside an async IIFE (it awaits the dynamic fastly:logger import),
-  // so await the exact emission promise via waitUntil rather than racing a timer.
+  // emit() logs inside an async IIFE (awaits the dynamic import), so await it via waitUntil.
   function emitAndAwait(transport: FastlyLogTransport): Promise<void> {
     const pending: Promise<void>[] = [];
     transport.emit(fixtureEvent, { waitUntil: (p) => pending.push(p) });

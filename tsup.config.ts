@@ -16,9 +16,8 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   minify: true,
-  // Fastly Compute built-ins (e.g. fastly:logger) only exist in the Compute runtime. Keep them
-  // external so esbuild never tries to resolve/bundle them; the SDK imports them dynamically and
-  // only on Fastly.
+  // Fastly Compute built-ins (e.g. fastly:logger) exist only at runtime — keep external so
+  // esbuild never tries to bundle them.
   external: [/^fastly:/],
   define: {
     __SDK_VERSION__: JSON.stringify(pkg.version),

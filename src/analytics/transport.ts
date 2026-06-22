@@ -65,10 +65,8 @@ export class HttpAnalyticsTransport implements AnalyticsTransport {
   }
 }
 
-// Ambient declaration for the Fastly Compute built-in logging module. @fastly/js-compute
-// is not an SDK dependency (the module only exists in the Compute runtime), so we declare
-// the minimal surface we use. The import below is dynamic + marked external in tsup, so it
-// is never bundled and only evaluates inside Fastly.
+// Minimal ambient decl for the Fastly Compute built-in (not an SDK dep). Imported
+// dynamically + marked external in tsup, so it only loads inside Fastly.
 declare module "fastly:logger" {
   export class Logger {
     constructor(endpoint: string);
@@ -80,12 +78,10 @@ declare module "fastly:logger" {
 export const DEFAULT_FASTLY_LOG_ENDPOINT = "bot_events";
 
 /**
- * Emits analytics events to a Fastly named logging endpoint (`fastly:logger`), which Fastly
- * ships off the request path to S3 for the Tinybird connector to import. Used instead of the
- * HTTP relay on Fastly to keep the request-layer firehose off the backend.
- *
- * Unlike the relay (where the backend stamps `merchant_system_urn` from the apiKey), this path
- * has no backend in the way, so the URN is stamped here from config.
+ * Emits events to a Fastly named logging endpoint (`fastly:logger`) → S3 → Tinybird,
+ * instead of the HTTP relay (keeps the firehose off the backend). Stamps
+ * `merchant_system_urn` from config — the relay derives it server-side, but here there's
+ * no backend to do so.
  */
 export class FastlyLogTransport implements AnalyticsTransport {
   private readonly endpoint: string;
@@ -99,8 +95,7 @@ export class FastlyLogTransport implements AnalyticsTransport {
   }
 
   emit(event: AnalyticsEvent, ctx?: ExecutionContext): void {
-    // One JSON object per line; Fastly batches lines into the NDJSON files the S3 connector
-    // reads. merchant_system_urn is added here (the relay omits it — see class doc).
+    // One JSON object per line (Fastly batches them into NDJSON for S3).
     const line = JSON.stringify({ merchant_system_urn: this.merchantSystemUrn, ...event });
 
     const promise = (async () => {
@@ -117,6 +112,6 @@ export class FastlyLogTransport implements AnalyticsTransport {
     if (ctx?.waitUntil) {
       ctx.waitUntil(promise);
     }
-    // Otherwise detached; once .log() runs Fastly buffers the line off the request path.
+    // Otherwise detached — .log() buffers off the request path.
   }
 }

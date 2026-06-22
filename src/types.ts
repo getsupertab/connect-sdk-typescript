@@ -28,16 +28,9 @@ export interface SupertabConnectConfig {
    * declaratively via `analyticsEnabled`.
    */
   analyticsTransport?: AnalyticsTransport;
-  /**
-   * @internal
-   * Merchant system URN, stamped onto rows emitted by the Fastly log transport (the relay path
-   * derives identity server-side from the apiKey instead). Populated by the Fastly handler.
-   */
+  /** @internal Stamped onto rows by the Fastly log transport (the relay derives it server-side). */
   merchantSystemUrn?: string;
-  /**
-   * @internal
-   * Named Fastly logging endpoint analytics rows are written to. Default: "bot_events".
-   */
+  /** @internal Named Fastly logging endpoint for analytics rows. Default: "bot_events". */
   logEndpoint?: string;
 }
 
@@ -157,13 +150,12 @@ interface FastlyHandlerBaseOptions {
   enforcement?: EnforcementMode;
   analyticsEnabled?: boolean;
   /**
-   * Merchant system URN. Stamped onto analytics rows written to the Fastly log endpoint — the
-   * relay path derives identity server-side from the apiKey, but the Fastly → S3 log path has no
-   * backend in the way, so it must carry the URN. Required when `enableRSL`; otherwise needed only
-   * when `analyticsEnabled` (without it, Fastly analytics is disabled rather than sent without identity).
+   * Merchant system URN, stamped onto Fastly analytics rows (the relay derives it server-side;
+   * the Fastly → S3 path must carry it). Required when `enableRSL`; otherwise needed for Fastly
+   * analytics (without it, analytics is disabled rather than emitted without identity).
    */
   merchantSystemUrn?: string;
-  /** Named Fastly logging endpoint analytics rows are written to. Default: "bot_events". */
+  /** Named Fastly logging endpoint for analytics rows. Default: "bot_events". */
   logEndpoint?: string;
 }
 
