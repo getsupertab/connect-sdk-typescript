@@ -182,7 +182,7 @@ describe("FastlyLogTransport", () => {
 
   it("invokes ctx.waitUntil when an ExecutionContext is provided", () => {
     const waitUntil = vi.fn();
-    const transport = new FastlyLogTransport({ merchantSystemUrn: "urn:stc:merchant:system:abc" });
+    const transport = new FastlyLogTransport({ endpoint: "bot_events", merchantSystemUrn: "urn:stc:merchant:system:abc" });
 
     transport.emit(fixtureEvent, { waitUntil });
 
@@ -194,7 +194,7 @@ describe("FastlyLogTransport", () => {
     fastlyLogSpy.mockImplementationOnce(() => {
       throw new Error("logger unavailable");
     });
-    const transport = new FastlyLogTransport({ merchantSystemUrn: "urn:stc:merchant:system:abc" });
+    const transport = new FastlyLogTransport({ endpoint: "bot_events", merchantSystemUrn: "urn:stc:merchant:system:abc" });
 
     expect(() => transport.emit(fixtureEvent)).not.toThrow();
     await flush();

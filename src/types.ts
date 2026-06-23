@@ -151,8 +151,8 @@ interface FastlyHandlerBaseOptions {
   analyticsEnabled?: boolean;
   /**
    * Merchant system URN, stamped onto Fastly analytics rows (the relay derives it server-side;
-   * the Fastly → S3 path must carry it). Required when `enableRSL`; otherwise needed for Fastly
-   * analytics (without it, analytics is disabled rather than emitted without identity).
+   * the Fastly → S3 path must carry it). Required when `enableRSL`, and for native Fastly logging
+   * (with `logEndpoint`); without it analytics falls back to the HTTP relay.
    */
   merchantSystemUrn?: string;
   /**
