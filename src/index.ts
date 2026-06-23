@@ -248,6 +248,7 @@ export class SupertabConnect {
     const requestCountry = context?.requestCountry;
     const requestAsn = context?.requestAsn;
     const tlsFingerprint = context?.tlsFingerprint;
+    const cdnSignals = context?.cdnSignals;
 
     const emit = (decision: Decision): void => {
       try {
@@ -258,6 +259,7 @@ export class SupertabConnect {
           requestCountry,
           requestAsn,
           tlsFingerprint,
+          cdnSignals,
         });
         this.analyticsTransport.emit(event, ctx);
       } catch (err) {
