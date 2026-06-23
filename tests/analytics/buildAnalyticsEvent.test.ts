@@ -348,15 +348,24 @@ describe("buildAnalyticsEvent", () => {
       expect(event.header_names).toEqual(["accept", "referer", "user-agent"]);
     });
 
-    it("strips edge-injected headers (cf-*, x-forwarded-*, x-real-ip)", () => {
+    it("strips edge-injected headers across all CDNs", () => {
       const event = buildAnalyticsEvent(
         makeRequest({
           headers: {
             "user-agent": "x",
+            // Cloudflare
             "cf-connecting-ip": "1.2.3.4",
             "cf-ray": "abc",
+            // Fastly
+            "fastly-client-ip": "1.2.3.4",
+            "fastly-client-ja3": "deadbeef",
+            // CloudFront
+            "cloudfront-viewer-country": "DE",
+            "cloudfront-viewer-ja3-fingerprint": "abc",
+            // shared / SDK routing
             "x-forwarded-for": "1.2.3.4",
             "x-real-ip": "1.2.3.4",
+            "x-original-request-url": "https://pub.example.com/a",
           },
         }),
         baseDecision,

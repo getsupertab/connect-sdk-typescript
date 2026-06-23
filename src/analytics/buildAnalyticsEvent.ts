@@ -19,9 +19,12 @@ export interface BuildAnalyticsEventContext {
 const MAX_FIELD_LENGTH = 512;
 
 // Edge-injected headers are CDN artifacts, not client signals — strip them so
-// `header_names` reflects only what the client actually sent.
-const EDGE_HEADER_PREFIXES = ["cf-", "x-forwarded-"];
-const EDGE_HEADER_NAMES = new Set(["x-real-ip"]);
+// `header_names` reflects only what the client actually sent. Covers all three
+// CDNs: Cloudflare (`cf-*`), Fastly (`fastly-*`), CloudFront (`cloudfront-*`),
+// the shared `x-forwarded-*` / `x-real-ip`, and the SDK's own routing header
+// `x-original-request-url` (set by the Fastly/CloudFront handlers).
+const EDGE_HEADER_PREFIXES = ["cf-", "fastly-", "cloudfront-", "x-forwarded-"];
+const EDGE_HEADER_NAMES = new Set(["x-real-ip", "x-original-request-url"]);
 
 // Mechanical exploit markers for the query-string heuristic, matched case-
 // insensitively against the raw and URL-decoded query. A coarse signal only —
