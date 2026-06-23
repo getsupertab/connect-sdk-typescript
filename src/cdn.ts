@@ -162,6 +162,13 @@ export async function handleFastlyRequest(
     requestCountry: request.headers.get("fastly-client-country-code") ?? null,
     requestAsn: parseAsn(asnHeader),
     tlsFingerprint: request.headers.get("fastly-client-ja3") ?? null,
+    // Fastly exposes only what VCL forwards as headers; the request.cf plumbing
+    // is Cloudflare-only, so the rest stay null. Unlike Cloudflare, Fastly does
+    // not rewrite Accept-Encoding, so the header is the genuine client value.
+    cdnSignals: {
+      accept_encoding: request.headers.get("accept-encoding"),
+      tls_fingerprint_ja4: request.headers.get("fastly-client-ja4"),
+    },
   });
 
   switch (result.action) {
