@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Capture v2 signals
+
+> Additive analytics enrichment on top of 2.1.0. Analytics events now bump to
+> `schema_version: 2` and carry richer spoof-detection signals. No API changes;
+> classification stays query-time in the warehouse (the SDK emits raw signals
+> only). Requires the relay (Phase 2) and Tinybird schema (Phase 1) to be
+> deployed first — older producers stay valid.
+
+### Added
+
+- **Portable header signals** (every CDN, read from request headers):
+  `sec_fetch_mode` / `_site` / `_dest` / `_user`, `sec_ch_ua` / `_mobile` /
+  `_platform`, `accept`, `host`, `has_cookies` (presence only, never the value),
+  and `header_names` — a lowercased, deduped, sorted set with edge-injected
+  headers (`cf-*`, `x-forwarded-*`, `x-real-ip`) stripped.
+- **Query-string derived signals** computed at the edge — `query_length`,
+  `query_param_count`, `query_suspicious` (mechanical exploit-marker match). The
+  raw query string is never stored.
+- **Cloudflare `request.cf` plumbing**: `accept_encoding`
+  (`cf.clientAcceptEncoding`, not the rewritten header), `http_protocol`,
+  `tls_version`, `tls_cipher`, `tls_client_hello_length` (parsed string→int),
+  `tls_client_extensions_sha1`, `as_organization`, `client_tcp_rtt`,
+  `cdn_verified_bot_category`, `request_priority`. `tls_fingerprint_ja4` is
+  defined but null until a zone reaches Enterprise.
+- **Fastly**: maps the header-exposed signals (`accept_encoding`, JA4); the rest
+  are null. **CloudFront** is unchanged (still emits no analytics).
+- `accept`, `sec_ch_ua` and `as_organization` are truncated to 512 chars at the
+  edge as a defense against junk-header senders.
+
+### Changed
+
+- Analytics events now emit `schema_version: 2`. Fail-open is preserved at every
+  layer — signal extraction never throws into the request path.
+
 ## [2.1.0]
 
 > Adds relay-based analytics on top of 2.0.2. Note: this release also includes
