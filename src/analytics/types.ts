@@ -1,6 +1,6 @@
 import { EnforcementMode, ExecutionContext, LicenseTokenInvalidReason } from "../types";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export type SourceCdn = "cloudflare" | "fastly" | "cloudfront";
 
