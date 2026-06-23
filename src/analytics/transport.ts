@@ -123,3 +123,25 @@ export class FastlyLogTransport implements AnalyticsTransport {
     // Otherwise detached — .log() buffers off the request path.
   }
 }
+
+/**
+ * Fastly-only transport selection, owned by the Fastly handler (not the platform-agnostic
+ * SupertabConnect constructor). Returns a FastlyLogTransport when the merchant opted into
+ * native bot-events logging (`logEndpoint` set) and identity can be stamped (`merchantSystemUrn`);
+ * otherwise `undefined`, leaving the constructor to pick the HTTP relay / no-op.
+ */
+export function selectFastlyAnalyticsTransport(opts: {
+  analyticsEnabled?: boolean;
+  logEndpoint?: string;
+  merchantSystemUrn?: string;
+  debug?: boolean;
+}): AnalyticsTransport | undefined {
+  if (opts.analyticsEnabled && opts.logEndpoint && opts.merchantSystemUrn) {
+    return new FastlyLogTransport({
+      endpoint: opts.logEndpoint,
+      merchantSystemUrn: opts.merchantSystemUrn,
+      debug: opts.debug ?? false,
+    });
+  }
+  return undefined;
+}

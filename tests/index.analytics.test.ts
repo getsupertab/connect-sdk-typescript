@@ -1,9 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { SupertabConnect, HandlerAction, defaultBotDetector } from "../src/index";
 import { EnforcementMode } from "../src/types";
 import { AnalyticsEvent, AnalyticsTransport } from "../src/analytics/types";
 import {
-  FastlyLogTransport,
   HttpAnalyticsTransport,
   NoopAnalyticsTransport,
 } from "../src/analytics/transport";
@@ -143,12 +142,9 @@ describe("SupertabConnect analytics wiring", () => {
   });
 });
 
-describe("analytics transport selection", () => {
+describe("analytics transport selection (platform-agnostic constructor)", () => {
   beforeEach(() => SupertabConnect.resetInstance());
-  afterEach(() => {
-    SupertabConnect.resetInstance();
-    vi.unstubAllGlobals();
-  });
+  afterEach(() => SupertabConnect.resetInstance());
 
   function selected(config: ConstructorParameters<typeof SupertabConnect>[0]) {
     return (new SupertabConnect(config) as unknown as { analyticsTransport: AnalyticsTransport })
@@ -159,26 +155,12 @@ describe("analytics transport selection", () => {
     expect(selected({ apiKey: "k" })).toBeInstanceOf(NoopAnalyticsTransport);
   });
 
-  it("Fastly + logEndpoint + merchantSystemUrn → FastlyLogTransport", () => {
-    vi.stubGlobal("fastly", {});
-    const t = selected({ apiKey: "k", analyticsEnabled: true, logEndpoint: "bot_events", merchantSystemUrn: "urn:stc:ms:abc" });
-    expect(t).toBeInstanceOf(FastlyLogTransport);
+  it("analytics enabled → HTTP relay (no platform sniffing here)", () => {
+    expect(selected({ apiKey: "k", analyticsEnabled: true })).toBeInstanceOf(HttpAnalyticsTransport);
   });
 
-  it("Fastly + analytics but no logEndpoint → HTTP relay fallback", () => {
-    vi.stubGlobal("fastly", {});
-    const t = selected({ apiKey: "k", analyticsEnabled: true, merchantSystemUrn: "urn:stc:ms:abc" });
-    expect(t).toBeInstanceOf(HttpAnalyticsTransport);
-  });
-
-  it("Fastly + logEndpoint but no merchantSystemUrn → HTTP relay fallback", () => {
-    vi.stubGlobal("fastly", {});
-    const t = selected({ apiKey: "k", analyticsEnabled: true, logEndpoint: "bot_events" });
-    expect(t).toBeInstanceOf(HttpAnalyticsTransport);
-  });
-
-  it("non-Fastly + analytics → HTTP relay", () => {
-    const t = selected({ apiKey: "k", analyticsEnabled: true, logEndpoint: "bot_events", merchantSystemUrn: "urn:stc:ms:abc" });
-    expect(t).toBeInstanceOf(HttpAnalyticsTransport);
+  it("injected analyticsTransport wins (the DI seam handlers use)", () => {
+    const injected = new RecordingTransport();
+    expect(selected({ apiKey: "k", analyticsEnabled: true, analyticsTransport: injected })).toBe(injected);
   });
 });

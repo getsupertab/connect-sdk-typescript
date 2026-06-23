@@ -3,6 +3,7 @@ import {
   HttpAnalyticsTransport,
   NoopAnalyticsTransport,
   FastlyLogTransport,
+  selectFastlyAnalyticsTransport,
   ANALYTICS_EVENTS_PATH,
 } from "../../src/analytics/transport";
 import { AnalyticsEvent } from "../../src/analytics/types";
@@ -198,5 +199,38 @@ describe("FastlyLogTransport", () => {
 
     expect(() => transport.emit(fixtureEvent)).not.toThrow();
     await flush();
+  });
+});
+
+describe("selectFastlyAnalyticsTransport", () => {
+  it("opted in (analytics + logEndpoint + merchantSystemUrn) → FastlyLogTransport", () => {
+    const t = selectFastlyAnalyticsTransport({
+      analyticsEnabled: true,
+      logEndpoint: "bot_events",
+      merchantSystemUrn: "urn:stc:ms:abc",
+    });
+    expect(t).toBeInstanceOf(FastlyLogTransport);
+  });
+
+  it("no logEndpoint → undefined (constructor falls back to the relay)", () => {
+    expect(
+      selectFastlyAnalyticsTransport({ analyticsEnabled: true, merchantSystemUrn: "urn:stc:ms:abc" })
+    ).toBeUndefined();
+  });
+
+  it("logEndpoint but no merchantSystemUrn → undefined (can't stamp identity)", () => {
+    expect(
+      selectFastlyAnalyticsTransport({ analyticsEnabled: true, logEndpoint: "bot_events" })
+    ).toBeUndefined();
+  });
+
+  it("analytics disabled → undefined even with logEndpoint + urn", () => {
+    expect(
+      selectFastlyAnalyticsTransport({
+        analyticsEnabled: false,
+        logEndpoint: "bot_events",
+        merchantSystemUrn: "urn:stc:ms:abc",
+      })
+    ).toBeUndefined();
   });
 });

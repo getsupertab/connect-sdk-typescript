@@ -28,10 +28,6 @@ export interface SupertabConnectConfig {
    * declaratively via `analyticsEnabled`.
    */
   analyticsTransport?: AnalyticsTransport;
-  /** @internal Stamped onto rows by the Fastly log transport (the relay derives it server-side). */
-  merchantSystemUrn?: string;
-  /** @internal When set (on Fastly), log to this named endpoint instead of the HTTP relay. */
-  logEndpoint?: string;
 }
 
 /**

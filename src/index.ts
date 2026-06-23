@@ -43,7 +43,7 @@ import {
   ANALYTICS_EVENTS_PATH,
   HttpAnalyticsTransport,
   NoopAnalyticsTransport,
-  FastlyLogTransport,
+  selectFastlyAnalyticsTransport,
 } from "./analytics/transport";
 import { buildAnalyticsEvent } from "./analytics/buildAnalyticsEvent";
 
@@ -132,15 +132,6 @@ export class SupertabConnect {
     }
     if (!config.analyticsEnabled) {
       return new NoopAnalyticsTransport();
-    }
-    // logEndpoint signals the merchant set up Fastly bot-events logging. With it (on Fastly,
-    // + URN to stamp identity) → log natively to S3; otherwise fall back to the HTTP relay.
-    if (globalThis.fastly && config.logEndpoint && config.merchantSystemUrn) {
-      return new FastlyLogTransport({
-        endpoint: config.logEndpoint,
-        merchantSystemUrn: config.merchantSystemUrn,
-        debug: config.debug ?? false,
-      });
     }
     return new HttpAnalyticsTransport({
       url: `${SupertabConnect.baseUrl}${ANALYTICS_EVENTS_PATH}`,
@@ -463,13 +454,18 @@ export class SupertabConnect {
     try {
       const { botDetector, enforcement, analyticsEnabled, merchantSystemUrn, logEndpoint } = options;
 
+      // Fastly owns its transport choice here, rather than the shared constructor sniffing
+      // globalThis.fastly: native bot-events logging when opted in, else the constructor's relay.
       const instance = new SupertabConnect({
         apiKey: merchantApiKey,
         botDetector,
         enforcement,
         analyticsEnabled,
-        merchantSystemUrn,
-        logEndpoint,
+        analyticsTransport: selectFastlyAnalyticsTransport({
+          analyticsEnabled,
+          logEndpoint,
+          merchantSystemUrn,
+        }),
       });
 
       let rslOptions: { baseUrl: string; merchantSystemUrn: string } | undefined;
