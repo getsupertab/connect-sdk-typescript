@@ -2,6 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { SupertabConnect, HandlerAction, defaultBotDetector } from "../src/index";
 import { EnforcementMode } from "../src/types";
 import { AnalyticsEvent, AnalyticsTransport } from "../src/analytics/types";
+import {
+  HttpAnalyticsTransport,
+  NoopAnalyticsTransport,
+} from "../src/analytics/transport";
 import { ExecutionContext } from "../src/types";
 
 class RecordingTransport implements AnalyticsTransport {
@@ -135,5 +139,28 @@ describe("SupertabConnect analytics wiring", () => {
 
     // The throwing transport must not affect enforcement: observe-mode bot → ALLOW pass-through.
     expect(result.action).toBe(HandlerAction.ALLOW);
+  });
+});
+
+describe("analytics transport selection (platform-agnostic constructor)", () => {
+  beforeEach(() => SupertabConnect.resetInstance());
+  afterEach(() => SupertabConnect.resetInstance());
+
+  function selected(config: ConstructorParameters<typeof SupertabConnect>[0]) {
+    return (new SupertabConnect(config) as unknown as { analyticsTransport: AnalyticsTransport })
+      .analyticsTransport;
+  }
+
+  it("analytics disabled → Noop", () => {
+    expect(selected({ apiKey: "k" })).toBeInstanceOf(NoopAnalyticsTransport);
+  });
+
+  it("analytics enabled → HTTP relay (no platform sniffing here)", () => {
+    expect(selected({ apiKey: "k", analyticsEnabled: true })).toBeInstanceOf(HttpAnalyticsTransport);
+  });
+
+  it("injected analyticsTransport wins (the DI seam handlers use)", () => {
+    const injected = new RecordingTransport();
+    expect(selected({ apiKey: "k", analyticsEnabled: true, analyticsTransport: injected })).toBe(injected);
   });
 });

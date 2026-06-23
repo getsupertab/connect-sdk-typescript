@@ -145,17 +145,28 @@ interface FastlyHandlerBaseOptions {
   botDetector?: BotDetector;
   enforcement?: EnforcementMode;
   analyticsEnabled?: boolean;
+  /**
+   * Merchant system URN, stamped onto Fastly analytics rows (the relay derives it server-side;
+   * the Fastly → S3 path must carry it). Required when `enableRSL`, and for native Fastly logging
+   * (with `logEndpoint`); without it analytics falls back to the HTTP relay.
+   */
+  merchantSystemUrn?: string;
+  /**
+   * Named Fastly logging endpoint to emit bot events to — must match the endpoint configured on
+   * the Fastly service. Set it to enable native Fastly logging; without it, analytics falls back
+   * to the HTTP relay.
+   */
+  logEndpoint?: string;
 }
 
 interface FastlyHandlerWithRSL extends FastlyHandlerBaseOptions {
   enableRSL: true;
-  /** Merchant system URN — required only for RSL license.xml hosting (unrelated to analytics, which is keyed by apiKey). */
+  /** Required for RSL license.xml hosting (also used to stamp analytics rows when enabled). */
   merchantSystemUrn: string;
 }
 
 interface FastlyHandlerWithoutRSL extends FastlyHandlerBaseOptions {
   enableRSL?: false;
-  merchantSystemUrn?: never;
 }
 
 export type FastlyHandlerOptions = FastlyHandlerWithRSL | FastlyHandlerWithoutRSL;
