@@ -2,9 +2,22 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   HttpAnalyticsTransport,
   NoopAnalyticsTransport,
+  FastlyLogTransport,
+  selectFastlyAnalyticsTransport,
   ANALYTICS_EVENTS_PATH,
 } from "../../src/analytics/transport";
 import { AnalyticsEvent } from "../../src/analytics/types";
+
+// Mock the Fastly Compute built-in logging module (it only exists in the Compute runtime).
+const { fastlyLogSpy } = vi.hoisted(() => ({ fastlyLogSpy: vi.fn() }));
+vi.mock("fastly:logger", () => ({
+  Logger: class {
+    constructor(public readonly endpoint: string) {}
+    log(message: string): void {
+      fastlyLogSpy(this.endpoint, message);
+    }
+  },
+}));
 
 const fixtureEvent: AnalyticsEvent = {
   timestamp: "2026-04-29T12:00:00.000Z",
@@ -133,5 +146,91 @@ describe("NoopAnalyticsTransport", () => {
     const transport = new NoopAnalyticsTransport();
     expect(() => transport.emit(fixtureEvent)).not.toThrow();
     expect(() => transport.emit(fixtureEvent, { waitUntil: () => {} })).not.toThrow();
+  });
+});
+
+describe("FastlyLogTransport", () => {
+  beforeEach(() => {
+    fastlyLogSpy.mockReset();
+  });
+
+  // emit() logs inside an async IIFE (awaits the dynamic import), so await it via waitUntil.
+  function emitAndAwait(transport: FastlyLogTransport): Promise<void> {
+    const pending: Promise<void>[] = [];
+    transport.emit(fixtureEvent, { waitUntil: (p) => pending.push(p) });
+    return Promise.all(pending).then(() => undefined);
+  }
+
+  it("logs one JSON line stamped with merchant_system_urn to the named endpoint", async () => {
+    const transport = new FastlyLogTransport({
+      endpoint: "bot_events",
+      merchantSystemUrn: "urn:stc:merchant:system:abc",
+    });
+
+    await emitAndAwait(transport);
+
+    expect(fastlyLogSpy).toHaveBeenCalledTimes(1);
+    const [endpoint, line] = fastlyLogSpy.mock.calls[0];
+    expect(endpoint).toBe("bot_events");
+
+    const parsed = JSON.parse(line);
+    expect(parsed.merchant_system_urn).toBe("urn:stc:merchant:system:abc");
+    expect(parsed.request_id).toBe(fixtureEvent.request_id);
+    expect(parsed.final_action).toBe(fixtureEvent.final_action);
+    // One JSON object per line — no trailing newline (Fastly batches lines into NDJSON).
+    expect(line.endsWith("\n")).toBe(false);
+  });
+
+  it("invokes ctx.waitUntil when an ExecutionContext is provided", () => {
+    const waitUntil = vi.fn();
+    const transport = new FastlyLogTransport({ endpoint: "bot_events", merchantSystemUrn: "urn:stc:merchant:system:abc" });
+
+    transport.emit(fixtureEvent, { waitUntil });
+
+    expect(waitUntil).toHaveBeenCalledTimes(1);
+    expect(waitUntil.mock.calls[0][0]).toBeInstanceOf(Promise);
+  });
+
+  it("does not throw when logging fails", async () => {
+    fastlyLogSpy.mockImplementationOnce(() => {
+      throw new Error("logger unavailable");
+    });
+    const transport = new FastlyLogTransport({ endpoint: "bot_events", merchantSystemUrn: "urn:stc:merchant:system:abc" });
+
+    expect(() => transport.emit(fixtureEvent)).not.toThrow();
+    await flush();
+  });
+});
+
+describe("selectFastlyAnalyticsTransport", () => {
+  it("opted in (analytics + logEndpoint + merchantSystemUrn) → FastlyLogTransport", () => {
+    const t = selectFastlyAnalyticsTransport({
+      analyticsEnabled: true,
+      logEndpoint: "bot_events",
+      merchantSystemUrn: "urn:stc:ms:abc",
+    });
+    expect(t).toBeInstanceOf(FastlyLogTransport);
+  });
+
+  it("no logEndpoint → undefined (constructor falls back to the relay)", () => {
+    expect(
+      selectFastlyAnalyticsTransport({ analyticsEnabled: true, merchantSystemUrn: "urn:stc:ms:abc" })
+    ).toBeUndefined();
+  });
+
+  it("logEndpoint but no merchantSystemUrn → undefined (can't stamp identity)", () => {
+    expect(
+      selectFastlyAnalyticsTransport({ analyticsEnabled: true, logEndpoint: "bot_events" })
+    ).toBeUndefined();
+  });
+
+  it("analytics disabled → undefined even with logEndpoint + urn", () => {
+    expect(
+      selectFastlyAnalyticsTransport({
+        analyticsEnabled: false,
+        logEndpoint: "bot_events",
+        merchantSystemUrn: "urn:stc:ms:abc",
+      })
+    ).toBeUndefined();
   });
 });

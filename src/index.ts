@@ -43,6 +43,7 @@ import {
   ANALYTICS_EVENTS_PATH,
   HttpAnalyticsTransport,
   NoopAnalyticsTransport,
+  selectFastlyAnalyticsTransport,
 } from "./analytics/transport";
 import { buildAnalyticsEvent } from "./analytics/buildAnalyticsEvent";
 
@@ -453,13 +454,20 @@ export class SupertabConnect {
     options: FastlyHandlerOptions = {}
   ): Promise<Response> {
     try {
-      const { botDetector, enforcement, analyticsEnabled } = options;
+      const { botDetector, enforcement, analyticsEnabled, merchantSystemUrn, logEndpoint } = options;
 
+      // Fastly owns its transport choice here, rather than the shared constructor sniffing
+      // globalThis.fastly: native bot-events logging when opted in, else the constructor's relay.
       const instance = new SupertabConnect({
         apiKey: merchantApiKey,
         botDetector,
         enforcement,
         analyticsEnabled,
+        analyticsTransport: selectFastlyAnalyticsTransport({
+          analyticsEnabled,
+          logEndpoint,
+          merchantSystemUrn,
+        }),
       });
 
       let rslOptions: { baseUrl: string; merchantSystemUrn: string } | undefined;
