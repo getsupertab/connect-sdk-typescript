@@ -5,16 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — Capture v2 signals
+## [2.1.0-beta.1] — Capture v2 signals + Fastly native logging
 
-> Additive analytics enrichment on top of 2.1.0. Analytics events now bump to
-> `schema_version: 2` and carry richer spoof-detection signals. No API changes;
+> Additive analytics enrichment on top of `2.1.0-beta.0`. Analytics events now
+> bump to `schema_version: 2` and carry richer spoof-detection signals, and
+> Fastly gains a native-logging delivery path. No breaking API changes;
 > classification stays query-time in the warehouse (the SDK emits raw signals
 > only). Requires the relay (Phase 2) and Tinybird schema (Phase 1) to be
 > deployed first — older producers stay valid.
 
 ### Added
 
+- **Fastly native logging transport** (`FastlyLogTransport`). Fastly can now
+  deliver analytics through a named Fastly real-time logging endpoint
+  (`fastly:logger` → S3 → Tinybird) instead of the HTTP relay, keeping the
+  per-request event firehose off the backend. Enable it on `fastlyHandleRequests`
+  by passing `logEndpoint` together with `merchantSystemUrn` (required so rows
+  can be stamped with merchant identity, since there's no backend to derive it on
+  this path); without `logEndpoint`, Fastly analytics falls back to the HTTP
+  relay. Cloudflare/CloudFront are unaffected.
 - **Portable header signals** (every CDN, read from request headers):
   `sec_fetch_mode` / `_site` / `_dest` / `_user`, `sec_ch_ua` / `_mobile` /
   `_platform`, `accept`, `host`, `has_cookies` (presence only, never the value),
