@@ -65,15 +65,6 @@ export class HttpAnalyticsTransport implements AnalyticsTransport {
   }
 }
 
-// Minimal ambient decl for the Fastly Compute built-in (not an SDK dep). Imported
-// dynamically + marked external in tsup, so it only loads inside Fastly.
-declare module "fastly:logger" {
-  export class Logger {
-    constructor(endpoint: string);
-    log(message: string): void;
-  }
-}
-
 /**
  * Emits events to a Fastly named logging endpoint (`fastly:logger`) → S3 → Tinybird,
  * instead of the HTTP relay (keeps the firehose off the backend). Stamps
