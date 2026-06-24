@@ -96,6 +96,15 @@ export class SupertabConnect {
    * @throws If an instance with different config already exists and reset is false
    */
   public constructor(config: SupertabConnectConfig, reset: boolean = false) {
+    // Warn before any early-return so the message fires regardless of singleton state.
+    const c = config as unknown as Record<string, unknown>;
+    if (c["logEndpoint"] !== undefined || c["merchantSystemUrn"] !== undefined) {
+      console.warn(
+        "[SupertabConnect] logEndpoint/merchantSystemUrn are not constructor options — " +
+        "pass them to fastlyHandleRequests, or use selectFastlyAnalyticsTransport directly."
+      );
+    }
+
     if (!reset && SupertabConnect._instance) {
       // If reset was not requested and an instance conflicts with the provided config, throw an error
       if (config.apiKey !== SupertabConnect._instance.apiKey) {
@@ -122,17 +131,6 @@ export class SupertabConnect {
     this.botDetector = config.botDetector;
     this.debug = config.debug ?? false;
     this.analyticsTransport = SupertabConnect.buildAnalyticsTransport(config);
-
-    // Warn JS callers who mistakenly pass Fastly-specific options to the constructor.
-    // These are owned by fastlyHandleRequests (via selectFastlyAnalyticsTransport) and
-    // are silently ignored here — use fastlyHandleRequests instead.
-    const c = config as unknown as Record<string, unknown>;
-    if (c["logEndpoint"] !== undefined || c["merchantSystemUrn"] !== undefined) {
-      console.warn(
-        "[SupertabConnect] logEndpoint/merchantSystemUrn are not constructor options — " +
-        "pass them to fastlyHandleRequests instead."
-      );
-    }
 
     // Register this as the singleton instance
     SupertabConnect._instance = this;

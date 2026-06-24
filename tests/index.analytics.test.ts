@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { SupertabConnect, HandlerAction, defaultBotDetector } from "../src/index";
 import { EnforcementMode } from "../src/types";
 import { AnalyticsEvent, AnalyticsTransport } from "../src/analytics/types";
@@ -139,6 +139,40 @@ describe("SupertabConnect analytics wiring", () => {
 
     // The throwing transport must not affect enforcement: observe-mode bot → ALLOW pass-through.
     expect(result.action).toBe(HandlerAction.ALLOW);
+  });
+});
+
+describe("constructor warning for misrouted Fastly options", () => {
+  beforeEach(() => SupertabConnect.resetInstance());
+  afterEach(() => SupertabConnect.resetInstance());
+
+  it("warns when logEndpoint is passed to the constructor", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    new SupertabConnect({ apiKey: "k", ...({"logEndpoint": "bot_events"} as object) });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("logEndpoint"));
+    warn.mockRestore();
+  });
+
+  it("warns when merchantSystemUrn is passed to the constructor", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    new SupertabConnect({ apiKey: "k", ...({"merchantSystemUrn": "urn:stc:ms:abc"} as object) });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("merchantSystemUrn"));
+    warn.mockRestore();
+  });
+
+  it("warning fires even when the singleton already exists", () => {
+    new SupertabConnect({ apiKey: "k" }); // create singleton
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    new SupertabConnect({ apiKey: "k", ...({"logEndpoint": "bot_events"} as object) });
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("mentions selectFastlyAnalyticsTransport in the warning", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    new SupertabConnect({ apiKey: "k", ...({"logEndpoint": "bot_events"} as object) });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("selectFastlyAnalyticsTransport"));
+    warn.mockRestore();
   });
 });
 
