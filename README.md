@@ -161,10 +161,24 @@ your configured merchant `apiKey` using `Authorization: Bearer <apiKey>`. The
 backend derives merchant identity from the API key, so the SDK sends **no
 merchant identifier** in the analytics payload.
 
-Each event captures the request id, source CDN, a normalized client IP, and —
-when the CDN exposes them — the request country, ASN, TLS fingerprint, and HTTP
-Message Signature headers, along with the verification/enforcement decision for
-the request.
+Each event captures the request id, source CDN, a normalized client IP, and the
+verification/enforcement decision for the request. When the CDN exposes them, it
+also captures richer fingerprinting signals for downstream bot- and
+spoof-analysis in the warehouse:
+
+- the request country, ASN, and TLS fingerprint;
+- `Sec-Fetch-*` and client-hint (`Sec-CH-UA*`) request headers; the set of
+  header names sent; and whether a cookie was present (the cookie **value** is
+  never stored, only its presence);
+- connection-level signals on Cloudflare (from `request.cf`): negotiated HTTP
+  protocol, TLS version/cipher, TLS ClientHello length and extension
+  fingerprint, and the CDN's verified-bot category;
+- query-string shape signals — length, parameter count, and a
+  suspicious-pattern flag (the raw query string itself is never stored);
+- HTTP Message Signature headers, when present.
+
+Analytics events emit `schema_version: 2`. Classification stays query-time in
+the warehouse — the SDK emits raw signals only and does not label traffic.
 
 **Fail-open:** analytics emission is fire-and-forget and can never block, slow,
 or alter request handling. If emission fails, the error is swallowed and the
@@ -175,6 +189,33 @@ fully isolated from billing — it is sent only to the relay at `/ingest/events`
 
 Analytics is sent to `{baseUrl}/ingest/events`; point it at another environment
 with `setBaseUrl()`.
+
+### Fastly: native logging delivery (optional)
+
+On Fastly, analytics can be delivered through a **native Fastly real-time
+logging endpoint** (`fastly:logger` → S3 → Tinybird) instead of the HTTP relay,
+which keeps the per-request event firehose off the Supertab Connect backend.
+Enable it by passing `logEndpoint` (the name of a logging endpoint configured on
+your Fastly service) together with `merchantSystemUrn` to `fastlyHandleRequests`:
+
+```js
+return SupertabConnect.fastlyHandleRequests(
+  event.request,
+  merchantApiKey,
+  "origin-backend",
+  {
+    analyticsEnabled: true,
+    logEndpoint: "bot_events",
+    merchantSystemUrn: "urn:supertab:merchant-system:...",
+  }
+);
+```
+
+`merchantSystemUrn` is required for native logging — there's no backend to derive
+merchant identity in this path, so the SDK stamps it onto each row. If
+`logEndpoint` is omitted (or `merchantSystemUrn` is missing), Fastly analytics
+falls back to the HTTP relay. This option is Fastly-only; Cloudflare always uses
+the HTTP relay.
 
 ## Public API Reference
 
@@ -256,12 +297,13 @@ Convenience handler for Fastly Compute.
 - `merchantApiKey` (`string`): Your Supertab merchant API key
 - `originBackend` (`string`): The Fastly backend name to forward allowed requests to
 - `options.enableRSL` (`boolean`, optional): Serve `license.xml` at `/license.xml` for RSL-compliant clients (default: `false`)
-- `options.merchantSystemUrn` (`string`): Required when `enableRSL` is `true`; the merchant system URN used to fetch `license.xml`. Enforced at the type level via a discriminated union (`FastlyHandlerOptions`).
+- `options.merchantSystemUrn` (`string`): Required when `enableRSL` is `true` (to fetch `license.xml`) and when using native Fastly logging (`logEndpoint`, to stamp analytics rows with merchant identity). Enforced at the type level via a discriminated union (`FastlyHandlerOptions`).
+- `options.logEndpoint` (`string`, optional): Name of a Fastly real-time logging endpoint. When set (with `merchantSystemUrn`), analytics events are delivered through native Fastly logging (→ S3 → Tinybird) instead of the HTTP relay. Omit it to use the relay.
 - `options.botDetector` (`BotDetector`, optional): Custom bot detection function
 - `options.enforcement` (`EnforcementMode`, optional): Enforcement mode (default `OBSERVE`)
-- `options.analyticsEnabled` (`boolean`, optional): Emit relay analytics events (default `false`)
+- `options.analyticsEnabled` (`boolean`, optional): Emit analytics events (default `false`)
 
-The `options` parameter is optional. RSL hosting (`enableRSL` + `merchantSystemUrn`) is independent of analytics — `merchantSystemUrn` is used only to build the `license.xml` backend path and is never sent in analytics payloads.
+The `options` parameter is optional. RSL hosting (`enableRSL` + `merchantSystemUrn`) is independent of analytics. For analytics, `merchantSystemUrn` is sent only on the native-logging path (where the SDK stamps it onto each row); on the HTTP relay path the backend derives merchant identity from the API key and no merchant identifier is sent.
 
 ### `cloudfrontHandleRequests(event, options): Promise<CloudFrontRequestResult>` (static)
 
