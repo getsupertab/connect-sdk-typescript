@@ -7,6 +7,7 @@ import {
   CloudFrontRequestEvent,
   CloudFrontRequestResult,
 } from "./types";
+import { CdnRequestSignals } from "./analytics/types";
 import { hostRSLicenseXML } from "./license";
 
 /** Parse a CDN ASN header (e.g. "13335" or "AS13335") to a positive integer, or null. */
@@ -14,6 +15,42 @@ export function parseAsn(raw: string | null | undefined): number | null {
   if (!raw) return null;
   const n = Number(raw.trim().replace(/^as/i, ""));
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Coerce a request.cf value to a non-empty string, or null. */
+function toStringOrNull(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  return String(value);
+}
+
+/** Coerce a request.cf value (possibly a numeric string) to an integer, or null. */
+function toIntOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = typeof value === "number" ? value : parseInt(String(value), 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Map Cloudflare's `request.cf` plumbing onto the Capture-v2 signal contract.
+ * Fail-open: pure field reads, never throws. Free-plan fields populate; the
+ * Enterprise-only JA4 stays null until a zone upgrades (defined now so the data
+ * flows the day it does — it is unbackfillable). `tlsClientHelloLength` arrives
+ * as a string and is parsed to an int.
+ */
+export function extractCloudflareCdnSignals(cf: Record<string, any>): CdnRequestSignals {
+  return {
+    accept_encoding: toStringOrNull(cf.clientAcceptEncoding),
+    http_protocol: toStringOrNull(cf.httpProtocol),
+    tls_version: toStringOrNull(cf.tlsVersion),
+    tls_cipher: toStringOrNull(cf.tlsCipher),
+    tls_client_hello_length: toIntOrNull(cf.tlsClientHelloLength),
+    tls_client_extensions_sha1: toStringOrNull(cf.tlsClientExtensionsSha1),
+    as_organization: toStringOrNull(cf.asOrganization),
+    client_tcp_rtt: toIntOrNull(cf.clientTcpRtt),
+    cdn_verified_bot_category: toStringOrNull(cf.verifiedBotCategory),
+    request_priority: toStringOrNull(cf.requestPriority),
+    tls_fingerprint_ja4: toStringOrNull(cf.botManagement?.ja4),
+  };
 }
 
 export interface HandleRequestContext {
@@ -25,6 +62,8 @@ export interface HandleRequestContext {
   requestCountry?: string | null;
   requestAsn?: number | null;
   tlsFingerprint?: string | null;
+  // Capture-v2 CDN plumbing not derivable from the portable Request.
+  cdnSignals?: CdnRequestSignals;
 }
 
 // Interface for what the CDN handlers need - avoids circular dependency
@@ -56,6 +95,7 @@ export async function handleCloudflareRequest(
     requestCountry: request.headers.get("cf-ipcountry") ?? cf?.country ?? null,
     requestAsn: typeof cf?.asn === "number" ? cf.asn : null,
     tlsFingerprint: cf?.botManagement?.ja3Hash ?? null,
+    cdnSignals: cf ? extractCloudflareCdnSignals(cf) : undefined,
   });
 
   switch (result.action) {
@@ -122,6 +162,13 @@ export async function handleFastlyRequest(
     requestCountry: request.headers.get("fastly-client-country-code") ?? null,
     requestAsn: parseAsn(asnHeader),
     tlsFingerprint: request.headers.get("fastly-client-ja3") ?? null,
+    // Fastly exposes only what VCL forwards as headers; the request.cf plumbing
+    // is Cloudflare-only, so the rest stay null. Unlike Cloudflare, Fastly does
+    // not rewrite Accept-Encoding, so the header is the genuine client value.
+    cdnSignals: {
+      accept_encoding: request.headers.get("accept-encoding"),
+      tls_fingerprint_ja4: request.headers.get("fastly-client-ja4"),
+    },
   });
 
   switch (result.action) {

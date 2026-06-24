@@ -104,15 +104,26 @@ interface FastlyHandlerBaseOptions {
     botDetector?: BotDetector;
     enforcement?: EnforcementMode;
     analyticsEnabled?: boolean;
+    /**
+     * Merchant system URN, stamped onto Fastly analytics rows (the relay derives it server-side;
+     * the Fastly → S3 path must carry it). Required when `enableRSL`, and for native Fastly logging
+     * (with `logEndpoint`); without it analytics falls back to the HTTP relay.
+     */
+    merchantSystemUrn?: string;
+    /**
+     * Named Fastly logging endpoint to emit bot events to — must match the endpoint configured on
+     * the Fastly service. Set it to enable native Fastly logging; without it, analytics falls back
+     * to the HTTP relay.
+     */
+    logEndpoint?: string;
 }
 interface FastlyHandlerWithRSL extends FastlyHandlerBaseOptions {
     enableRSL: true;
-    /** Merchant system URN — required only for RSL license.xml hosting (unrelated to analytics, which is keyed by apiKey). */
+    /** Required for RSL license.xml hosting (also used to stamp analytics rows when enabled). */
     merchantSystemUrn: string;
 }
 interface FastlyHandlerWithoutRSL extends FastlyHandlerBaseOptions {
     enableRSL?: false;
-    merchantSystemUrn?: never;
 }
 type FastlyHandlerOptions = FastlyHandlerWithRSL | FastlyHandlerWithoutRSL;
 
@@ -123,16 +134,6 @@ declare enum UsageType {
     AI_TRAIN = "ai-train",
     AI_INDEX = "ai-index",
     AI_INPUT = "ai-input"
-}
-
-interface HandleRequestContext {
-    ctx?: ExecutionContext;
-    sourceCdn?: "cloudflare" | "fastly" | "cloudfront";
-    clientIp?: string;
-    requestId?: string;
-    requestCountry?: string | null;
-    requestAsn?: number | null;
-    tlsFingerprint?: string | null;
 }
 
 type SourceCdn = "cloudflare" | "fastly" | "cloudfront";
@@ -159,9 +160,64 @@ interface AnalyticsEvent {
     signature_agent: string | null;
     signature_input: string | null;
     signature: string | null;
+    sec_fetch_mode: string | null;
+    sec_fetch_site: string | null;
+    sec_fetch_dest: string | null;
+    sec_fetch_user: string | null;
+    sec_ch_ua: string | null;
+    sec_ch_ua_mobile: string | null;
+    sec_ch_ua_platform: string | null;
+    accept: string | null;
+    host: string | null;
+    has_cookies: boolean | null;
+    header_names: string[];
+    query_length: number | null;
+    query_param_count: number | null;
+    query_suspicious: boolean | null;
+    accept_encoding: string | null;
+    http_protocol: string | null;
+    tls_version: string | null;
+    tls_cipher: string | null;
+    tls_client_hello_length: number | null;
+    tls_client_extensions_sha1: string | null;
+    as_organization: string | null;
+    client_tcp_rtt: number | null;
+    cdn_verified_bot_category: string | null;
+    request_priority: string | null;
+    tls_fingerprint_ja4: string | null;
+}
+/**
+ * CDN-supplied request signals that cannot be read from the portable `Request`
+ * — extracted per platform (Cloudflare `request.cf`, Fastly headers) and
+ * threaded through the handler context. Keys match the wire (snake_case) field
+ * names so they pass straight through onto the event.
+ */
+interface CdnRequestSignals {
+    accept_encoding?: string | null;
+    http_protocol?: string | null;
+    tls_version?: string | null;
+    tls_cipher?: string | null;
+    tls_client_hello_length?: number | null;
+    tls_client_extensions_sha1?: string | null;
+    as_organization?: string | null;
+    client_tcp_rtt?: number | null;
+    cdn_verified_bot_category?: string | null;
+    request_priority?: string | null;
+    tls_fingerprint_ja4?: string | null;
 }
 interface AnalyticsTransport {
     emit(event: AnalyticsEvent, ctx?: ExecutionContext): void;
+}
+
+interface HandleRequestContext {
+    ctx?: ExecutionContext;
+    sourceCdn?: "cloudflare" | "fastly" | "cloudfront";
+    clientIp?: string;
+    requestId?: string;
+    requestCountry?: string | null;
+    requestAsn?: number | null;
+    tlsFingerprint?: string | null;
+    cdnSignals?: CdnRequestSignals;
 }
 
 /**
