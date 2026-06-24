@@ -454,7 +454,7 @@ export class SupertabConnect {
     options: FastlyHandlerOptions = {}
   ): Promise<Response> {
     try {
-      const { botDetector, enforcement, analyticsEnabled, merchantSystemUrn, logEndpoint } = options;
+      const { botDetector, enforcement, analyticsEnabled, merchantSystemUrn, logEndpoint, clientIp, requestCountry, requestAsn } = options;
 
       // Fastly owns its transport choice here, rather than the shared constructor sniffing
       // globalThis.fastly: native bot-events logging when opted in, else the constructor's relay.
@@ -482,7 +482,8 @@ export class SupertabConnect {
         instance,
         request,
         originBackend,
-        rslOptions
+        rslOptions,
+        { clientIp, requestCountry, requestAsn }
       );
     } catch (err) {
       console.error("[SupertabConnect] fastlyHandleRequests failed:", err);

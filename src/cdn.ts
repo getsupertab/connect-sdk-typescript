@@ -139,6 +139,13 @@ export async function handleFastlyRequest(
   rslOptions?: {
     baseUrl: string;
     merchantSystemUrn: string;
+  },
+  // On Fastly Compute, client IP and geo are on the FetchEvent, not request headers.
+  // The caller (fastlyHandleRequests) passes them through from event.client.
+  clientContext?: {
+    clientIp?: string;
+    requestCountry?: string | null;
+    requestAsn?: number | null;
   }
 ): Promise<Response> {
   const originalUrl = request.headers.get("x-original-request-url") || request.url;
@@ -158,13 +165,11 @@ export async function handleFastlyRequest(
 
   const result = await handler.handleRequest(webRequest, {
     sourceCdn: "fastly",
-    clientIp: request.headers.get("fastly-client-ip") ?? undefined,
-    requestCountry: request.headers.get("fastly-client-country-code") ?? null,
-    requestAsn: parseAsn(asnHeader),
+    // Prefer caller-supplied values (Compute: event.client.*) over header fallbacks (VCL only).
+    clientIp: clientContext?.clientIp ?? request.headers.get("fastly-client-ip") ?? undefined,
+    requestCountry: clientContext?.requestCountry !== undefined ? clientContext.requestCountry : (request.headers.get("fastly-client-country-code") ?? null),
+    requestAsn: clientContext?.requestAsn !== undefined ? clientContext.requestAsn : parseAsn(asnHeader),
     tlsFingerprint: request.headers.get("fastly-client-ja3") ?? null,
-    // Fastly exposes only what VCL forwards as headers; the request.cf plumbing
-    // is Cloudflare-only, so the rest stay null. Unlike Cloudflare, Fastly does
-    // not rewrite Accept-Encoding, so the header is the genuine client value.
     cdnSignals: {
       accept_encoding: request.headers.get("accept-encoding"),
       tls_fingerprint_ja4: request.headers.get("fastly-client-ja4"),
