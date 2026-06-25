@@ -157,6 +157,15 @@ interface FastlyHandlerBaseOptions {
    * to the HTTP relay.
    */
   logEndpoint?: string;
+  /**
+   * Client IP address. On Fastly Compute, read from `event.client.address` and pass here —
+   * the header fallback (`fastly-client-ip`) is only set on VCL services, not Compute.
+   */
+  clientIp?: string;
+  /** Client country code (ISO 3166-1 alpha-2). On Compute: `event.client.geo.country_code`. */
+  requestCountry?: string | null;
+  /** Client ASN. On Compute: `event.client.geo.as_number`. */
+  requestAsn?: number | null;
 }
 
 interface FastlyHandlerWithRSL extends FastlyHandlerBaseOptions {
