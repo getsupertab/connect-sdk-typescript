@@ -116,6 +116,15 @@ interface FastlyHandlerBaseOptions {
      * to the HTTP relay.
      */
     logEndpoint?: string;
+    /**
+     * Client IP address. On Fastly Compute, read from `event.client.address` and pass here —
+     * the header fallback (`fastly-client-ip`) is only set on VCL services, not Compute.
+     */
+    clientIp?: string;
+    /** Client country code (ISO 3166-1 alpha-2). On Compute: `event.client.geo.country_code`. */
+    requestCountry?: string | null;
+    /** Client ASN. On Compute: `event.client.geo.as_number`. */
+    requestAsn?: number | null;
 }
 interface FastlyHandlerWithRSL extends FastlyHandlerBaseOptions {
     enableRSL: true;
@@ -227,6 +236,19 @@ interface HandleRequestContext {
  * @returns true if the request appears to be from a bot, false otherwise
  */
 declare function defaultBotDetector(request: Request): boolean;
+
+/**
+ * Fastly-only transport selection, owned by the Fastly handler (not the platform-agnostic
+ * SupertabConnect constructor). Returns a FastlyLogTransport when the merchant opted into
+ * native bot-events logging (`logEndpoint` set) and identity can be stamped (`merchantSystemUrn`);
+ * otherwise `undefined`, leaving the constructor to pick the HTTP relay / no-op.
+ */
+declare function selectFastlyAnalyticsTransport(opts: {
+    analyticsEnabled?: boolean;
+    logEndpoint?: string;
+    merchantSystemUrn?: string;
+    debug?: boolean;
+}): AnalyticsTransport | undefined;
 
 /**
  * SupertabConnect class provides higher level methods
@@ -366,4 +388,4 @@ declare class SupertabConnect {
     static cloudfrontHandleRequests<TRequest extends Record<string, any>>(event: CloudFrontRequestEvent<TRequest>, options: CloudfrontHandlerOptions): Promise<CloudFrontRequestResult<TRequest>>;
 }
 
-export { type AnalyticsEvent, type AnalyticsTransport, type BotDetector, CDNStatusDescription, type CloudFrontRequestEvent, type CloudFrontRequestResult, type CloudfrontHandlerOptions, EnforcementMode, type Env, type ExecutionContext, type FastlyHandlerOptions, HandlerAction, type HandlerResult, LicenseTokenInvalidReason, type RSLVerificationResult, SupertabConnect, type SupertabConnectConfig, UsageType, defaultBotDetector };
+export { type AnalyticsEvent, type AnalyticsTransport, type BotDetector, CDNStatusDescription, type CloudFrontRequestEvent, type CloudFrontRequestResult, type CloudfrontHandlerOptions, EnforcementMode, type Env, type ExecutionContext, type FastlyHandlerOptions, HandlerAction, type HandlerResult, LicenseTokenInvalidReason, type RSLVerificationResult, SupertabConnect, type SupertabConnectConfig, UsageType, defaultBotDetector, selectFastlyAnalyticsTransport };

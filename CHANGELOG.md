@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0-beta.2] — Fastly Compute client IP/geo fix
+
+> Patch on top of `2.1.0-beta.1`. Fixes empty `client_ip` / `request_country` /
+> `request_asn` in analytics rows on Fastly Compute. No API changes for VCL
+> services or other CDNs.
+
+### Fixed
+
+- **Fastly Compute client IP & geo** (#37). On Fastly Compute,
+  `event.client.address` and `event.client.geo` live on the `FetchEvent` and
+  are *not* injected as request headers (unlike VCL), so `client_ip` was always
+  `"::"` and `request_country` / `request_asn` were `null` in every row.
+  `FastlyHandlerOptions` now accepts `clientIp`, `requestCountry`, and
+  `requestAsn`; `fastlyHandleRequests` uses them when passed and falls back to
+  the VCL headers otherwise, so VCL services are unaffected. On Compute, pass
+  them from `event.client`:
+  ```js
+  const geo = event.client.geo;
+  SupertabConnect.fastlyHandleRequests(event.request, merchantApiKey, "origin", {
+    ...opts,
+    clientIp: event.client.address,
+    requestCountry: geo?.country_code ?? null,
+    requestAsn: geo?.as_number ?? null,
+  });
+  ```
+
 ## [2.1.0-beta.1] — Capture v2 signals + Fastly native logging
 
 > Additive analytics enrichment on top of `2.1.0-beta.0`. Analytics events now
