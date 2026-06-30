@@ -27,6 +27,8 @@ import {
   handleCloudfrontRequest,
   HandleRequestContext,
 } from "./cdn";
+import { verifyStatusChallenge } from "./status";
+import { SDK_VERSION } from "./version";
 import {
   CloudFrontRequestEvent,
   CloudFrontRequestResult,
@@ -85,6 +87,7 @@ export class SupertabConnect {
   private botDetector?: BotDetector;
   private debug!: boolean;
   private analyticsTransport!: AnalyticsTransport;
+  private analyticsEnabled!: boolean;
 
   private static _instance: SupertabConnect | null = null;
 
@@ -130,6 +133,7 @@ export class SupertabConnect {
     this.enforcement = config.enforcement ?? EnforcementMode.OBSERVE;
     this.botDetector = config.botDetector;
     this.debug = config.debug ?? false;
+    this.analyticsEnabled = config.analyticsEnabled ?? false;
     this.analyticsTransport = SupertabConnect.buildAnalyticsTransport(config);
 
     // Register this as the singleton instance
@@ -246,10 +250,45 @@ export class SupertabConnect {
    * @returns A promise that resolves with the handler result indicating ALLOW or BLOCK
    */
   async handleRequest(request: Request, context?: HandleRequestContext): Promise<HandlerResult> {
+    const url = new URL(request.url);
+    if (url.pathname === "/.well-known/supertab/status") {
+      const authHeader = request.headers.get("Authorization") ?? "";
+      const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+      const ok = token
+        ? await verifyStatusChallenge(token, {
+            expectedAudience: url.origin,
+            baseUrl: SupertabConnect.getBaseUrl(),
+            debug: this.debug,
+          })
+        : false;
+      if (!ok) {
+        return {
+          action: HandlerAction.RESPOND,
+          status: 404,
+          body: JSON.stringify({ supertab: true }),
+          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+        };
+      }
+      // merchantUrn is omitted until it is plumbed through HandleRequestContext or an instance field.
+      const body = JSON.stringify({
+        runtime: context?.sourceCdn ?? null,
+        sdkVersion: SDK_VERSION,
+        enforcement: this.enforcement,
+        eventReporting: this.analyticsEnabled,
+        servingLicenseXml: true,
+      });
+      return {
+        action: HandlerAction.RESPOND,
+        status: 200,
+        body,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      };
+    }
+
     const auth = request.headers.get("Authorization") || "";
     const token = auth.startsWith(LICENSE_PREFIX) ? auth.slice(LICENSE_PREFIX.length) : null;
     const hasToken = token !== null;
-    const url = request.url;
+    const rawUrl = request.url;
     const userAgent = request.headers.get("User-Agent") || "unknown";
 
     const requestId = context?.requestId ?? crypto.randomUUID();
@@ -297,7 +336,7 @@ export class SupertabConnect {
       }
       const verification = await verifyAndRecordEvent({
         token,
-        url,
+        url: rawUrl,
         userAgent,
         supertabBaseUrl: SupertabConnect.baseUrl,
         debug: this.debug,
@@ -319,7 +358,7 @@ export class SupertabConnect {
         return buildBlockResult({
           reason: verification.reason,
           error: verification.error,
-          requestUrl: url,
+          requestUrl: rawUrl,
         });
       }
       emit({
@@ -356,7 +395,7 @@ export class SupertabConnect {
         return buildBlockResult({
           reason: LicenseTokenInvalidReason.MISSING_TOKEN,
           error: "Authorization header missing or malformed",
-          requestUrl: url,
+          requestUrl: rawUrl,
         });
       case EnforcementMode.OBSERVE:
         emit({
@@ -365,7 +404,7 @@ export class SupertabConnect {
           finalAction: "observe",
           enforcementMode: this.enforcement,
         });
-        return buildSignalResult(url);
+        return buildSignalResult(rawUrl);
       default: // DISABLED
         emit({
           hasToken,
