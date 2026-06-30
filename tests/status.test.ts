@@ -46,6 +46,72 @@ describe("verifyStatusChallenge", () => {
       .sign(privateKey);
     expect(await verifyStatusChallenge(expiredToken, { expectedAudience: "https://acme.com", baseUrl: "https://api" })).toBe(false);
   });
+
+  it("retries with refreshed JWKS after key rotation (JwksKeyNotFoundError on first fetch)", async () => {
+    // Generate the signing key pair
+    const { publicKey, privateKey } = await generateKeyPair("ES256");
+    const jwk = await exportJWK(publicKey);
+    jwk.kid = "rotated-kid";
+    jwk.alg = "ES256";
+
+    // First fetch returns JWKS without the signing key (stale cache — old kid)
+    const staleJwks = { keys: [{ kid: "old-kid", alg: "ES256", kty: "EC" }] };
+    // Second fetch returns JWKS with the correct (rotated) key
+    const freshJwks = { keys: [jwk] };
+
+    const fetchSpy = vi.spyOn(jwks, "fetchPlatformJwks")
+      .mockResolvedValueOnce(staleJwks as never)
+      .mockResolvedValueOnce(freshJwks as never);
+
+    const clearCacheSpy = vi.spyOn(jwks, "clearJwksCache");
+
+    const token = await new SignJWT({ aud: "https://acme.com", purpose: "status-probe" })
+      .setProtectedHeader({ alg: "ES256", kid: "rotated-kid" })
+      .setIssuedAt()
+      .setExpirationTime("60s")
+      .sign(privateKey);
+
+    const result = await verifyStatusChallenge(token, {
+      expectedAudience: "https://acme.com",
+      baseUrl: "https://api",
+    });
+
+    expect(result).toBe(true);
+    expect(clearCacheSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    vi.restoreAllMocks();
+  });
+
+  it("resolves false (not throws) when BOTH fetches lack the signing key (retry exhausted)", async () => {
+    // Both fetches return JWKS without the signing key
+    const staleJwks = { keys: [{ kid: "old-kid", alg: "ES256", kty: "EC" }] };
+
+    const fetchSpy = vi.spyOn(jwks, "fetchPlatformJwks")
+      .mockResolvedValueOnce(staleJwks as never)
+      .mockResolvedValueOnce(staleJwks as never);
+
+    const clearCacheSpy = vi.spyOn(jwks, "clearJwksCache");
+
+    // Sign with a key whose kid matches neither fetch
+    const { privateKey } = await generateKeyPair("ES256");
+    const token = await new SignJWT({ aud: "https://acme.com", purpose: "status-probe" })
+      .setProtectedHeader({ alg: "ES256", kid: "rotated-kid" })
+      .setIssuedAt()
+      .setExpirationTime("60s")
+      .sign(privateKey);
+
+    const result = await verifyStatusChallenge(token, {
+      expectedAudience: "https://acme.com",
+      baseUrl: "https://api",
+    });
+
+    expect(result).toBe(false);
+    expect(clearCacheSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    vi.restoreAllMocks();
+  });
 });
 
 // ─── Recording transport for asserting no analytics emits on status requests ───

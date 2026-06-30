@@ -1,5 +1,5 @@
 import type { JWTHeaderParameters } from "jose";
-import { fetchPlatformJwks, JwksKeyNotFoundError } from "./jwks";
+import { fetchPlatformJwks, clearJwksCache, JwksKeyNotFoundError } from "./jwks";
 import { loadJwtVerify } from "./jose";
 
 export interface StatusChallengeOpts {
@@ -9,8 +9,10 @@ export interface StatusChallengeOpts {
 }
 
 export async function verifyStatusChallenge(token: string, opts: StatusChallengeOpts): Promise<boolean> {
-  try {
-    const jwks = await fetchPlatformJwks(opts.baseUrl, opts.debug ?? false);
+  const debug = opts.debug ?? false;
+
+  const verify = async (): Promise<boolean> => {
+    const jwks = await fetchPlatformJwks(opts.baseUrl, debug);
     const { jwtVerify } = await loadJwtVerify();
 
     const getKey = async (jwtHeader: JWTHeaderParameters) => {
@@ -28,7 +30,28 @@ export async function verifyStatusChallenge(token: string, opts: StatusChallenge
     });
 
     return payload["purpose"] === "status-probe";
-  } catch {
+  };
+
+  try {
+    return await verify();
+  } catch (error) {
+    if (error instanceof JwksKeyNotFoundError) {
+      if (debug) {
+        console.debug("Key not found in cached JWKS, clearing cache and retrying...");
+      }
+      clearJwksCache();
+      try {
+        return await verify();
+      } catch (retryError) {
+        if (debug) {
+          console.error("Status challenge verification failed after JWKS refresh:", retryError);
+        }
+        return false;
+      }
+    }
+    if (debug) {
+      console.error("Status challenge verification failed:", error);
+    }
     return false;
   }
 }
