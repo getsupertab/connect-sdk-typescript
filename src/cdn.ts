@@ -99,6 +99,7 @@ export async function handleCloudflareRequest(
   });
 
   switch (result.action) {
+    case HandlerAction.RESPOND:
     case HandlerAction.BLOCK:
       return new Response(result.body, {
         status: result.status,
@@ -177,6 +178,7 @@ export async function handleFastlyRequest(
   });
 
   switch (result.action) {
+    case HandlerAction.RESPOND:
     case HandlerAction.BLOCK:
       return new Response(result.body, {
         status: result.status,
@@ -236,7 +238,7 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
     tlsFingerprint: headers.get("cloudfront-viewer-ja3-fingerprint") ?? null,
   });
 
-  if (result.action === HandlerAction.BLOCK) {
+  if (result.action === HandlerAction.BLOCK || result.action === HandlerAction.RESPOND) {
     const responseHeaders: CloudFrontHeaders = {};
     Object.entries(result.headers).forEach(([key, value]) => {
       responseHeaders[key.toLowerCase()] = [{ key, value }];
