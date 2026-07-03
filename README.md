@@ -217,6 +217,34 @@ merchant identity in this path, so the SDK stamps it onto each row. If
 falls back to the HTTP relay. This option is Fastly-only; Cloudflare always uses
 the HTTP relay.
 
+## Status endpoint
+
+The SDK serves a self-report endpoint at `GET /.well-known/supertab/status` on
+your origin. It lets the Supertab Connect backend confirm a deployed SDK's live
+configuration — this powers the merchant portal's live-health view. It is served
+automatically across all runtimes; no configuration is required.
+
+The endpoint is gated: it returns config **only** to a request carrying a valid,
+backend-minted signed challenge (`Authorization: Bearer <challenge>`). Any other
+request — no challenge, or an invalid/expired one — gets a minimal
+`{ "supertab": true }` 404. Both responses set `Cache-Control: no-store`.
+
+On a valid challenge it returns the SDK's running config:
+
+```json
+{
+  "runtime": "cloudflare",
+  "sdkVersion": "2.1.0",
+  "enforcement": "observe",
+  "eventReporting": true
+}
+```
+
+It short-circuits at the top of request handling — before token verification, bot
+detection, and analytics — so a probe never triggers enforcement or emits an
+analytics event. Ensure your edge config lets this path reach the SDK rather than
+routing it elsewhere.
+
 ## Public API Reference
 
 ### `constructor(config: SupertabConnectConfig, reset?: boolean)`
@@ -275,7 +303,7 @@ Handles an incoming request end-to-end: extracts the license token from the `Aut
 - `request` (`Request`): The incoming HTTP request
 - `context` (`HandleRequestContext`, optional): Per-request context object. Carries the execution context (`ctx`) for non-blocking work, the `sourceCdn`, and CDN-supplied analytics signals (`clientIp`, `requestId`, `requestCountry`, `requestAsn`, `tlsFingerprint`).
 
-**Returns:** `HandlerResult` — either `{ action: "allow", headers? }` or `{ action: "block", status, body, headers }`. In observe mode, a bot without a token is allowed through with RSL signal headers (`X-RSL-Status: token_required`); the analytics event still records `final_action: "observe"`.
+**Returns:** `HandlerResult` — one of `{ action: "allow", headers? }`, `{ action: "block", status, body, headers }`, or `{ action: "respond", status, body, headers }` (the SDK serving its own response, e.g. the [status endpoint](#status-endpoint)). In observe mode, a bot without a token is allowed through with RSL signal headers (`X-RSL-Status: token_required`); the analytics event still records `final_action: "observe"`.
 
 ### `cloudflareHandleRequests(request, env, ctx): Promise<Response>` (static)
 
