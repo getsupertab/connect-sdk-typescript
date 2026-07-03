@@ -63,16 +63,11 @@ async function probeStatus(headers: Record<string, string>): Promise<Response> {
 }
 
 describeStatus("Self-report status endpoint (reachability)", () => {
-  it("returns 404 {supertab:true} with no-store when no challenge is present", async () => {
-    const response = await probeStatus({});
-    expect(response.status).toBe(404);
-    expect(response.headers.get("Cache-Control")).toBe("no-store");
-    const body = await response.json();
-    expect(body).toEqual({ supertab: true });
-  }, 30000);
-
-  it("returns 404 {supertab:true} for an invalid challenge", async () => {
-    const response = await probeStatus({ Authorization: "Bearer not.a.real.jwt" });
+  it.each([
+    { label: "no challenge", headers: {} },
+    { label: "invalid challenge", headers: { Authorization: "Bearer not.a.real.jwt" } },
+  ])("returns 404 {supertab:true} with no-store ($label)", async ({ headers }) => {
+    const response = await probeStatus(headers);
     expect(response.status).toBe(404);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     const body = await response.json();

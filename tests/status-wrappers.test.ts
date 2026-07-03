@@ -1,31 +1,11 @@
 /**
- * Tests for Task S3: RESPOND HandlerAction wired through CDN wrappers.
- *
- * These tests verify that when handleRequest returns a RESPOND result
- * (e.g., for /.well-known/supertab/status), the CDN wrappers return
- * a real HTTP response WITHOUT forwarding to origin (no fetch call).
+ * When handleRequest returns a RESPOND result (e.g. for /.well-known/supertab/status),
+ * the CDN wrappers must return a real HTTP response WITHOUT forwarding to origin.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as statusModule from "../src/status";
 import { SupertabConnect, EnforcementMode } from "../src/index";
-import { ExecutionContext, CloudFrontRequestEvent, CloudFrontHeaders } from "../src/types";
-
-// A minimal ExecutionContext stub that satisfies the interface
-function makeCtx(): ExecutionContext {
-  return { waitUntil: vi.fn() };
-}
-
-// Build a Request to /.well-known/supertab/status with a bearer token
-function makeStatusRequest(origin: string, token?: string): Request {
-  const headers: Record<string, string> = {};
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-  return new Request(`${origin}/.well-known/supertab/status`, {
-    method: "GET",
-    headers,
-  });
-}
+import { makeCtx, makeStatusRequest, makeCfStatusEvent } from "./helpers/status";
 
 describe("Cloudflare wrapper — RESPOND action (status endpoint)", () => {
   beforeEach(() => {
@@ -45,7 +25,7 @@ describe("Cloudflare wrapper — RESPOND action (status endpoint)", () => {
       new Error("fetch should NOT be called for RESPOND")
     );
 
-    const request = makeStatusRequest("https://acme.com", "valid-token");
+    const request = makeStatusRequest("valid-token");
     const ctx = makeCtx();
     const env = { MERCHANT_API_KEY: "test-api-key" };
 
@@ -81,7 +61,7 @@ describe("Cloudflare wrapper — RESPOND action (status endpoint)", () => {
       new Error("fetch should NOT be called for RESPOND")
     );
 
-    const request = makeStatusRequest("https://acme.com", "bad-token");
+    const request = makeStatusRequest("bad-token");
     const ctx = makeCtx();
     const env = { MERCHANT_API_KEY: "test-api-key" };
 
@@ -112,36 +92,11 @@ describe("CloudFront wrapper — RESPOND action (status endpoint)", () => {
     vi.restoreAllMocks();
   });
 
-  // The status probe carries Authorization: Bearer, NOT x-license-auth. The wrapper's
-  // early "no x-license-auth → pass to origin" short-circuit must not swallow it.
-  function makeCfStatusEvent(host: string, token?: string): CloudFrontRequestEvent {
-    const headers: CloudFrontHeaders = { host: [{ key: "Host", value: host }] };
-    if (token) {
-      headers["authorization"] = [{ key: "Authorization", value: `Bearer ${token}` }];
-    }
-    return {
-      Records: [
-        {
-          cf: {
-            config: { requestId: "req-1" },
-            request: {
-              uri: "/.well-known/supertab/status",
-              method: "GET",
-              querystring: "",
-              headers,
-              clientIp: "1.2.3.4",
-            },
-          },
-        },
-      ],
-    };
-  }
-
   it("reaches handleRequest and returns a 200 status response (valid challenge, no x-license-auth)", async () => {
     vi.spyOn(statusModule, "verifyStatusChallenge").mockResolvedValue(true);
 
     const result = await SupertabConnect.cloudfrontHandleRequests(
-      makeCfStatusEvent("acme.com", "valid-token"),
+      makeCfStatusEvent("valid-token"),
       { apiKey: "merchant-key", enforcement: EnforcementMode.OBSERVE }
     );
 
@@ -157,7 +112,7 @@ describe("CloudFront wrapper — RESPOND action (status endpoint)", () => {
     vi.spyOn(statusModule, "verifyStatusChallenge").mockResolvedValue(false);
 
     const result = await SupertabConnect.cloudfrontHandleRequests(
-      makeCfStatusEvent("acme.com", "bad-token"),
+      makeCfStatusEvent("bad-token"),
       { apiKey: "merchant-key" }
     );
 

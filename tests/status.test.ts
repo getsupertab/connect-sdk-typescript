@@ -5,8 +5,7 @@ import { verifyStatusChallenge } from "../src/status";
 import * as statusModule from "../src/status";
 import { SupertabConnect, HandlerAction } from "../src/index";
 import { EnforcementMode } from "../src/types";
-import { AnalyticsEvent, AnalyticsTransport } from "../src/analytics/types";
-import { ExecutionContext } from "../src/types";
+import { makeStatusRequest, RecordingTransport } from "./helpers/status";
 
 async function setup() {
   const { publicKey, privateKey } = await generateKeyPair("ES256");
@@ -114,15 +113,6 @@ describe("verifyStatusChallenge", () => {
   });
 });
 
-// ─── Recording transport for asserting no analytics emits on status requests ───
-
-class RecordingTransport implements AnalyticsTransport {
-  public events: AnalyticsEvent[] = [];
-  emit(event: AnalyticsEvent, _ctx?: ExecutionContext): void {
-    this.events.push(event);
-  }
-}
-
 describe("handleRequest — /.well-known/supertab/status branch", () => {
   beforeEach(() => {
     SupertabConnect.resetInstance();
@@ -132,17 +122,6 @@ describe("handleRequest — /.well-known/supertab/status branch", () => {
     SupertabConnect.resetInstance();
     vi.restoreAllMocks();
   });
-
-  function makeStatusRequest(bearerToken?: string): Request {
-    const headers: Record<string, string> = {};
-    if (bearerToken) {
-      headers["Authorization"] = `Bearer ${bearerToken}`;
-    }
-    return new Request("https://acme.com/.well-known/supertab/status", {
-      method: "GET",
-      headers,
-    });
-  }
 
   it("returns RESPOND with status 200 and correct payload on valid challenge", async () => {
     vi.spyOn(statusModule, "verifyStatusChallenge").mockResolvedValue(true);
@@ -165,6 +144,8 @@ describe("handleRequest — /.well-known/supertab/status branch", () => {
     const body = JSON.parse(result.body);
     expect(body.enforcement).toBe(EnforcementMode.ENFORCE);
     expect(body.eventReporting).toBe(true);
+    // No context passed → runtime is null.
+    expect(body.runtime).toBeNull();
     expect(body).not.toHaveProperty("servingLicenseXml");
     expect(body).not.toHaveProperty("merchantUrn");
 
@@ -172,7 +153,7 @@ describe("handleRequest — /.well-known/supertab/status branch", () => {
     expect(result.headers["Content-Type"]).toBe("application/json");
   });
 
-  it("includes runtime from context.sourceCdn when provided", async () => {
+  it("reports runtime from context.sourceCdn and eventReporting=false when analytics is off", async () => {
     vi.spyOn(statusModule, "verifyStatusChallenge").mockResolvedValue(true);
 
     const sdk = new SupertabConnect({ apiKey: "merchant-key" }, true);
@@ -183,31 +164,6 @@ describe("handleRequest — /.well-known/supertab/status branch", () => {
 
     const body = JSON.parse(result.body);
     expect(body.runtime).toBe("cloudflare");
-  });
-
-  it("includes runtime=null when context is absent", async () => {
-    vi.spyOn(statusModule, "verifyStatusChallenge").mockResolvedValue(true);
-
-    const sdk = new SupertabConnect({ apiKey: "merchant-key" }, true);
-    const result = await sdk.handleRequest(makeStatusRequest("valid-token"));
-
-    expect(result.action).toBe(HandlerAction.RESPOND);
-    if (result.action !== HandlerAction.RESPOND) return;
-
-    const body = JSON.parse(result.body);
-    expect(body.runtime).toBeNull();
-  });
-
-  it("eventReporting=false when analyticsEnabled is not set", async () => {
-    vi.spyOn(statusModule, "verifyStatusChallenge").mockResolvedValue(true);
-
-    const sdk = new SupertabConnect({ apiKey: "merchant-key" }, true);
-    const result = await sdk.handleRequest(makeStatusRequest("valid-token"));
-
-    expect(result.action).toBe(HandlerAction.RESPOND);
-    if (result.action !== HandlerAction.RESPOND) return;
-
-    const body = JSON.parse(result.body);
     expect(body.eventReporting).toBe(false);
   });
 
@@ -242,8 +198,11 @@ describe("handleRequest — /.well-known/supertab/status branch", () => {
     expect(verifySpy).not.toHaveBeenCalled();
   });
 
-  it("does NOT emit any analytics events for a status request (valid challenge)", async () => {
-    vi.spyOn(statusModule, "verifyStatusChallenge").mockResolvedValue(true);
+  it.each([
+    { label: "valid challenge", valid: true, token: "valid-token" },
+    { label: "invalid challenge", valid: false, token: "bad-token" },
+  ])("does NOT emit any analytics events for a status request ($label)", async ({ valid, token }) => {
+    vi.spyOn(statusModule, "verifyStatusChallenge").mockResolvedValue(valid);
 
     const transport = new RecordingTransport();
     const sdk = new SupertabConnect({
@@ -252,22 +211,7 @@ describe("handleRequest — /.well-known/supertab/status branch", () => {
       analyticsTransport: transport,
     }, true);
 
-    await sdk.handleRequest(makeStatusRequest("valid-token"));
-
-    expect(transport.events).toHaveLength(0);
-  });
-
-  it("does NOT emit any analytics events for a status request (invalid challenge)", async () => {
-    vi.spyOn(statusModule, "verifyStatusChallenge").mockResolvedValue(false);
-
-    const transport = new RecordingTransport();
-    const sdk = new SupertabConnect({
-      apiKey: "merchant-key",
-      enforcement: EnforcementMode.OBSERVE,
-      analyticsTransport: transport,
-    }, true);
-
-    await sdk.handleRequest(makeStatusRequest("bad-token"));
+    await sdk.handleRequest(makeStatusRequest(token));
 
     expect(transport.events).toHaveLength(0);
   });
