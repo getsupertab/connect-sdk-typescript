@@ -40,13 +40,19 @@ declare global {
 }
 declare enum HandlerAction {
     ALLOW = "allow",
-    BLOCK = "block"
+    BLOCK = "block",
+    RESPOND = "respond"
 }
 type HandlerResult = {
     action: HandlerAction.ALLOW;
     headers?: Record<string, string>;
 } | {
     action: HandlerAction.BLOCK;
+    status: number;
+    body: string;
+    headers: Record<string, string>;
+} | {
+    action: HandlerAction.RESPOND;
     status: number;
     body: string;
     headers: Record<string, string>;
@@ -262,6 +268,7 @@ declare class SupertabConnect {
     private botDetector?;
     private debug;
     private analyticsTransport;
+    private analyticsEnabled;
     private static _instance;
     /**
      * Create a new SupertabConnect instance (singleton).

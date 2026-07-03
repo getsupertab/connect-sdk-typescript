@@ -77,11 +77,13 @@ export interface FetchOptions extends RequestInit {
 export enum HandlerAction {
   ALLOW = "allow",
   BLOCK = "block",
+  RESPOND = "respond",
 }
 
 export type HandlerResult =
   | { action: HandlerAction.ALLOW; headers?: Record<string, string> }
-  | { action: HandlerAction.BLOCK; status: number; body: string; headers: Record<string, string> };
+  | { action: HandlerAction.BLOCK; status: number; body: string; headers: Record<string, string> }
+  | { action: HandlerAction.RESPOND; status: number; body: string; headers: Record<string, string> };
 
 export enum CDNStatusDescription {
   Unauthorized = "Unauthorized",
