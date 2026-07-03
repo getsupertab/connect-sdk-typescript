@@ -165,7 +165,7 @@ describe("handleRequest — /.well-known/supertab/status branch", () => {
     const body = JSON.parse(result.body);
     expect(body.enforcement).toBe(EnforcementMode.ENFORCE);
     expect(body.eventReporting).toBe(true);
-    expect(body.servingLicenseXml).toBe(true);
+    expect(body).not.toHaveProperty("servingLicenseXml");
     expect(body).not.toHaveProperty("merchantUrn");
 
     expect(result.headers["Cache-Control"]).toBe("no-store");

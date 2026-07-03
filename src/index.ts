@@ -250,39 +250,41 @@ export class SupertabConnect {
    * @returns A promise that resolves with the handler result indicating ALLOW or BLOCK
    */
   async handleRequest(request: Request, context?: HandleRequestContext): Promise<HandlerResult> {
-    const url = new URL(request.url);
-    if (url.pathname === "/.well-known/supertab/status") {
-      const authHeader = request.headers.get("Authorization") ?? "";
-      const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-      const ok = token
-        ? await verifyStatusChallenge(token, {
-            expectedAudience: url.origin,
-            baseUrl: SupertabConnect.getBaseUrl(),
-            debug: this.debug,
-          })
-        : false;
-      if (!ok) {
+    // Cheap substring pre-filter so the common request path skips URL parsing.
+    if (request.url.includes("/.well-known/supertab/status")) {
+      const url = new URL(request.url);
+      if (url.pathname === "/.well-known/supertab/status") {
+        const authHeader = request.headers.get("Authorization") ?? "";
+        const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+        const ok = token
+          ? await verifyStatusChallenge(token, {
+              expectedAudience: url.origin,
+              baseUrl: SupertabConnect.getBaseUrl(),
+              debug: this.debug,
+            })
+          : false;
+        if (!ok) {
+          return {
+            action: HandlerAction.RESPOND,
+            status: 404,
+            body: JSON.stringify({ supertab: true }),
+            headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+          };
+        }
+        // merchantUrn is omitted until it is plumbed through HandleRequestContext or an instance field.
+        const body = JSON.stringify({
+          runtime: context?.sourceCdn ?? null,
+          sdkVersion: SDK_VERSION,
+          enforcement: this.enforcement,
+          eventReporting: this.analyticsEnabled,
+        });
         return {
           action: HandlerAction.RESPOND,
-          status: 404,
-          body: JSON.stringify({ supertab: true }),
+          status: 200,
+          body,
           headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
         };
       }
-      // merchantUrn is omitted until it is plumbed through HandleRequestContext or an instance field.
-      const body = JSON.stringify({
-        runtime: context?.sourceCdn ?? null,
-        sdkVersion: SDK_VERSION,
-        enforcement: this.enforcement,
-        eventReporting: this.analyticsEnabled,
-        servingLicenseXml: true,
-      });
-      return {
-        action: HandlerAction.RESPOND,
-        status: 200,
-        body,
-        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-      };
     }
 
     const auth = request.headers.get("Authorization") || "";
@@ -553,8 +555,11 @@ export class SupertabConnect {
   ): Promise<CloudFrontRequestResult<TRequest>> {
     const request = event?.Records?.[0]?.cf?.request as TRequest ?? {} as CloudFrontRequestResult<TRequest>;
     try {
+      // The self-report status probe carries an Authorization: Bearer challenge, not
+      // x-license-auth, so it must be let through to handleRequest rather than passed to origin.
+      const isStatusProbe = request.uri === "/.well-known/supertab/status";
       const license_auth_header = request.headers?.["x-license-auth"];
-      if (!license_auth_header) {
+      if (!license_auth_header && !isStatusProbe) {
         // No license auth header means the request is either from a human or from an unidentifiable bot.
         // No reasons to waste compute resources on the rest of the checks.
         return request;

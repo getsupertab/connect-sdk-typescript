@@ -8,7 +8,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as statusModule from "../src/status";
 import { SupertabConnect, EnforcementMode } from "../src/index";
-import { ExecutionContext } from "../src/types";
+import { ExecutionContext, CloudFrontRequestEvent, CloudFrontHeaders } from "../src/types";
 
 // A minimal ExecutionContext stub that satisfies the interface
 function makeCtx(): ExecutionContext {
@@ -65,8 +65,8 @@ describe("Cloudflare wrapper — RESPOND action (status endpoint)", () => {
     expect(body).toMatchObject({
       sdkVersion: expect.any(String),
       enforcement: EnforcementMode.OBSERVE,
-      servingLicenseXml: true,
     });
+    expect(body).not.toHaveProperty("servingLicenseXml");
 
     // Origin fetch must NOT have been called
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -99,5 +99,70 @@ describe("Cloudflare wrapper — RESPOND action (status endpoint)", () => {
 
     // Origin fetch must NOT have been called
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("CloudFront wrapper — RESPOND action (status endpoint)", () => {
+  beforeEach(() => {
+    SupertabConnect.resetInstance();
+  });
+
+  afterEach(() => {
+    SupertabConnect.resetInstance();
+    vi.restoreAllMocks();
+  });
+
+  // The status probe carries Authorization: Bearer, NOT x-license-auth. The wrapper's
+  // early "no x-license-auth → pass to origin" short-circuit must not swallow it.
+  function makeCfStatusEvent(host: string, token?: string): CloudFrontRequestEvent {
+    const headers: CloudFrontHeaders = { host: [{ key: "Host", value: host }] };
+    if (token) {
+      headers["authorization"] = [{ key: "Authorization", value: `Bearer ${token}` }];
+    }
+    return {
+      Records: [
+        {
+          cf: {
+            config: { requestId: "req-1" },
+            request: {
+              uri: "/.well-known/supertab/status",
+              method: "GET",
+              querystring: "",
+              headers,
+              clientIp: "1.2.3.4",
+            },
+          },
+        },
+      ],
+    };
+  }
+
+  it("reaches handleRequest and returns a 200 status response (valid challenge, no x-license-auth)", async () => {
+    vi.spyOn(statusModule, "verifyStatusChallenge").mockResolvedValue(true);
+
+    const result = await SupertabConnect.cloudfrontHandleRequests(
+      makeCfStatusEvent("acme.com", "valid-token"),
+      { apiKey: "merchant-key", enforcement: EnforcementMode.OBSERVE }
+    );
+
+    // A CloudFront response result has `status`; a pass-through result would be the raw request (has `uri`).
+    expect(result).toHaveProperty("status", "200");
+    expect(result).not.toHaveProperty("uri");
+    const body = JSON.parse((result as { body: string }).body);
+    expect(body).toMatchObject({ enforcement: EnforcementMode.OBSERVE });
+    expect(body).not.toHaveProperty("servingLicenseXml");
+  });
+
+  it("returns a 404 status response for an invalid challenge (still reached handleRequest)", async () => {
+    vi.spyOn(statusModule, "verifyStatusChallenge").mockResolvedValue(false);
+
+    const result = await SupertabConnect.cloudfrontHandleRequests(
+      makeCfStatusEvent("acme.com", "bad-token"),
+      { apiKey: "merchant-key" }
+    );
+
+    expect(result).toHaveProperty("status", "404");
+    const body = JSON.parse((result as { body: string }).body);
+    expect(body).toEqual({ supertab: true });
   });
 });
