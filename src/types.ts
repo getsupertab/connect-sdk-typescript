@@ -143,6 +143,27 @@ export type RSLVerificationResult = {
   error?: string;
 };
 
+/**
+ * Minimal shape of the Fastly Compute `FetchEvent` that `fastlyHandleRequests` reads.
+ * The runtime's real `FetchEvent` is structurally compatible, so callers pass the event
+ * directly. Named distinctly to avoid colliding with any DOM/WebWorker `FetchEvent` lib type.
+ */
+export interface FastlyGeolocation {
+  country_code: string | null;
+  as_number: number | null;
+}
+
+export interface FastlyClientInfo {
+  address: string;
+  geo: FastlyGeolocation | null;
+  tlsJA3MD5: string | null;
+}
+
+export interface FastlyFetchEvent {
+  request: Request;
+  client: FastlyClientInfo;
+}
+
 interface FastlyHandlerBaseOptions {
   botDetector?: BotDetector;
   enforcement?: EnforcementMode;
@@ -159,15 +180,6 @@ interface FastlyHandlerBaseOptions {
    * to the HTTP relay.
    */
   logEndpoint?: string;
-  /**
-   * Client IP address. On Fastly Compute, read from `event.client.address` and pass here —
-   * the header fallback (`fastly-client-ip`) is only set on VCL services, not Compute.
-   */
-  clientIp?: string;
-  /** Client country code (ISO 3166-1 alpha-2). On Compute: `event.client.geo.country_code`. */
-  requestCountry?: string | null;
-  /** Client ASN. On Compute: `event.client.geo.as_number`. */
-  requestAsn?: number | null;
 }
 
 interface FastlyHandlerWithRSL extends FastlyHandlerBaseOptions {

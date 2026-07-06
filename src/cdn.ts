@@ -141,12 +141,13 @@ export async function handleFastlyRequest(
     baseUrl: string;
     merchantSystemUrn: string;
   },
-  // On Fastly Compute, client IP and geo are on the FetchEvent, not request headers.
-  // The caller (fastlyHandleRequests) passes them through from event.client.
+  // On Fastly Compute, client IP, geo, and JA3 are on the FetchEvent, not request
+  // headers. The caller (fastlyHandleRequests) passes them through from event.client.
   clientContext?: {
     clientIp?: string;
     requestCountry?: string | null;
     requestAsn?: number | null;
+    tlsFingerprint?: string | null;
   }
 ): Promise<Response> {
   const originalUrl = request.headers.get("x-original-request-url") || request.url;
@@ -170,9 +171,11 @@ export async function handleFastlyRequest(
     clientIp: clientContext?.clientIp ?? request.headers.get("fastly-client-ip") ?? undefined,
     requestCountry: clientContext?.requestCountry !== undefined ? clientContext.requestCountry : (request.headers.get("fastly-client-country-code") ?? null),
     requestAsn: clientContext?.requestAsn !== undefined ? clientContext.requestAsn : parseAsn(asnHeader),
-    tlsFingerprint: request.headers.get("fastly-client-ja3") ?? null,
+    // JA3 comes from event.client.tlsJA3MD5 on Compute; the header is VCL-only.
+    tlsFingerprint: clientContext?.tlsFingerprint !== undefined ? clientContext.tlsFingerprint : (request.headers.get("fastly-client-ja3") ?? null),
     cdnSignals: {
       accept_encoding: request.headers.get("accept-encoding"),
+      // No event field for JA4 in the Compute runtime — header (VCL) only.
       tls_fingerprint_ja4: request.headers.get("fastly-client-ja4"),
     },
   });

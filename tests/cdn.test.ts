@@ -1,5 +1,19 @@
 import { describe, it, expect } from "vitest";
-import { parseAsn, extractCloudflareCdnSignals } from "../src/cdn";
+import { parseAsn, extractCloudflareCdnSignals, handleFastlyRequest } from "../src/cdn";
+import { HandlerAction } from "../src/types";
+
+// Records the context handed to handleRequest and short-circuits with a RESPOND
+// so no origin fetch happens during the test.
+function recordingHandler() {
+  const calls: any[] = [];
+  return {
+    calls,
+    handleRequest: async (_req: Request, context?: any) => {
+      calls.push(context);
+      return { action: HandlerAction.RESPOND, status: 200, body: "ok", headers: {} };
+    },
+  };
+}
 
 describe("extractCloudflareCdnSignals", () => {
   it("maps free-plan request.cf fields, parsing tlsClientHelloLength to an int", () => {
@@ -74,5 +88,46 @@ describe("parseAsn", () => {
 
   it("returns null for undefined", () => {
     expect(parseAsn(undefined)).toBeNull();
+  });
+});
+
+describe("handleFastlyRequest client signals", () => {
+  const req = () =>
+    new Request("https://example.com/article", {
+      headers: {
+        // VCL-only header fallbacks — should lose to Compute event values.
+        "fastly-client-ip": "10.0.0.1",
+        "fastly-client-country-code": "US",
+        "fastly-client-asn": "AS7018",
+        "fastly-client-ja3": "ja3-from-header",
+      },
+    });
+
+  it("prefers event.client signals passed via clientContext over the VCL headers", async () => {
+    const handler = recordingHandler();
+    await handleFastlyRequest(handler, req(), "origin", undefined, {
+      clientIp: "203.0.113.9",
+      requestCountry: "DE",
+      requestAsn: 3320,
+      tlsFingerprint: "ja3-from-event",
+    });
+
+    const ctx = handler.calls[0];
+    expect(ctx.clientIp).toBe("203.0.113.9");
+    expect(ctx.requestCountry).toBe("DE");
+    expect(ctx.requestAsn).toBe(3320);
+    expect(ctx.tlsFingerprint).toBe("ja3-from-event");
+  });
+
+  it("falls back to the fastly-client-ja3 header when clientContext has no fingerprint", async () => {
+    const handler = recordingHandler();
+    await handleFastlyRequest(handler, req(), "origin", undefined, {
+      clientIp: "203.0.113.9",
+      requestCountry: "DE",
+      requestAsn: 3320,
+      // tlsFingerprint omitted — VCL header should win.
+    });
+
+    expect(handler.calls[0].tlsFingerprint).toBe("ja3-from-header");
   });
 });

@@ -10,6 +10,7 @@ import {
   ExecutionContext,
   Env,
   FastlyHandlerOptions,
+  FastlyFetchEvent,
 } from "./types";
 import {
   obtainLicenseToken as obtainLicenseTokenHelper,
@@ -64,6 +65,7 @@ export type {
   BotDetector,
   HandlerResult,
   FastlyHandlerOptions,
+  FastlyFetchEvent,
   CloudFrontRequestEvent,
   CloudFrontRequestResult,
   CloudfrontHandlerOptions,
@@ -489,7 +491,7 @@ export class SupertabConnect {
 
   /**
    * Handle incoming requests for Fastly Compute.
-   * @param request The incoming Fastly request
+   * @param event The Fastly `FetchEvent` — client IP, geo, and JA3 are read from `event.client`.
    * @param merchantApiKey The merchant API key for authentication
    * @param originBackend The Fastly backend name to forward allowed requests to
    * @param options Optional configuration items
@@ -499,13 +501,14 @@ export class SupertabConnect {
    * @param options.analyticsEnabled Toggle relay analytics emission (default: false)
    */
   static async fastlyHandleRequests(
-    request: Request,
+    event: FastlyFetchEvent,
     merchantApiKey: string,
     originBackend: string,
     options: FastlyHandlerOptions = {}
   ): Promise<Response> {
+    const request = event.request;
     try {
-      const { botDetector, enforcement, analyticsEnabled, merchantSystemUrn, logEndpoint, clientIp, requestCountry, requestAsn } = options;
+      const { botDetector, enforcement, analyticsEnabled, merchantSystemUrn, logEndpoint } = options;
 
       // Fastly owns its transport choice here, rather than the shared constructor sniffing
       // globalThis.fastly: native bot-events logging when opted in, else the constructor's relay.
@@ -529,12 +532,20 @@ export class SupertabConnect {
         };
       }
   
+      // On Fastly Compute these signals live on the FetchEvent, not on request
+      // headers (the fastly-client-* headers only exist on VCL services).
+      const client = event.client;
       return await handleFastlyRequest(
         instance,
         request,
         originBackend,
         rslOptions,
-        { clientIp, requestCountry, requestAsn }
+        {
+          clientIp: client.address,
+          requestCountry: client.geo?.country_code ?? null,
+          requestAsn: client.geo?.as_number ?? null,
+          tlsFingerprint: client.tlsJA3MD5 ?? null,
+        }
       );
     } catch (err) {
       console.error("[SupertabConnect] fastlyHandleRequests failed:", err);

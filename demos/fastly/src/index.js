@@ -26,7 +26,7 @@ addEventListener("fetch", (event) =>
     }
 
     return SupertabConnect.fastlyHandleRequests(
-      event.request,
+      event,
       MERCHANT_API_KEY,
       "origin",
       {
