@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.1.0] — 2026-07-03
+## [2.1.0] — 2026-07-06
 
 > Relay-based analytics, richer edge signals, a self-report status endpoint, and
 > Fastly native logging, on top of 2.0.2. **Includes breaking API changes**
