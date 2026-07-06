@@ -7,39 +7,121 @@ import {
   CloudFrontRequestEvent,
   CloudFrontRequestResult,
 } from "./types";
+import { CdnRequestSignals } from "./analytics/types";
 import { hostRSLicenseXML } from "./license";
+
+/** Parse a CDN ASN header (e.g. "13335" or "AS13335") to a positive integer, or null. */
+export function parseAsn(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  const n = Number(raw.trim().replace(/^as/i, ""));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Coerce a request.cf value to a non-empty string, or null. */
+function toStringOrNull(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  return String(value);
+}
+
+/** Coerce a request.cf value (possibly a numeric string) to an integer, or null. */
+function toIntOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = typeof value === "number" ? value : parseInt(String(value), 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Map Cloudflare's `request.cf` plumbing onto the Capture-v2 signal contract.
+ * Fail-open: pure field reads, never throws. Free-plan fields populate; the
+ * Enterprise-only JA4 stays null until a zone upgrades (defined now so the data
+ * flows the day it does — it is unbackfillable). `tlsClientHelloLength` arrives
+ * as a string and is parsed to an int.
+ */
+export function extractCloudflareCdnSignals(cf: Record<string, any>): CdnRequestSignals {
+  return {
+    accept_encoding: toStringOrNull(cf.clientAcceptEncoding),
+    http_protocol: toStringOrNull(cf.httpProtocol),
+    tls_version: toStringOrNull(cf.tlsVersion),
+    tls_cipher: toStringOrNull(cf.tlsCipher),
+    tls_client_hello_length: toIntOrNull(cf.tlsClientHelloLength),
+    tls_client_extensions_sha1: toStringOrNull(cf.tlsClientExtensionsSha1),
+    as_organization: toStringOrNull(cf.asOrganization),
+    client_tcp_rtt: toIntOrNull(cf.clientTcpRtt),
+    cdn_verified_bot_category: toStringOrNull(cf.verifiedBotCategory),
+    request_priority: toStringOrNull(cf.requestPriority),
+    tls_fingerprint_ja4: toStringOrNull(cf.botManagement?.ja4),
+  };
+}
+
+export interface HandleRequestContext {
+  ctx?: ExecutionContext;
+  // Omitted when the request did not pass through a CDN (e.g. invoked directly via the SDK).
+  sourceCdn?: "cloudflare" | "fastly" | "cloudfront";
+  clientIp?: string;
+  requestId?: string;
+  requestCountry?: string | null;
+  requestAsn?: number | null;
+  tlsFingerprint?: string | null;
+  // Capture-v2 CDN plumbing not derivable from the portable Request.
+  cdnSignals?: CdnRequestSignals;
+}
 
 // Interface for what the CDN handlers need - avoids circular dependency
 interface RequestHandler {
-  handleRequest(request: Request, ctx?: ExecutionContext): Promise<HandlerResult>;
+  handleRequest(request: Request, context?: HandleRequestContext): Promise<HandlerResult>;
+}
+
+function applyResponseHeaders(response: Response, headers?: Record<string, string>): Response {
+  if (!headers) return response;
+  const merged = new Response(response.body, response);
+  for (const [key, value] of Object.entries(headers)) {
+    merged.headers.set(key, value);
+  }
+  return merged;
 }
 
 export async function handleCloudflareRequest(
   handler: RequestHandler,
   request: Request,
-  ctx: ExecutionContext
+  ctx: ExecutionContext,
+  originUrl?: string
 ): Promise<Response> {
-  const result = await handler.handleRequest(request, ctx);
+  const cf = (request as unknown as { cf?: Record<string, any> }).cf;
+  const result = await handler.handleRequest(request, {
+    ctx,
+    sourceCdn: "cloudflare",
+    requestId: request.headers.get("cf-ray") ?? undefined,
+    clientIp: request.headers.get("cf-connecting-ip") ?? undefined,
+    requestCountry: request.headers.get("cf-ipcountry") ?? cf?.country ?? null,
+    requestAsn: typeof cf?.asn === "number" ? cf.asn : null,
+    tlsFingerprint: cf?.botManagement?.ja3Hash ?? null,
+    cdnSignals: cf ? extractCloudflareCdnSignals(cf) : undefined,
+  });
 
-  if (result.action === HandlerAction.BLOCK) {
-    return new Response(result.body, {
-      status: result.status,
-      headers: new Headers(result.headers),
-    });
-  }
-
-  // action === HandlerAction.ALLOW
-  const originResponse = await fetch(request);
-
-  if (result.headers) {
-    const response = new Response(originResponse.body, originResponse);
-    for (const [key, value] of Object.entries(result.headers)) {
-      response.headers.set(key, value);
+  switch (result.action) {
+    case HandlerAction.RESPOND:
+    case HandlerAction.BLOCK:
+      return new Response(result.body, {
+        status: result.status,
+        headers: new Headers(result.headers),
+      });
+    case HandlerAction.ALLOW: {
+      // When `originUrl` is provided, forward to that host while preserving
+      // path / query / method / headers / body. Decouples validation URL
+      // (request.url, used for token audience checks) from fetch destination.
+      // Production Cloudflare deployments can omit this — Workers Routes put
+      // the Worker on the publisher's hostname, so `fetch(request)` already
+      // resolves to the origin via the edge.
+      const fetchTarget = originUrl
+        ? new Request(
+            `${new URL(originUrl).origin}${new URL(request.url).pathname}${new URL(request.url).search}`,
+            request
+          )
+        : request;
+      const originResponse = await fetch(fetchTarget);
+      return applyResponseHeaders(originResponse, result.headers);
     }
-    return response;
   }
-
-  return originResponse;
 }
 
 /**
@@ -49,7 +131,7 @@ export async function handleCloudflareRequest(
  * @param originBackend Fastly backend name used when forwarding allowed requests to origin.
  * @param rslOptions Optional configuration for serving `/license.xml` directly from the edge.
  * @param rslOptions.baseUrl Base URL used when generating the hosted license XML response.
- * @param rslOptions.merchantSystemUrn Merchant system URN for fetching License from Supertab Connect
+ * @param rslOptions.merchantSystemUrn Merchant system URN for fetching the license from Supertab Connect.
  */
 export async function handleFastlyRequest(
   handler: RequestHandler,
@@ -58,6 +140,13 @@ export async function handleFastlyRequest(
   rslOptions?: {
     baseUrl: string;
     merchantSystemUrn: string;
+  },
+  // On Fastly Compute, client IP and geo are on the FetchEvent, not request headers.
+  // The caller (fastlyHandleRequests) passes them through from event.client.
+  clientContext?: {
+    clientIp?: string;
+    requestCountry?: string | null;
+    requestAsn?: number | null;
   }
 ): Promise<Response> {
   const originalUrl = request.headers.get("x-original-request-url") || request.url;
@@ -69,34 +158,37 @@ export async function handleFastlyRequest(
     );
   }
 
+  const asnHeader = request.headers.get("fastly-client-asn");
   const webRequest = new Request(originalUrl, {
     method: request.method,
     headers: request.headers,
   });
 
-  const result = await handler.handleRequest(webRequest);
+  const result = await handler.handleRequest(webRequest, {
+    sourceCdn: "fastly",
+    // Prefer caller-supplied values (Compute: event.client.*) over header fallbacks (VCL only).
+    clientIp: clientContext?.clientIp ?? request.headers.get("fastly-client-ip") ?? undefined,
+    requestCountry: clientContext?.requestCountry !== undefined ? clientContext.requestCountry : (request.headers.get("fastly-client-country-code") ?? null),
+    requestAsn: clientContext?.requestAsn !== undefined ? clientContext.requestAsn : parseAsn(asnHeader),
+    tlsFingerprint: request.headers.get("fastly-client-ja3") ?? null,
+    cdnSignals: {
+      accept_encoding: request.headers.get("accept-encoding"),
+      tls_fingerprint_ja4: request.headers.get("fastly-client-ja4"),
+    },
+  });
 
-  if (result.action === HandlerAction.BLOCK) {
-    return new Response(result.body, {
-      status: result.status,
-      headers: new Headers(result.headers),
-    });
-  }
-
-  // action === HandlerAction.ALLOW
-  const originResponse = await fetch(request, {
-    backend: originBackend,
-  } as RequestInit);
-
-  if (result.headers) {
-    const response = new Response(originResponse.body, originResponse);
-    for (const [key, value] of Object.entries(result.headers)) {
-      response.headers.set(key, value);
+  switch (result.action) {
+    case HandlerAction.RESPOND:
+    case HandlerAction.BLOCK:
+      return new Response(result.body, {
+        status: result.status,
+        headers: new Headers(result.headers),
+      });
+    case HandlerAction.ALLOW: {
+      const originResponse = await fetch(request, { backend: originBackend } as RequestInit);
+      return applyResponseHeaders(originResponse, result.headers);
     }
-    return response;
   }
-
-  return originResponse;
 }
 
 function statusDescription(status: number): CDNStatusDescription {
@@ -119,6 +211,7 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
   event: CloudFrontRequestEvent<TRequest>
 ): Promise<CloudFrontRequestResult<TRequest>> {
   const cfRequest = event.Records[0].cf.request;
+  const config = event.Records[0].cf.config;
 
   // Convert CloudFront request to Web API Request
   const viewerRequestUrl = cfRequest.headers?.["x-original-request-url"]?.[0]?.value;
@@ -135,9 +228,17 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
     headers: headers,
   });
 
-  const result = await handler.handleRequest(webRequest);
+  const asnHeader = headers.get("cloudfront-viewer-asn");
+  const result = await handler.handleRequest(webRequest, {
+    sourceCdn: "cloudfront",
+    requestId: config?.requestId ?? undefined,
+    clientIp: cfRequest.clientIp,
+    requestCountry: headers.get("cloudfront-viewer-country") ?? null,
+    requestAsn: parseAsn(asnHeader),
+    tlsFingerprint: headers.get("cloudfront-viewer-ja3-fingerprint") ?? null,
+  });
 
-  if (result.action === HandlerAction.BLOCK) {
+  if (result.action === HandlerAction.BLOCK || result.action === HandlerAction.RESPOND) {
     const responseHeaders: CloudFrontHeaders = {};
     Object.entries(result.headers).forEach(([key, value]) => {
       responseHeaders[key.toLowerCase()] = [{ key, value }];

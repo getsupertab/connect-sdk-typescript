@@ -17,15 +17,30 @@ enum TestMode {
   STRICT_BOT_DETECTION = "strict-bot-detection",
 }
 
-// Change this to switch test mode, or use TEST_MODE env var
-const DEFAULT_TEST_MODE = TestMode.SOFT_NO_BOT_DETECTION;
-
-const TEST_MODE = process.env.TEST_MODE || DEFAULT_TEST_MODE;
-
-// Environment selection - single var picks full config
-const TEST_ENV = process.env.TEST_ENV || "sandbox-cloudfront";
+// Environment selection — one var picks the full config: URLs *and* how that
+// deployment is configured (enforcement mode + bot detection).
+const TEST_ENV = process.env.TEST_ENV || "production-cloudflare";
 
 const config = ENVIRONMENTS[TEST_ENV] || ENVIRONMENTS.local;
+
+// The mode under test is a PROPERTY OF THE DEPLOYMENT — it's whatever the Worker
+// at `resourceUrl` actually runs — so derive it from the env config. Picking
+// TEST_ENV picks the matching mode, so they can't silently mismatch. A TEST_MODE
+// env var still overrides for local experimentation, but normally you don't set it.
+function deriveMode(cfg: { enforcement?: string; botDetection?: boolean }): TestMode {
+  const bot = cfg.botDetection ?? false;
+  switch (cfg.enforcement) {
+    case "disabled":
+      return TestMode.DISABLED;
+    case "enforce":
+      return bot ? TestMode.STRICT_BOT_DETECTION : TestMode.STRICT_NO_BOT_DETECTION;
+    case "observe":
+    default: // default to OBSERVE when a config entry doesn't declare a mode
+      return bot ? TestMode.SOFT_BOT_DETECTION : TestMode.SOFT_NO_BOT_DETECTION;
+  }
+}
+
+const TEST_MODE = process.env.TEST_MODE || deriveMode(config);
 
 // ============================================================================
 // User Agent Constants
@@ -127,7 +142,12 @@ beforeAll(() => {
   SupertabConnect.setBaseUrl(baseUrl);
   console.log(`\nTest Configuration:`);
   console.log(`  Environment: ${TEST_ENV}`);
-  console.log(`  Test Mode: ${TEST_MODE}`);
+  console.log(
+    `  Test Mode: ${TEST_MODE}` +
+      (process.env.TEST_MODE
+        ? `  (TEST_MODE override)`
+        : `  (derived from env: enforcement=${config.enforcement ?? "observe"}, botDetection=${config.botDetection ?? false})`),
+  );
   console.log(`  Base URL: ${baseUrl}`);
   console.log(`  Resource URL: ${config.resourceUrl}\n`);
 });

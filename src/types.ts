@@ -1,9 +1,10 @@
 import type { JWTPayload } from "jose";
+import type { AnalyticsTransport } from "./analytics/types";
 
 export enum EnforcementMode {
   DISABLED = "disabled",
-  SOFT = "soft",
-  STRICT = "strict",
+  OBSERVE = "observe",
+  ENFORCE = "enforce",
 }
 
 export interface ExecutionContext {
@@ -17,6 +18,16 @@ export interface SupertabConnectConfig {
   enforcement?: EnforcementMode;
   botDetector?: BotDetector;
   debug?: boolean;
+  /** Enables analytics emission to the Supertab Connect relay. Default: false. */
+  analyticsEnabled?: boolean;
+  /**
+   * @internal
+   * Internal dependency-injection seam: overrides the default HttpAnalyticsTransport when provided.
+   * Used by tests (to inject in-memory transports) and by internal transport selection. NOT a
+   * merchant-facing option — the public CDN handlers do not expose it; merchants configure analytics
+   * declaratively via `analyticsEnabled`.
+   */
+  analyticsTransport?: AnalyticsTransport;
 }
 
 /**
@@ -66,11 +77,13 @@ export interface FetchOptions extends RequestInit {
 export enum HandlerAction {
   ALLOW = "allow",
   BLOCK = "block",
+  RESPOND = "respond",
 }
 
 export type HandlerResult =
   | { action: HandlerAction.ALLOW; headers?: Record<string, string> }
-  | { action: HandlerAction.BLOCK; status: number; body: string; headers: Record<string, string> };
+  | { action: HandlerAction.BLOCK; status: number; body: string; headers: Record<string, string> }
+  | { action: HandlerAction.RESPOND; status: number; body: string; headers: Record<string, string> };
 
 export enum CDNStatusDescription {
   Unauthorized = "Unauthorized",
@@ -109,6 +122,7 @@ export interface CloudFrontRequestEvent<TRequest = Record<string, any>> {
         method: string;
         querystring: string;
         headers: CloudFrontHeaders;
+        clientIp?: string;
       };
     };
   }>;
@@ -132,16 +146,38 @@ export type RSLVerificationResult = {
 interface FastlyHandlerBaseOptions {
   botDetector?: BotDetector;
   enforcement?: EnforcementMode;
+  analyticsEnabled?: boolean;
+  /**
+   * Merchant system URN, stamped onto Fastly analytics rows (the relay derives it server-side;
+   * the Fastly → S3 path must carry it). Required when `enableRSL`, and for native Fastly logging
+   * (with `logEndpoint`); without it analytics falls back to the HTTP relay.
+   */
+  merchantSystemUrn?: string;
+  /**
+   * Named Fastly logging endpoint to emit bot events to — must match the endpoint configured on
+   * the Fastly service. Set it to enable native Fastly logging; without it, analytics falls back
+   * to the HTTP relay.
+   */
+  logEndpoint?: string;
+  /**
+   * Client IP address. On Fastly Compute, read from `event.client.address` and pass here —
+   * the header fallback (`fastly-client-ip`) is only set on VCL services, not Compute.
+   */
+  clientIp?: string;
+  /** Client country code (ISO 3166-1 alpha-2). On Compute: `event.client.geo.country_code`. */
+  requestCountry?: string | null;
+  /** Client ASN. On Compute: `event.client.geo.as_number`. */
+  requestAsn?: number | null;
 }
 
 interface FastlyHandlerWithRSL extends FastlyHandlerBaseOptions {
   enableRSL: true;
+  /** Required for RSL license.xml hosting (also used to stamp analytics rows when enabled). */
   merchantSystemUrn: string;
 }
 
 interface FastlyHandlerWithoutRSL extends FastlyHandlerBaseOptions {
   enableRSL?: false;
-  merchantSystemUrn?: never;
 }
 
 export type FastlyHandlerOptions = FastlyHandlerWithRSL | FastlyHandlerWithoutRSL;
