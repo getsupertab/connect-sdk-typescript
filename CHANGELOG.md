@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0-beta.3] — 2026-07-06
+
+> Fixes wrong/polluted capture-v2 signals on Fastly service-chain deployments
+> (e.g. a VCL service fronting Compute), where `event.client.*` is the upstream
+> Fastly hop rather than the viewer. **Breaking**: `fastlyHandleRequests` now
+> takes the `FetchEvent`.
+
+### Changed
+
+- **`fastlyHandleRequests(event, ...)` now takes the Fastly `FetchEvent`** (was
+  `event.request`), and the `clientIp` / `requestCountry` / `requestAsn` handler
+  options are removed — the SDK sources these internally. **Breaking.**
+
+### Fixed
+
+- **Viewer IP/geo/ASN on the Fastly service chain.** The SDK now reads the real
+  client from the `Fastly-Client-IP` header (preserved across Fastly hops) and
+  derives country/ASN via `fastly:geolocation`, falling back to `event.client.*`
+  on non-chained deployments. Previously chained rows recorded the Fastly hop
+  (`request_asn` = Fastly's AS, `client_ip` = a Fastly range, `request_country`
+  = the POP). JA3 is null on the chained path (the hop's TLS is not the viewer's).
+- **`header_names` pollution.** The strip-list now covers portable proxy
+  artifacts (`cdn-loop`, `x-varnish`, `via`, `surrogate-key`, `surrogate-control`).
+  Deployment-specific injected headers must still be stripped at the edge.
+
 ## [2.1.0] — 2026-07-06
 
 > Relay-based analytics, richer edge signals, a self-report status endpoint, and
