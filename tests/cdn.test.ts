@@ -130,4 +130,12 @@ describe("handleFastlyRequest client signals", () => {
 
     expect(handler.calls[0].tlsFingerprint).toBe("ja3-from-header");
   });
+
+  it("forwards the ExecutionContext (FetchEvent.waitUntil bridge) into the handler context", async () => {
+    const handler = recordingHandler();
+    const ctx = { waitUntil: () => {} };
+    await handleFastlyRequest(handler, req(), "origin", undefined, {}, ctx);
+
+    expect(handler.calls[0].ctx).toBe(ctx);
+  });
 });

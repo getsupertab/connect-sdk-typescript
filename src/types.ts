@@ -162,6 +162,12 @@ export interface FastlyClientInfo {
 export interface FastlyFetchEvent {
   request: Request;
   client: FastlyClientInfo;
+  /**
+   * Keeps the Compute instance alive until `promise` settles. Threaded through as the
+   * analytics `ExecutionContext` so fire-and-forget emits (esp. on the BLOCK path, which
+   * returns immediately with no origin round-trip) aren't cut off at teardown.
+   */
+  waitUntil(promise: Promise<any>): void;
 }
 
 interface FastlyHandlerBaseOptions {

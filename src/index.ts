@@ -535,6 +535,9 @@ export class SupertabConnect {
       // On Fastly Compute these signals live on the FetchEvent, not on request
       // headers (the fastly-client-* headers only exist on VCL services).
       const client = event.client;
+      // Bridge FetchEvent.waitUntil to the analytics ExecutionContext so post-response
+      // emits are held until they settle (the BLOCK path has no origin fetch to do so).
+      const ctx: ExecutionContext = { waitUntil: (promise) => event.waitUntil(promise) };
       return await handleFastlyRequest(
         instance,
         request,
@@ -545,7 +548,8 @@ export class SupertabConnect {
           requestCountry: client.geo?.country_code ?? null,
           requestAsn: client.geo?.as_number ?? null,
           tlsFingerprint: client.tlsJA3MD5 ?? null,
-        }
+        },
+        ctx
       );
     } catch (err) {
       console.error("[SupertabConnect] fastlyHandleRequests failed:", err);

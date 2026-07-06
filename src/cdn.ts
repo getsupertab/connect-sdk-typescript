@@ -148,7 +148,11 @@ export async function handleFastlyRequest(
     requestCountry?: string | null;
     requestAsn?: number | null;
     tlsFingerprint?: string | null;
-  }
+  },
+  // Wraps FetchEvent.waitUntil so post-response analytics emits stay alive until
+  // they settle — the BLOCK path returns immediately, with no origin fetch to
+  // incidentally keep the instance up.
+  ctx?: ExecutionContext
 ): Promise<Response> {
   const originalUrl = request.headers.get("x-original-request-url") || request.url;
 
@@ -166,6 +170,7 @@ export async function handleFastlyRequest(
   });
 
   const result = await handler.handleRequest(webRequest, {
+    ctx,
     sourceCdn: "fastly",
     // Prefer caller-supplied values (Compute: event.client.*) over header fallbacks (VCL only).
     clientIp: clientContext?.clientIp ?? request.headers.get("fastly-client-ip") ?? undefined,
