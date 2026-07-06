@@ -24,7 +24,19 @@ const MAX_FIELD_LENGTH = 512;
 // the shared `x-forwarded-*` / `x-real-ip`, and the SDK's own routing header
 // `x-original-request-url` (set by the Fastly/CloudFront handlers).
 const EDGE_HEADER_PREFIXES = ["cf-", "fastly-", "cloudfront-", "x-forwarded-"];
-const EDGE_HEADER_NAMES = new Set(["x-real-ip", "x-original-request-url"]);
+// Portable proxy/CDN artifacts (incl. Fastly service-chain hops: cdn-loop, x-varnish,
+// via) — not client-sent, so they pollute header_names. Deployment-specific injected
+// headers (e.g. x-geoip-*, x-ua-device, x-lp-*) must be stripped at the edge instead;
+// a portable SDK can't enumerate them.
+const EDGE_HEADER_NAMES = new Set([
+  "x-real-ip",
+  "x-original-request-url",
+  "cdn-loop",
+  "x-varnish",
+  "via",
+  "surrogate-key",
+  "surrogate-control",
+]);
 
 // Mechanical exploit markers for the query-string heuristic, matched case-
 // insensitively against the raw and URL-decoded query. A coarse signal only —
