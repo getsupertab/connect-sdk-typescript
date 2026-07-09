@@ -317,6 +317,27 @@ describe("buildAnalyticsEvent", () => {
       expect(event.has_cookies).toBe(false);
     });
 
+    it("strips proxy/CDN-chain artifacts from header_names, keeping only client headers", () => {
+      const event = buildAnalyticsEvent(
+        makeRequest({
+          headers: {
+            "user-agent": "Mozilla/5.0",
+            "accept-language": "en-US",
+            // Fastly service-chain / proxy artifacts — must not appear.
+            "cdn-loop": "fastly",
+            "x-varnish": "123456",
+            via: "1.1 varnish",
+            "surrogate-key": "abc",
+            "surrogate-control": "max-age=0",
+            "fastly-client-ip": "203.0.113.9",
+          },
+        }),
+        baseDecision,
+        ctx()
+      );
+      expect(event.header_names).toEqual(["accept-language", "user-agent"]);
+    });
+
     it("falls back to the URL host when the Host header is unavailable", () => {
       const event = buildAnalyticsEvent(
         makeRequest({ url: "https://pub.example.com/a" }),

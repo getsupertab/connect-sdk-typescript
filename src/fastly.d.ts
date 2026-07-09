@@ -8,3 +8,11 @@ declare module "fastly:logger" {
     log(message: string): void;
   }
 }
+
+declare module "fastly:geolocation" {
+  // Subset of the runtime Geolocation we consume; the real object has more fields.
+  export function getGeolocationForIpAddress(address: string): {
+    country_code: string | null;
+    as_number: number | null;
+  } | null;
+}

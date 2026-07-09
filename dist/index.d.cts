@@ -106,6 +106,30 @@ type RSLVerificationResult = {
     valid: boolean;
     error?: string;
 };
+/**
+ * Minimal shape of the Fastly Compute `FetchEvent` that `fastlyHandleRequests` reads.
+ * The runtime's real `FetchEvent` is structurally compatible, so callers pass the event
+ * directly. Named distinctly to avoid colliding with any DOM/WebWorker `FetchEvent` lib type.
+ */
+interface FastlyGeolocation {
+    country_code: string | null;
+    as_number: number | null;
+}
+interface FastlyClientInfo {
+    address: string;
+    geo: FastlyGeolocation | null;
+    tlsJA3MD5: string | null;
+}
+interface FastlyFetchEvent {
+    request: Request;
+    client: FastlyClientInfo;
+    /**
+     * Keeps the Compute instance alive until `promise` settles. Threaded through as the
+     * analytics `ExecutionContext` so fire-and-forget emits (esp. on the BLOCK path, which
+     * returns immediately with no origin round-trip) aren't cut off at teardown.
+     */
+    waitUntil(promise: Promise<any>): void;
+}
 interface FastlyHandlerBaseOptions {
     botDetector?: BotDetector;
     enforcement?: EnforcementMode;
@@ -122,15 +146,6 @@ interface FastlyHandlerBaseOptions {
      * to the HTTP relay.
      */
     logEndpoint?: string;
-    /**
-     * Client IP address. On Fastly Compute, read from `event.client.address` and pass here —
-     * the header fallback (`fastly-client-ip`) is only set on VCL services, not Compute.
-     */
-    clientIp?: string;
-    /** Client country code (ISO 3166-1 alpha-2). On Compute: `event.client.geo.country_code`. */
-    requestCountry?: string | null;
-    /** Client ASN. On Compute: `event.client.geo.as_number`. */
-    requestAsn?: number | null;
 }
 interface FastlyHandlerWithRSL extends FastlyHandlerBaseOptions {
     enableRSL: true;
@@ -375,7 +390,9 @@ declare class SupertabConnect {
     }): Promise<Response>;
     /**
      * Handle incoming requests for Fastly Compute.
-     * @param request The incoming Fastly request
+     * @param event The Fastly `FetchEvent`. Viewer IP/geo/JA3 are resolved internally: on a
+     *   VCL→Compute chain from the `Fastly-Client-IP` header + `fastly:geolocation` (JA3 dropped),
+     *   otherwise from `event.client`. See `resolveFastlyClientSignals`.
      * @param merchantApiKey The merchant API key for authentication
      * @param originBackend The Fastly backend name to forward allowed requests to
      * @param options Optional configuration items
@@ -384,7 +401,7 @@ declare class SupertabConnect {
      * @param options.enforcement Enforcement mode (default: OBSERVE)
      * @param options.analyticsEnabled Toggle relay analytics emission (default: false)
      */
-    static fastlyHandleRequests(request: Request, merchantApiKey: string, originBackend: string, options?: FastlyHandlerOptions): Promise<Response>;
+    static fastlyHandleRequests(event: FastlyFetchEvent, merchantApiKey: string, originBackend: string, options?: FastlyHandlerOptions): Promise<Response>;
     /**
      * Handle incoming requests for AWS CloudFront Lambda@Edge.
      * Use as the handler for an origin-request LambdaEdge function.
@@ -395,4 +412,4 @@ declare class SupertabConnect {
     static cloudfrontHandleRequests<TRequest extends Record<string, any>>(event: CloudFrontRequestEvent<TRequest>, options: CloudfrontHandlerOptions): Promise<CloudFrontRequestResult<TRequest>>;
 }
 
-export { type AnalyticsEvent, type AnalyticsTransport, type BotDetector, CDNStatusDescription, type CloudFrontRequestEvent, type CloudFrontRequestResult, type CloudfrontHandlerOptions, EnforcementMode, type Env, type ExecutionContext, type FastlyHandlerOptions, HandlerAction, type HandlerResult, LicenseTokenInvalidReason, type RSLVerificationResult, SupertabConnect, type SupertabConnectConfig, UsageType, defaultBotDetector, selectFastlyAnalyticsTransport };
+export { type AnalyticsEvent, type AnalyticsTransport, type BotDetector, CDNStatusDescription, type CloudFrontRequestEvent, type CloudFrontRequestResult, type CloudfrontHandlerOptions, EnforcementMode, type Env, type ExecutionContext, type FastlyFetchEvent, type FastlyHandlerOptions, HandlerAction, type HandlerResult, LicenseTokenInvalidReason, type RSLVerificationResult, SupertabConnect, type SupertabConnectConfig, UsageType, defaultBotDetector, selectFastlyAnalyticsTransport };

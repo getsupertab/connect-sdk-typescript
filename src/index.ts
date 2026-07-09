@@ -10,6 +10,7 @@ import {
   ExecutionContext,
   Env,
   FastlyHandlerOptions,
+  FastlyFetchEvent,
 } from "./types";
 import {
   obtainLicenseToken as obtainLicenseTokenHelper,
@@ -48,6 +49,7 @@ import {
   selectFastlyAnalyticsTransport,
 } from "./analytics/transport";
 import { buildAnalyticsEvent } from "./analytics/buildAnalyticsEvent";
+import { resolveFastlyClientSignals } from "./fastly-signals";
 
 export {
   EnforcementMode,
@@ -64,6 +66,7 @@ export type {
   BotDetector,
   HandlerResult,
   FastlyHandlerOptions,
+  FastlyFetchEvent,
   CloudFrontRequestEvent,
   CloudFrontRequestResult,
   CloudfrontHandlerOptions,
@@ -489,7 +492,9 @@ export class SupertabConnect {
 
   /**
    * Handle incoming requests for Fastly Compute.
-   * @param request The incoming Fastly request
+   * @param event The Fastly `FetchEvent`. Viewer IP/geo/JA3 are resolved internally: on a
+   *   VCL→Compute chain from the `Fastly-Client-IP` header + `fastly:geolocation` (JA3 dropped),
+   *   otherwise from `event.client`. See `resolveFastlyClientSignals`.
    * @param merchantApiKey The merchant API key for authentication
    * @param originBackend The Fastly backend name to forward allowed requests to
    * @param options Optional configuration items
@@ -499,13 +504,14 @@ export class SupertabConnect {
    * @param options.analyticsEnabled Toggle relay analytics emission (default: false)
    */
   static async fastlyHandleRequests(
-    request: Request,
+    event: FastlyFetchEvent,
     merchantApiKey: string,
     originBackend: string,
     options: FastlyHandlerOptions = {}
   ): Promise<Response> {
+    const request = event.request;
     try {
-      const { botDetector, enforcement, analyticsEnabled, merchantSystemUrn, logEndpoint, clientIp, requestCountry, requestAsn } = options;
+      const { botDetector, enforcement, analyticsEnabled, merchantSystemUrn, logEndpoint } = options;
 
       // Fastly owns its transport choice here, rather than the shared constructor sniffing
       // globalThis.fastly: native bot-events logging when opted in, else the constructor's relay.
@@ -529,12 +535,17 @@ export class SupertabConnect {
         };
       }
   
+      const clientSignals = await resolveFastlyClientSignals(event);
+      // Bridge FetchEvent.waitUntil to the analytics ExecutionContext so post-response
+      // emits are held until they settle (the BLOCK path has no origin fetch to do so).
+      const ctx: ExecutionContext = { waitUntil: (promise) => event.waitUntil(promise) };
       return await handleFastlyRequest(
         instance,
         request,
         originBackend,
         rslOptions,
-        { clientIp, requestCountry, requestAsn }
+        clientSignals,
+        ctx
       );
     } catch (err) {
       console.error("[SupertabConnect] fastlyHandleRequests failed:", err);
