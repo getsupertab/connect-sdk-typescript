@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveFastlyClientSignals } from "../src/index";
+import { resolveFastlyClientSignals } from "../src/fastly-signals";
 
 // Minimal FastlyFetchEvent stub. `fastly:geolocation` isn't importable outside the
 // Compute runtime, so the header path's geo lookup fails closed to null here — which

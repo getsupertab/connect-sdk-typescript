@@ -390,7 +390,9 @@ declare class SupertabConnect {
     }): Promise<Response>;
     /**
      * Handle incoming requests for Fastly Compute.
-     * @param event The Fastly `FetchEvent` — client IP, geo, and JA3 are read from `event.client`.
+     * @param event The Fastly `FetchEvent`. Viewer IP/geo/JA3 are resolved internally: on a
+     *   VCL→Compute chain from the `Fastly-Client-IP` header + `fastly:geolocation` (JA3 dropped),
+     *   otherwise from `event.client`. See `resolveFastlyClientSignals`.
      * @param merchantApiKey The merchant API key for authentication
      * @param originBackend The Fastly backend name to forward allowed requests to
      * @param options Optional configuration items
