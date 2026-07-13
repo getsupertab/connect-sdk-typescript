@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the backend can resolve the correct version-update registry per
   integration. Additive, backward-compatible.
 
+### Removed
+
+- **`sdkVersion` from the `/status` payload.** Redundant with
+  `component.version` for the TS SDK (identical value). The backend reads
+  `component`; the legacy `sdkVersion`-only shim still covers already-deployed
+  2.1.0 builds.
+
 ## [2.2.0] — 2026-07-09
 
 > Fixes wrong/polluted capture-v2 signals on Fastly service-chain deployments
