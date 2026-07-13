@@ -44,6 +44,7 @@ describe("Cloudflare wrapper — RESPOND action (status endpoint)", () => {
     const body = await response.json();
     expect(body).toMatchObject({
       sdkVersion: expect.any(String),
+      component: { kind: "ts-sdk", version: expect.any(String) },
       enforcement: EnforcementMode.OBSERVE,
     });
     expect(body).not.toHaveProperty("servingLicenseXml");
