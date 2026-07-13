@@ -146,6 +146,8 @@ describe("handleRequest — /.well-known/supertab/status branch", () => {
     expect(body.eventReporting).toBe(true);
     // No context passed → runtime is null.
     expect(body.runtime).toBeNull();
+    expect(body.component).toEqual({ kind: "ts-sdk", version: expect.any(String) });
+    expect(body).not.toHaveProperty("sdkVersion");
     expect(body).not.toHaveProperty("servingLicenseXml");
     expect(body).not.toHaveProperty("merchantUrn");
 

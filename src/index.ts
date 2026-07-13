@@ -277,7 +277,7 @@ export class SupertabConnect {
         // merchantUrn is omitted until it is plumbed through HandleRequestContext or an instance field.
         const body = JSON.stringify({
           runtime: context?.sourceCdn ?? null,
-          sdkVersion: SDK_VERSION,
+          component: { kind: "ts-sdk", version: SDK_VERSION },
           enforcement: this.enforcement,
           eventReporting: this.analyticsEnabled,
         });
