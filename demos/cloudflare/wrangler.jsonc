@@ -52,7 +52,9 @@
 			"compatibility_date": "2026-06-08",
 			"compatibility_flags": ["nodejs_compat"],
 			"vars": {
-				"SUPERTAB_BASE_URL": "https://api-connect.supertab.co",
+				"SUPERTAB_BASE_URL": "https://api-connect.sbx.supertab.co",
+				"SUPERTAB_ANALYTICS_BASE_URL": "https://ingest-connect.sbx.supertab.co",
+				"MERCHANT_SYSTEM_URN": "urn:stc:merchant:system:525a1b69-82f6-4a2e-b9ef-5362cf9404ff",
 				"ORIGIN_URL": "https://example.com",
 				"ANALYTICS_ENABLED": "true"
 			},
