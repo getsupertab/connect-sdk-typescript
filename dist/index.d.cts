@@ -14,6 +14,12 @@ interface SupertabConnectConfig {
     debug?: boolean;
     /** Enables analytics emission to the Supertab Connect relay. Default: false. */
     analyticsEnabled?: boolean;
+    /**
+     * Base URL of the analytics ingest relay. Defaults to the dedicated ingest service
+     * (`https://ingest-connect.supertab.co`) — separate from the API base URL used for
+     * token acquisition / JWKS / verification. Override for non-prod or local development.
+     */
+    analyticsBaseUrl?: string;
 }
 /**
  * Defines the shape for environment variables (used in CloudFlare integration).
@@ -279,6 +285,7 @@ declare function selectFastlyAnalyticsTransport(opts: {
 declare class SupertabConnect {
     private apiKey?;
     private static baseUrl;
+    private static analyticsBaseUrl;
     private enforcement;
     private botDetector?;
     private debug;
@@ -306,6 +313,16 @@ declare class SupertabConnect {
      * Get the current base URL for API requests.
      */
     static getBaseUrl(): string;
+    /**
+     * Override the base URL of the analytics ingest relay (e.g. for a non-prod environment
+     * or local development). Independent of setBaseUrl — token/JWKS/verify traffic is
+     * unaffected. Can also be set per-instance via the `analyticsBaseUrl` config option.
+     */
+    static setAnalyticsBaseUrl(url: string): void;
+    /**
+     * Get the current base URL of the analytics ingest relay.
+     */
+    static getAnalyticsBaseUrl(): string;
     /**
      * Pure token verification — verifies a license token without recording any events.
      * @param options.token The license token to verify

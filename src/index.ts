@@ -86,6 +86,10 @@ const LICENSE_PREFIX = "License ";
 export class SupertabConnect {
   private apiKey?: string;
   private static baseUrl: string = "https://api-connect.supertab.co";
+  // Analytics is served by the dedicated ingest service, not the API host. Kept as a
+  // separate static (mirroring baseUrl/setBaseUrl) so the relay can be pointed at a
+  // different host — or at localhost in dev — without moving token/JWKS/verify traffic.
+  private static analyticsBaseUrl: string = "https://ingest-connect.supertab.co";
   private enforcement!: EnforcementMode;
   private botDetector?: BotDetector;
   private debug!: boolean;
@@ -150,8 +154,9 @@ export class SupertabConnect {
     if (!config.analyticsEnabled) {
       return new NoopAnalyticsTransport();
     }
+    const analyticsBaseUrl = config.analyticsBaseUrl ?? SupertabConnect.analyticsBaseUrl;
     return new HttpAnalyticsTransport({
-      url: `${SupertabConnect.baseUrl}${ANALYTICS_EVENTS_PATH}`,
+      url: `${analyticsBaseUrl}${ANALYTICS_EVENTS_PATH}`,
       apiKey: config.apiKey,
       debug: config.debug ?? false,
     });
@@ -176,6 +181,22 @@ export class SupertabConnect {
    */
   public static getBaseUrl(): string {
     return SupertabConnect.baseUrl;
+  }
+
+  /**
+   * Override the base URL of the analytics ingest relay (e.g. for a non-prod environment
+   * or local development). Independent of setBaseUrl — token/JWKS/verify traffic is
+   * unaffected. Can also be set per-instance via the `analyticsBaseUrl` config option.
+   */
+  public static setAnalyticsBaseUrl(url: string): void {
+    SupertabConnect.analyticsBaseUrl = url;
+  }
+
+  /**
+   * Get the current base URL of the analytics ingest relay.
+   */
+  public static getAnalyticsBaseUrl(): string {
+    return SupertabConnect.analyticsBaseUrl;
   }
 
   /**

@@ -198,3 +198,69 @@ describe("analytics transport selection (platform-agnostic constructor)", () => 
     expect(selected({ apiKey: "k", analyticsEnabled: true, analyticsTransport: injected })).toBe(injected);
   });
 });
+
+describe("analytics base URL resolution", () => {
+  // The dedicated ingest service host the relay targets by default. Distinct from the
+  // API base URL (token acquisition / JWKS / verify), which stays on api-connect.
+  const DEFAULT_INGEST = "https://ingest-connect.supertab.co";
+  let originalBaseUrl: string;
+  let originalAnalyticsBaseUrl: string;
+
+  beforeEach(() => {
+    SupertabConnect.resetInstance();
+    // Save the static hosts so a test that mutates them can't leak into the next.
+    originalBaseUrl = SupertabConnect.getBaseUrl();
+    originalAnalyticsBaseUrl = SupertabConnect.getAnalyticsBaseUrl();
+  });
+
+  afterEach(() => {
+    SupertabConnect.setBaseUrl(originalBaseUrl);
+    SupertabConnect.setAnalyticsBaseUrl(originalAnalyticsBaseUrl);
+    SupertabConnect.resetInstance();
+  });
+
+  function relayUrl(config: ConstructorParameters<typeof SupertabConnect>[0]): string {
+    const transport = (new SupertabConnect(config) as unknown as {
+      analyticsTransport: { url: string };
+    }).analyticsTransport;
+    return transport.url;
+  }
+
+  it("defaults the analytics relay to the ingest host", () => {
+    expect(relayUrl({ apiKey: "k", analyticsEnabled: true })).toBe(
+      `${DEFAULT_INGEST}/ingest/events`
+    );
+  });
+
+  it("config.analyticsBaseUrl overrides the default host", () => {
+    expect(
+      relayUrl({ apiKey: "k", analyticsEnabled: true, analyticsBaseUrl: "https://ingest.example.com" })
+    ).toBe("https://ingest.example.com/ingest/events");
+  });
+
+  it("setAnalyticsBaseUrl overrides the default host", () => {
+    SupertabConnect.setAnalyticsBaseUrl("https://static.example.com");
+    expect(relayUrl({ apiKey: "k", analyticsEnabled: true })).toBe(
+      "https://static.example.com/ingest/events"
+    );
+  });
+
+  it("config.analyticsBaseUrl beats setAnalyticsBaseUrl", () => {
+    SupertabConnect.setAnalyticsBaseUrl("https://static.example.com");
+    expect(
+      relayUrl({ apiKey: "k", analyticsEnabled: true, analyticsBaseUrl: "https://perinstance.example.com" })
+    ).toBe("https://perinstance.example.com/ingest/events");
+  });
+
+  it("analytics host is independent of setBaseUrl (the token/JWKS base)", () => {
+    SupertabConnect.setBaseUrl("https://api.example.com");
+    expect(relayUrl({ apiKey: "k", analyticsEnabled: true })).toBe(
+      `${DEFAULT_INGEST}/ingest/events`
+    );
+  });
+
+  it("getAnalyticsBaseUrl reflects setAnalyticsBaseUrl", () => {
+    SupertabConnect.setAnalyticsBaseUrl("https://x.example.com");
+    expect(SupertabConnect.getAnalyticsBaseUrl()).toBe("https://x.example.com");
+  });
+});
