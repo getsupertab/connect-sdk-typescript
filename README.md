@@ -138,12 +138,14 @@ The SDK is configured using the `SupertabConnectConfig` object:
 | `botDetector`        | `BotDetector`        | No       | -           | Custom bot detection function `(request, ctx?) => boolean`                           |
 | `debug`              | `boolean`            | No       | `false`     | Enable debug logging                                                                 |
 | `analyticsEnabled`   | `boolean`            | No       | `false`     | Emit one analytics event per request to the Supertab Connect relay (see [Analytics](#analytics)) |
+| `analyticsBaseUrl`   | `string`             | No       | `https://ingest-connect.supertab.co` | Base URL of the analytics ingest service. Independent of `setBaseUrl` (token/JWKS/verify). Also settable globally via `setAnalyticsBaseUrl()` |
 
 ## Analytics
 
 The SDK can emit one analytics event per request to the Supertab Connect
-**relay** endpoint at `{baseUrl}/ingest/events`. This is **off by default** — enable
-it by passing `analyticsEnabled: true`:
+**relay** endpoint at `{analyticsBaseUrl}/ingest/events`, which defaults to the
+dedicated ingest service (`https://ingest-connect.supertab.co`). This is **off by
+default** — enable it by passing `analyticsEnabled: true`:
 
 ```ts
 const supertabConnect = new SupertabConnect({
@@ -185,10 +187,13 @@ or alter request handling. If emission fails, the error is swallowed and the
 request proceeds exactly as it would with analytics disabled. Analytics is also
 fully isolated from billing — it is sent only to the relay at `/ingest/events`.
 
-> The relay endpoint is `POST /ingest/events` on the Supertab Connect backend.
+> The relay endpoint is `POST /ingest/events` on the dedicated ingest service
+> (the backend also serves it as a compatibility bridge).
 
-Analytics is sent to `{baseUrl}/ingest/events`; point it at another environment
-with `setBaseUrl()`.
+Analytics is sent to `{analyticsBaseUrl}/ingest/events`, which defaults to the
+ingest service and is **independent of `setBaseUrl`**. Point it at another
+environment (or localhost) with `setAnalyticsBaseUrl()`, or per-instance via the
+`analyticsBaseUrl` config option.
 
 ### Fastly: native logging delivery (optional)
 

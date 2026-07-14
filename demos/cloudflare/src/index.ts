@@ -56,6 +56,10 @@ export default {
 	async fetch(request: Request, env: DemoEnv, ctx: ExecutionContext): Promise<Response> {
 		if (env.SUPERTAB_BASE_URL) {
 			SupertabConnect.setBaseUrl(env.SUPERTAB_BASE_URL);
+			// Analytics now defaults to the prod ingest service. This demo runs against a
+			// single backend that also serves /ingest/events, so keep the relay on the
+			// same host instead of leaking to prod.
+			SupertabConnect.setAnalyticsBaseUrl(env.SUPERTAB_BASE_URL);
 		}
 
 		const incoming = new URL(request.url);

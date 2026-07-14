@@ -9,6 +9,9 @@ import {
 
 
 SupertabConnect.setBaseUrl(CONFIG.BASE_URL);
+// Analytics now defaults to the prod ingest service. This demo runs against a single
+// backend that also serves /ingest/events, so keep the relay on the same host.
+SupertabConnect.setAnalyticsBaseUrl(CONFIG.BASE_URL);
 
 // The entry point for the request handler.
 addEventListener("fetch", (event) =>

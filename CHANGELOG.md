@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.2] — 2026-07-14
+
+### Added
+
+- **`analyticsBaseUrl` config option, plus `SupertabConnect.setAnalyticsBaseUrl()` /
+  `getAnalyticsBaseUrl()`.** Points the analytics ingest relay at a specific host,
+  independent of `setBaseUrl` (which stays the base for token acquisition / JWKS /
+  verification). Mirrors the existing `baseUrl` pattern.
+
+### Changed
+
+- **Analytics now defaults to the dedicated ingest service
+  (`https://ingest-connect.supertab.co`)** rather than the API host. Only affects
+  deployments with `analyticsEnabled: true`; the `/ingest/events` path and payload are
+  unchanged — traffic just moves to the standalone service. Non-prod / local setups
+  should call `setAnalyticsBaseUrl()` (as the demos now do) to avoid emitting to prod.
+
 ## [2.2.1] — 2026-07-13
 
 ### Added

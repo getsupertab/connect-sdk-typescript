@@ -21,6 +21,12 @@ export interface SupertabConnectConfig {
   /** Enables analytics emission to the Supertab Connect relay. Default: false. */
   analyticsEnabled?: boolean;
   /**
+   * Base URL of the analytics ingest relay. Defaults to the dedicated ingest service
+   * (`https://ingest-connect.supertab.co`) — separate from the API base URL used for
+   * token acquisition / JWKS / verification. Override for non-prod or local development.
+   */
+  analyticsBaseUrl?: string;
+  /**
    * @internal
    * Internal dependency-injection seam: overrides the default HttpAnalyticsTransport when provided.
    * Used by tests (to inject in-memory transports) and by internal transport selection. NOT a
