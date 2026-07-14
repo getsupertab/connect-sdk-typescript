@@ -8,6 +8,11 @@ interface DemoEnv {
 	MERCHANT_API_KEY: string;
 	MERCHANT_SYSTEM_URN: string;
 	SUPERTAB_BASE_URL?: string;
+	/** Base URL of the analytics ingest service (the dedicated relay host). Falls
+	 *  back to SUPERTAB_BASE_URL when unset — the backend serves /ingest/events as
+	 *  a compatibility bridge. Set this to the standalone ingest host to exercise
+	 *  the split (e.g. https://ingest-connect.sbx.supertab.co). */
+	SUPERTAB_ANALYTICS_BASE_URL?: string;
 	/** Upstream origin URL for the SDK's ALLOW/OBSERVE pass-through. The
 	 *  Worker URL stays as `request.url` (so token `aud` matches the
 	 *  publisher URL); the SDK fetches forwarded traffic from this URL
@@ -56,10 +61,13 @@ export default {
 	async fetch(request: Request, env: DemoEnv, ctx: ExecutionContext): Promise<Response> {
 		if (env.SUPERTAB_BASE_URL) {
 			SupertabConnect.setBaseUrl(env.SUPERTAB_BASE_URL);
-			// Analytics now defaults to the prod ingest service. This demo runs against a
-			// single backend that also serves /ingest/events, so keep the relay on the
-			// same host instead of leaking to prod.
-			SupertabConnect.setAnalyticsBaseUrl(env.SUPERTAB_BASE_URL);
+			// Analytics defaults to the prod ingest service. Point it at this env's
+			// ingest host (SUPERTAB_ANALYTICS_BASE_URL), falling back to the API host,
+			// which serves /ingest/events as a bridge — so a local/sbx run never
+			// leaks to prod.
+			SupertabConnect.setAnalyticsBaseUrl(
+				env.SUPERTAB_ANALYTICS_BASE_URL ?? env.SUPERTAB_BASE_URL,
+			);
 		}
 
 		const incoming = new URL(request.url);
