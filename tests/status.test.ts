@@ -46,6 +46,20 @@ describe("verifyStatusChallenge", () => {
     expect(await verifyStatusChallenge(expiredToken, { expectedAudience: "https://acme.com", baseUrl: "https://api" })).toBe(false);
   });
 
+  it("rejects a challenge missing exp or iat", async () => {
+    const { privateKey } = await setup();
+    const noExp = await new SignJWT({ aud: "https://acme.com", purpose: "status-probe" })
+      .setProtectedHeader({ alg: "ES256", kid: "test-kid" })
+      .setIssuedAt()
+      .sign(privateKey);
+    const noIat = await new SignJWT({ aud: "https://acme.com", purpose: "status-probe" })
+      .setProtectedHeader({ alg: "ES256", kid: "test-kid" })
+      .setExpirationTime("60s")
+      .sign(privateKey);
+    expect(await verifyStatusChallenge(noExp, { expectedAudience: "https://acme.com", baseUrl: "https://api" })).toBe(false);
+    expect(await verifyStatusChallenge(noIat, { expectedAudience: "https://acme.com", baseUrl: "https://api" })).toBe(false);
+  });
+
   it("retries with refreshed JWKS after key rotation (JwksKeyNotFoundError on first fetch)", async () => {
     // Generate the signing key pair
     const { publicKey, privateKey } = await generateKeyPair("ES256");
