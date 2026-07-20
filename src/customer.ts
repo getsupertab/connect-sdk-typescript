@@ -218,6 +218,91 @@ function parseRobotsLicenseDirectives(robotsTxt: string): string[] {
   return urls;
 }
 
+function cacheLicenseXml(origin: string, xml: string): void {
+  evictExpiredLicenseXml();
+  licenseXmlCache.set(origin, { xml, fetchedAt: Math.floor(Date.now() / 1000) });
+}
+
+/** Fetch ${origin}/license.xml. Returns the XML, or null on any non-ok / network error. */
+async function tryFetchOriginLicenseXml(
+  origin: string,
+  debug: boolean | undefined
+): Promise<string | null> {
+  const url = `${origin}/license.xml`;
+  try {
+    const response = await fetch(url, { headers: { "User-Agent": SDK_USER_AGENT } });
+    if (!response.ok) {
+      if (debug) console.debug(`Origin ${url} returned ${response.status}; trying robots.txt discovery`);
+      return null;
+    }
+    if (debug) console.debug("Fetched license.xml from", url);
+    return await response.text();
+  } catch (err) {
+    if (debug) console.debug(`Origin ${url} fetch failed (${String(err)}); trying robots.txt discovery`);
+    return null;
+  }
+}
+
+/** True when the XML has a content block with a `server` that matches the resource. */
+function licenseXmlHasMintableMatch(
+  xml: string,
+  resourceUrl: string,
+  debug: boolean | undefined
+): boolean {
+  const mintable = parseContentElements(xml, debug).filter((b) => !!b.server);
+  return findBestMatchingContent(mintable, resourceUrl, debug) !== null;
+}
+
+/**
+ * Resolve a license.xml via robots.txt `License:` directives, origin having failed.
+ * Follows directives in document order and returns the first XML with a mintable
+ * block for the resource. Throws a discovery-specific error if none qualify.
+ */
+async function discoverLicenseXmlViaRobots(
+  origin: string,
+  resourceUrl: string,
+  debug: boolean | undefined
+): Promise<string> {
+  const robotsUrl = `${origin}/robots.txt`;
+  let directives: string[] = [];
+  try {
+    const response = await fetch(robotsUrl, { headers: { "User-Agent": SDK_USER_AGENT } });
+    if (response.ok) {
+      directives = parseRobotsLicenseDirectives(await response.text());
+    } else if (debug) {
+      console.debug(`robots.txt ${robotsUrl} returned ${response.status}`);
+    }
+  } catch (err) {
+    if (debug) console.debug(`robots.txt ${robotsUrl} fetch failed (${String(err)})`);
+  }
+
+  if (directives.length === 0) {
+    throw new Error(
+      `No RSL license discoverable for ${origin}: origin /license.xml failed and robots.txt has no License directive`
+    );
+  }
+
+  for (const licenseUrl of directives) {
+    try {
+      const response = await fetch(licenseUrl, { headers: { "User-Agent": SDK_USER_AGENT } });
+      if (!response.ok) {
+        if (debug) console.debug(`License directive ${licenseUrl} returned ${response.status}, skipping`);
+        continue;
+      }
+      const xml = await response.text();
+      if (licenseXmlHasMintableMatch(xml, resourceUrl, debug)) {
+        if (debug) console.debug(`Resolved mintable license via robots.txt directive ${licenseUrl}`);
+        return xml;
+      }
+      if (debug) console.debug(`License directive ${licenseUrl} has no mintable block for ${resourceUrl}, skipping`);
+    } catch (err) {
+      if (debug) console.debug(`License directive ${licenseUrl} fetch failed (${String(err)}), skipping`);
+    }
+  }
+
+  throw new Error(`No mintable RSL license found via robots.txt for ${resourceUrl}`);
+}
+
 async function fetchLicenseXml(
   resourceUrl: string,
   debug: boolean | undefined
@@ -233,32 +318,19 @@ async function fetchLicenseXml(
       }
       return cached.xml;
     }
-    if (debug) {
-      console.debug(`Cached license.xml for origin ${origin} expired, re-fetching`);
-    }
+    if (debug) console.debug(`Cached license.xml for origin ${origin} expired, re-fetching`);
     licenseXmlCache.delete(origin);
   }
 
-  const licenseXmlUrl = `${origin}/license.xml`;
-  const response = await fetch(licenseXmlUrl, {
-    headers: { "User-Agent": SDK_USER_AGENT },
-  });
-  if (!response.ok) {
-    if (debug) {
-      console.error(`Failed to fetch license.xml from ${licenseXmlUrl}: ${response.status}`);
-    }
-    throw new Error(
-      `Failed to fetch license.xml from ${licenseXmlUrl}: ${response.status}`
-    );
+  const originXml = await tryFetchOriginLicenseXml(origin, debug);
+  if (originXml !== null) {
+    cacheLicenseXml(origin, originXml);
+    return originXml;
   }
 
-  const xml = await response.text();
-  if (debug) {
-    console.debug("Fetched license.xml from", licenseXmlUrl);
-  }
-  evictExpiredLicenseXml();
-  licenseXmlCache.set(origin, { xml, fetchedAt: Math.floor(Date.now() / 1000) });
-  return xml;
+  const discovered = await discoverLicenseXmlViaRobots(origin, resourceUrl, debug);
+  cacheLicenseXml(origin, discovered);
+  return discovered;
 }
 
 function parseContentElements(xml: string, debug?: boolean): ContentBlock[] {

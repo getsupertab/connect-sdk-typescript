@@ -539,3 +539,157 @@ describe("parseRobotsLicenseDirectives", () => {
     expect(parseRobotsLicenseDirectives(robots)).toEqual(["https://x.com/l.xml"]);
   });
 });
+
+describe("license discovery (robots.txt)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  const makeJwt = (exp: number) => {
+    const b64url = (o: object) =>
+      btoa(JSON.stringify(o)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    return [b64url({ alg: "ES256", typ: "JWT" }), b64url({ exp, iss: "test" }), "sig"].join(".");
+  };
+
+  // A content block; omit `server` to make it non-mintable.
+  const block = (url: string, server?: string) =>
+    server
+      ? `<content url="${url}" server="${server}"><license type="t"><link rel="self" href="${server}/license"/></license></content>`
+      : `<content url="${url}"><license type="t"/></content>`;
+  const rsl = (...blocks: string[]) => `<rsl>${blocks.join("")}</rsl>`;
+
+  type Route = { ok?: boolean; status?: number; body?: string };
+
+  /** Stub fetch with exact-URL routing; unmatched `/token` URLs return a valid JWT. */
+  function mockRoutes(routes: Record<string, Route>) {
+    const mock = vi.fn().mockImplementation((url: string) => {
+      const r = routes[url];
+      if (r) {
+        const ok = r.ok ?? true;
+        return Promise.resolve({
+          ok,
+          status: r.status ?? (ok ? 200 : 404),
+          text: () => Promise.resolve(r.body ?? ""),
+        });
+      }
+      if (typeof url === "string" && url.endsWith("/token")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ access_token: makeJwt(Math.floor(Date.now() / 1000) + 900) }),
+        });
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+    vi.stubGlobal("fetch", mock);
+    return mock;
+  }
+
+  const called = (mock: ReturnType<typeof vi.fn>, url: string) =>
+    mock.mock.calls.some(([u]) => u === url);
+
+  it("uses origin /license.xml and never fetches robots.txt when origin serves it", async () => {
+    const origin = "http://disc-origin-served.com";
+    const mock = mockRoutes({
+      [`${origin}/license.xml`]: { body: rsl(block(`${origin}/articles/*`, "http://mint.test")) },
+    });
+
+    const token = await obtainLicenseToken({ clientId: "d1", clientSecret: "s", resourceUrl: `${origin}/articles/x` });
+
+    expect(token).toBeDefined();
+    expect(called(mock, `${origin}/robots.txt`)).toBe(false);
+  });
+
+  it("falls back to a robots.txt License directive when origin returns 404", async () => {
+    const origin = "http://disc-fallback.com";
+    const licUrl = "https://api.test/systems/abc/license.xml";
+    const mock = mockRoutes({
+      [`${origin}/license.xml`]: { ok: false, status: 404 },
+      [`${origin}/robots.txt`]: { body: `License: ${licUrl}` },
+      [licUrl]: { body: rsl(block(`${origin}/articles/*`, "http://mint.test")) },
+    });
+
+    const token = await obtainLicenseToken({ clientId: "d2", clientSecret: "s", resourceUrl: `${origin}/articles/x` });
+
+    expect(token).toBeDefined();
+    expect(called(mock, `${origin}/robots.txt`)).toBe(true);
+    expect(called(mock, licUrl)).toBe(true);
+  });
+
+  it("skips a non-mintable directive and selects the first mintable one", async () => {
+    const origin = "http://disc-first-mintable.com";
+    const attrUrl = "https://attr.test/attribution.xml";
+    const paidUrl = "https://api.test/license.xml";
+    const mock = mockRoutes({
+      [`${origin}/license.xml`]: { ok: false, status: 404 },
+      [`${origin}/robots.txt`]: { body: [`License: ${attrUrl}`, `License: ${paidUrl}`].join("\n") },
+      [attrUrl]: { body: rsl(block(`${origin}/articles/*`)) }, // no server -> non-mintable
+      [paidUrl]: { body: rsl(block(`${origin}/articles/*`, "http://mint.test")) },
+    });
+
+    const token = await obtainLicenseToken({ clientId: "d3", clientSecret: "s", resourceUrl: `${origin}/articles/x` });
+
+    expect(token).toBeDefined();
+    expect(called(mock, attrUrl)).toBe(true); // tried first, in order
+    expect(called(mock, paidUrl)).toBe(true);
+  });
+
+  it("early-returns on the first mintable directive without fetching later ones", async () => {
+    const origin = "http://disc-early-return.com";
+    const paidUrl = "https://api.test/license.xml";
+    const laterUrl = "https://later.test/license.xml";
+    const mock = mockRoutes({
+      [`${origin}/license.xml`]: { ok: false, status: 404 },
+      [`${origin}/robots.txt`]: { body: [`License: ${paidUrl}`, `License: ${laterUrl}`].join("\n") },
+      [paidUrl]: { body: rsl(block(`${origin}/articles/*`, "http://mint.test")) },
+      [laterUrl]: { body: rsl(block(`${origin}/articles/*`, "http://mint2.test")) },
+    });
+
+    await obtainLicenseToken({ clientId: "d4", clientSecret: "s", resourceUrl: `${origin}/articles/x` });
+
+    expect(called(mock, paidUrl)).toBe(true);
+    expect(called(mock, laterUrl)).toBe(false); // never fetched
+  });
+
+  it("throws a non-mintable error when directives offer only non-mintable licenses", async () => {
+    const origin = "http://disc-nonmintable.com";
+    const attrUrl = "https://attr.test/attribution.xml";
+    mockRoutes({
+      [`${origin}/license.xml`]: { ok: false, status: 404 },
+      [`${origin}/robots.txt`]: { body: `License: ${attrUrl}` },
+      [attrUrl]: { body: rsl(block(`${origin}/articles/*`)) }, // no server
+    });
+
+    await expect(
+      obtainLicenseToken({ clientId: "d5", clientSecret: "s", resourceUrl: `${origin}/articles/x` })
+    ).rejects.toThrow(/No mintable RSL license/);
+  });
+
+  it("throws a discovery error when origin fails and robots.txt has no License directive", async () => {
+    const origin = "http://disc-nothing.com";
+    mockRoutes({
+      [`${origin}/license.xml`]: { ok: false, status: 404 },
+      [`${origin}/robots.txt`]: { body: "User-agent: *\nDisallow: /" },
+    });
+
+    await expect(
+      obtainLicenseToken({ clientId: "d6", clientSecret: "s", resourceUrl: `${origin}/articles/x` })
+    ).rejects.toThrow(/No RSL license discoverable/);
+  });
+
+  it("caches the discovered license.xml by origin (no re-discovery on second call)", async () => {
+    const origin = "http://disc-cache.com";
+    const licUrl = "https://api.test/cache/license.xml";
+    const mock = mockRoutes({
+      [`${origin}/license.xml`]: { ok: false, status: 404 },
+      [`${origin}/robots.txt`]: { body: `License: ${licUrl}` },
+      [licUrl]: { body: rsl(block(`${origin}/articles/*`, "http://mint.test")) },
+    });
+
+    await obtainLicenseToken({ clientId: "d7", clientSecret: "s", resourceUrl: `${origin}/articles/x` });
+    await obtainLicenseToken({ clientId: "d7", clientSecret: "s", resourceUrl: `${origin}/articles/y` });
+
+    const robotsCalls = mock.mock.calls.filter(([u]) => u === `${origin}/robots.txt`);
+    expect(robotsCalls).toHaveLength(1); // discovery ran once, then served from cache
+  });
+});
