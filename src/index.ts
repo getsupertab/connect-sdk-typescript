@@ -463,13 +463,16 @@ export class SupertabConnect {
     usage?: UsageType;
     debug?: boolean;
   }): Promise<string | undefined> {
-    return obtainLicenseTokenHelper({
-      clientId: options.clientId,
-      clientSecret: options.clientSecret,
-      resourceUrl: options.resourceUrl,
-      usage: options.usage,
-      debug: options.debug,
-    });
+    return obtainLicenseTokenHelper(
+      {
+        clientId: options.clientId,
+        clientSecret: options.clientSecret,
+        resourceUrl: options.resourceUrl,
+        usage: options.usage,
+        debug: options.debug,
+      },
+      SupertabConnect.baseUrl
+    );
   }
 
   /**
