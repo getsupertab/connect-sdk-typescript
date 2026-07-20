@@ -226,6 +226,25 @@ describe("handleRequest — /.well-known/supertab/status branch", () => {
     expect(result.headers["Content-Type"]).toBe("application/json");
   });
 
+  it.each(["bearer", "BEARER", "BeArEr"])(
+    "accepts the challenge with a case-variant auth scheme (%s)",
+    async (scheme) => {
+      const verifySpy = vi.spyOn(statusModule, "verifyStatusChallenge").mockResolvedValue(true);
+
+      const sdk = new SupertabConnect({ apiKey: "merchant-key" }, true);
+      const request = new Request("https://acme.com/.well-known/supertab/status", {
+        method: "GET",
+        headers: { Authorization: `${scheme} valid-token` },
+      });
+      const result = await sdk.handleRequest(request);
+
+      expect(result.action).toBe(HandlerAction.RESPOND);
+      if (result.action !== HandlerAction.RESPOND) return;
+      expect(result.status).toBe(200);
+      expect(verifySpy).toHaveBeenCalledWith("valid-token", expect.anything());
+    }
+  );
+
   it("returns 404 when Authorization header is absent", async () => {
     // verifyStatusChallenge should NOT be called at all when there's no token
     const verifySpy = vi.spyOn(statusModule, "verifyStatusChallenge");

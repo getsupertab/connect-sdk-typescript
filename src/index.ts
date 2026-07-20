@@ -280,7 +280,9 @@ export class SupertabConnect {
       const url = new URL(request.url);
       if (url.pathname === "/.well-known/supertab/status" && request.method === "GET") {
         const authHeader = request.headers.get("Authorization") ?? "";
-        const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+        // The auth-scheme is case-insensitive per RFC 9110, and 1+ spaces may follow it.
+        const bearerMatch = authHeader.match(/^Bearer +(.+)$/i);
+        const token = bearerMatch ? bearerMatch[1] : "";
         const ok = token
           ? await verifyStatusChallenge(token, {
               expectedAudience: url.origin,
