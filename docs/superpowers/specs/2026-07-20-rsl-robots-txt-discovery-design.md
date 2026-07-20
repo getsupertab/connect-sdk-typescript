@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-20
 **Repo:** `connect-sdk-typescript`
-**Status:** design approved, pending implementation
+**Status:** implemented (branch `feat/rsl-robots-discovery`)
 
 ## Problem
 

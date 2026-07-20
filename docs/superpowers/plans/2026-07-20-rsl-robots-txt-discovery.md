@@ -11,12 +11,12 @@
 ## Global Constraints
 
 - Language: TypeScript; test runner: **vitest** (`npm test` → `vitest run`).
-- All code lives in `src/customer.ts`; all tests in `tests/customer.test.ts`.
+- Tasks 1–2 change only `src/customer.ts`; all tests in `tests/customer.test.ts`. (The later provider-preference work also wires `src/index.ts` — see the multi-provider limitation note.)
 - HTTP requests use `fetch` with header `{ "User-Agent": SDK_USER_AGENT }` (already imported in `customer.ts`).
 - License.xml is cached by **origin** with TTL `LICENSE_XML_TTL_SECONDS` (15 min) via the existing `licenseXmlCache` map and `evictExpiredLicenseXml()`.
 - Reuse existing exported helpers `parseContentElements(xml, debug)` and `findBestMatchingContent(blocks, resourceUrl, debug)` — do not reimplement content matching.
 - A content block is **mintable** when it has a truthy `server` and `findBestMatchingContent` matches it to the resource.
-- No new runtime dependencies. No changes outside `src/customer.ts` / `tests/customer.test.ts`.
+- No new runtime dependencies. Tasks 1–2 stay within `src/customer.ts` / `tests/customer.test.ts`; the provider-preference follow-up additionally touches `src/index.ts` (base-URL injection) and these design docs.
 
 ---
 

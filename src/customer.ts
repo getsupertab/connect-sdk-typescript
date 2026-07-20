@@ -13,8 +13,8 @@ type CachedLicenseXml = { xml: string; fetchedAt: number };
 const LICENSE_XML_TTL_SECONDS = 15 * 60; // 15 minutes
 
 // Default Supertab Connect API base. A merchant's robots.txt may advertise several
-// licensing providers (e.g. rslcollective + Supertab); this SDK only holds Supertab
-// credentials, so selection prefers the block whose token `server` is on this host.
+// licensing providers (e.g. rslcollective + Supertab); selection prefers the block whose
+// token `server` is on this host, falling back to another provider only when none match.
 // Mirrors SupertabConnect.baseUrl in index.ts; the class passes its configured value.
 const DEFAULT_SUPERTAB_BASE_URL = "https://api-connect.supertab.co";
 
