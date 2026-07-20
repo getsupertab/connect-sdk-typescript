@@ -435,6 +435,7 @@ git commit -m "feat(customer): fall back to robots.txt License discovery when or
 - **Serverless-usage licenses via robots.txt are out of scope (v1).** The origin-served path still supports the serverless-usage short-circuit in `obtainLicenseToken` unchanged. Discovery only returns a license that has a **mintable** block for the resource; a robots-referenced serverless-only license (e.g. free attribution) is treated as "non-mintable" and skipped. This matches the approved spec's mintable-focus and keeps the free-attribution semantics (external to Supertab) out of the token flow.
 - **No robots-first mode, no Supertab registry coupling** — the SDK stays protocol-generic (RSL), resolving whatever the merchant published.
 - **Python / PHP SDKs** share the same gap; mirroring is a follow-up, not part of this plan.
+- **Cache-by-origin assumes one mintable license per merchant.** `fetchLicenseXml` caches the resolved license.xml (origin-served or robots-discovered) under the origin key, which is correct for v1 where a single mintable license covers the whole origin. If a merchant ever publishes multiple robots.txt `License:` directives that partition the resource space into distinct mintable licenses, origin-keyed caching would serve the wrong license for some paths — at that point the cache key should become the resolved license URL (or resource pattern) instead of the origin.
 
 ## Self-review
 

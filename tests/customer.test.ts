@@ -538,6 +538,11 @@ describe("parseRobotsLicenseDirectives", () => {
     const robots = ["License: not-a-url", "License: https://x.com/l.xml"].join("\n");
     expect(parseRobotsLicenseDirectives(robots)).toEqual(["https://x.com/l.xml"]);
   });
+
+  it("drops non-http(s) schemes", () => {
+    const robots = ["License: ftp://x.com/l.xml", "License: data:application/xml,<rsl/>", "License: https://x.com/l.xml"].join("\n");
+    expect(parseRobotsLicenseDirectives(robots)).toEqual(["https://x.com/l.xml"]);
+  });
 });
 
 describe("license discovery (robots.txt)", () => {

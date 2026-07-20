@@ -198,7 +198,8 @@ async function generateLicenseToken({
  * Extract RSL `License:` directive URLs from a robots.txt body, in document order.
  * The directive is site-level, so user-agent grouping is ignored. A URL cannot
  * contain whitespace, so `\S+` naturally stops before any trailing inline comment.
- * Only valid absolute URLs (per the spec) are included; malformed URLs are skipped.
+ * Only valid absolute http(s) URLs are kept; malformed URLs or other schemes
+ * (e.g. `data:`, `file:`, `ftp:`) are skipped.
  */
 function parseRobotsLicenseDirectives(robotsTxt: string): string[] {
   const urls: string[] = [];
@@ -208,8 +209,10 @@ function parseRobotsLicenseDirectives(robotsTxt: string): string[] {
     const match = line.match(/^license\s*:\s*(\S+)/i);
     if (match) {
       try {
-        new URL(match[1]);
-        urls.push(match[1]);
+        const parsed = new URL(match[1]);
+        if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+          urls.push(match[1]);
+        }
       } catch {
         // malformed URL — skip per spec
       }
@@ -329,6 +332,10 @@ async function fetchLicenseXml(
   }
 
   const discovered = await discoverLicenseXmlViaRobots(origin, resourceUrl, debug);
+  // Cached by origin, not by resource/license URL: v1 assumes one mintable license
+  // per merchant covers the whole origin. If a merchant ever publishes multiple
+  // resource-partitioned mintable directives, key the cache by resolved license URL
+  // (or resource pattern) instead, or this will serve the wrong license for some paths.
   cacheLicenseXml(origin, discovered);
   return discovered;
 }
