@@ -183,6 +183,17 @@ describe("handleRequest — /.well-known/supertab/status branch", () => {
     expect(body.eventReporting).toBe(false);
   });
 
+  it("does not intercept non-GET requests to the status path", async () => {
+    const verifySpy = vi.spyOn(statusModule, "verifyStatusChallenge");
+
+    const sdk = new SupertabConnect({ apiKey: "merchant-key" }, true);
+    const result = await sdk.handleRequest(makeStatusRequest("valid-token", "https://acme.com", "POST"));
+
+    // Falls through to normal handling: no license token, no bot detector → ALLOW.
+    expect(result.action).toBe(HandlerAction.ALLOW);
+    expect(verifySpy).not.toHaveBeenCalled();
+  });
+
   it("returns RESPOND with status 404 and minimal body on invalid challenge", async () => {
     vi.spyOn(statusModule, "verifyStatusChallenge").mockResolvedValue(false);
 

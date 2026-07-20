@@ -109,6 +109,20 @@ describe("CloudFront wrapper — RESPOND action (status endpoint)", () => {
     expect(body).not.toHaveProperty("servingLicenseXml");
   });
 
+  it("passes a non-GET request to the status path through to origin (no x-license-auth)", async () => {
+    const verifySpy = vi.spyOn(statusModule, "verifyStatusChallenge");
+
+    const result = await SupertabConnect.cloudfrontHandleRequests(
+      makeCfStatusEvent("valid-token", "acme.com", "POST"),
+      { apiKey: "merchant-key" }
+    );
+
+    // Pass-through returns the raw request (has `uri`), not a response (would have `status`).
+    expect(result).toHaveProperty("uri", "/.well-known/supertab/status");
+    expect(result).not.toHaveProperty("status");
+    expect(verifySpy).not.toHaveBeenCalled();
+  });
+
   it("returns a 404 status response for an invalid challenge (still reached handleRequest)", async () => {
     vi.spyOn(statusModule, "verifyStatusChallenge").mockResolvedValue(false);
 

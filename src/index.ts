@@ -277,7 +277,7 @@ export class SupertabConnect {
     // Cheap substring pre-filter so the common request path skips URL parsing.
     if (request.url.includes("/.well-known/supertab/status")) {
       const url = new URL(request.url);
-      if (url.pathname === "/.well-known/supertab/status") {
+      if (url.pathname === "/.well-known/supertab/status" && request.method === "GET") {
         const authHeader = request.headers.get("Authorization") ?? "";
         const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
         const ok = token
@@ -589,7 +589,7 @@ export class SupertabConnect {
     try {
       // The self-report status probe carries an Authorization: Bearer challenge, not
       // x-license-auth, so it must be let through to handleRequest rather than passed to origin.
-      const isStatusProbe = request.uri === "/.well-known/supertab/status";
+      const isStatusProbe = request.uri === "/.well-known/supertab/status" && request.method === "GET";
       const license_auth_header = request.headers?.["x-license-auth"];
       if (!license_auth_header && !isStatusProbe) {
         // No license auth header means the request is either from a human or from an unidentifiable bot.
