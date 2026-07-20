@@ -651,9 +651,10 @@ describe("license discovery (robots.txt)", () => {
       [laterUrl]: { body: rsl(block(`${origin}/articles/*`, "http://mint2.test")) },
     });
 
-    await obtainLicenseToken({
-      clientId: "d4", clientSecret: "s", resourceUrl: `${origin}/articles/x`, supertabBaseUrl: supertabServer,
-    });
+    await obtainLicenseToken(
+      { clientId: "d4", clientSecret: "s", resourceUrl: `${origin}/articles/x` },
+      supertabServer
+    );
 
     expect(called(mock, paidUrl)).toBe(true);
     expect(called(mock, laterUrl)).toBe(false); // never fetched
@@ -672,9 +673,10 @@ describe("license discovery (robots.txt)", () => {
       [supertabUrl]: { body: rsl(block(`${origin}/*`, supertabServer)) },
     });
 
-    const token = await obtainLicenseToken({
-      clientId: "dm", clientSecret: "s", resourceUrl: `${origin}/x`, supertabBaseUrl: supertabServer,
-    });
+    const token = await obtainLicenseToken(
+      { clientId: "dm", clientSecret: "s", resourceUrl: `${origin}/x` },
+      supertabServer
+    );
 
     expect(token).toBeDefined();
     expect(called(mock, `${supertabServer}/token`)).toBe(true);
@@ -694,9 +696,10 @@ describe("license discovery (robots.txt)", () => {
       },
     });
 
-    const token = await obtainLicenseToken({
-      clientId: "dmp", clientSecret: "s", resourceUrl: `${origin}/videos/x`, supertabBaseUrl: supertabServer,
-    });
+    const token = await obtainLicenseToken(
+      { clientId: "dmp", clientSecret: "s", resourceUrl: `${origin}/videos/x` },
+      supertabServer
+    );
 
     expect(token).toBeDefined();
     expect(called(mock, `${otherServer}/token`)).toBe(true);

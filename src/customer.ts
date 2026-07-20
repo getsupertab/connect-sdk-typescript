@@ -78,9 +78,6 @@ type ObtainLicenseTokenParams = {
   clientSecret: string;
   resourceUrl: string;
   usage?: UsageType;
-  /** Supertab Connect API base whose host the mint `server` is preferred to match
-   *  when a merchant advertises multiple licensing providers. Defaults to prod. */
-  supertabBaseUrl?: string;
   debug?: boolean;
 };
 
@@ -572,14 +569,13 @@ function findServerlessUsageContent(
   return findBestMatchingContent(matchingUsageBlocks, resourceUrl, debug);
 }
 
-export async function obtainLicenseToken({
-  clientId,
-  clientSecret,
-  resourceUrl,
-  usage,
-  supertabBaseUrl = DEFAULT_SUPERTAB_BASE_URL,
-  debug,
-}: ObtainLicenseTokenParams): Promise<string | undefined> {
+export async function obtainLicenseToken(
+  { clientId, clientSecret, resourceUrl, usage, debug }: ObtainLicenseTokenParams,
+  // Supertab Connect API base whose host the mint `server` is preferred to match when a
+  // merchant advertises multiple licensing providers. Internal — the SupertabConnect class
+  // injects its configured baseUrl; not a public per-call option.
+  supertabBaseUrl: string = DEFAULT_SUPERTAB_BASE_URL
+): Promise<string | undefined> {
   const xml = await fetchLicenseXml(resourceUrl, supertabBaseUrl, debug);
   if (debug) {
     console.debug(`Fetched license.xml (${xml.length} chars)`);
