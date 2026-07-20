@@ -140,7 +140,8 @@ export class SupertabConnect {
     this.enforcement = config.enforcement ?? EnforcementMode.OBSERVE;
     this.botDetector = config.botDetector;
     this.debug = config.debug ?? false;
-    this.analyticsEnabled = config.analyticsEnabled ?? false;
+    // A custom transport emits regardless of the flag, so report it as enabled.
+    this.analyticsEnabled = (config.analyticsEnabled ?? false) || config.analyticsTransport != null;
     this.analyticsTransport = SupertabConnect.buildAnalyticsTransport(config);
 
     // Register this as the singleton instance

@@ -183,6 +183,21 @@ describe("handleRequest — /.well-known/supertab/status branch", () => {
     expect(body.eventReporting).toBe(false);
   });
 
+  it("reports eventReporting=true when a custom transport is injected without the flag", async () => {
+    vi.spyOn(statusModule, "verifyStatusChallenge").mockResolvedValue(true);
+
+    const sdk = new SupertabConnect({
+      apiKey: "merchant-key",
+      analyticsTransport: new RecordingTransport(),
+    }, true);
+    const result = await sdk.handleRequest(makeStatusRequest("valid-token"));
+
+    expect(result.action).toBe(HandlerAction.RESPOND);
+    if (result.action !== HandlerAction.RESPOND) return;
+
+    expect(JSON.parse(result.body).eventReporting).toBe(true);
+  });
+
   it("does not intercept non-GET requests to the status path", async () => {
     const verifySpy = vi.spyOn(statusModule, "verifyStatusChallenge");
 
