@@ -265,9 +265,10 @@ function isSupertabServer(server: string | undefined, supertabBaseUrl: string): 
   }
 }
 
-/** Pick the content block obtainLicenseToken would mint against: among server-bearing
- *  blocks, prefer those whose host matches the Supertab base; fall back to all
- *  server-bearing blocks when none match. Returns the best resource match, or null. */
+/** Pick the content block obtainLicenseToken would mint against: match the resource
+ *  URL first, then prefer a Supertab-hosted match among server-bearing blocks;
+ *  fall back to the best match among all server-bearing blocks when none match on
+ *  a Supertab host. Returns the best resource match, or null. */
 function selectMintableContent(
   contentBlocks: ContentBlock[],
   resourceUrl: string,
@@ -276,8 +277,11 @@ function selectMintableContent(
 ): ContentBlock | null {
   const withServer = contentBlocks.filter((b) => !!b.server);
   const supertab = withServer.filter((b) => isSupertabServer(b.server, supertabBaseUrl));
-  const pool = supertab.length > 0 ? supertab : withServer;
-  return findBestMatchingContent(pool, resourceUrl, debug);
+  // Prefer a Supertab-hosted match; fall back to the best match among all providers.
+  return (
+    findBestMatchingContent(supertab, resourceUrl, debug) ??
+    findBestMatchingContent(withServer, resourceUrl, debug)
+  );
 }
 
 type MintClass = "supertab" | "other" | "none";

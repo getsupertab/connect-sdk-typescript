@@ -681,6 +681,28 @@ describe("license discovery (robots.txt)", () => {
     expect(called(mock, `${otherServer}/token`)).toBe(false);
   });
 
+  it("prefers a matching non-Supertab block over a non-matching Supertab block for the resource", async () => {
+    const origin = "http://disc-match-then-prefer.com";
+    const supertabServer = "https://api.example"; // == supertabBaseUrl host
+    const otherServer = "https://api.rslcollective.example";
+    const mock = mockRoutes({
+      [`${origin}/license.xml`]: {
+        body: rsl(
+          block(`${origin}/blog/*`, supertabServer), // Supertab-hosted, but doesn't match this resource
+          block(`${origin}/videos/*`, otherServer) // non-Supertab, matches this resource
+        ),
+      },
+    });
+
+    const token = await obtainLicenseToken({
+      clientId: "dmp", clientSecret: "s", resourceUrl: `${origin}/videos/x`, supertabBaseUrl: supertabServer,
+    });
+
+    expect(token).toBeDefined();
+    expect(called(mock, `${otherServer}/token`)).toBe(true);
+    expect(called(mock, `${supertabServer}/token`)).toBe(false);
+  });
+
   it("falls back to a single non-Supertab provider when it is the only mintable option", async () => {
     const origin = "http://disc-single-other-provider.com";
     const licUrl = "https://api.rslcollective.example/attribution.xml";
