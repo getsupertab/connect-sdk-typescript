@@ -12,6 +12,12 @@ const licenseTokenCache = new Map<string, CachedToken>();
 type CachedLicenseXml = { xml: string; fetchedAt: number };
 const LICENSE_XML_TTL_SECONDS = 15 * 60; // 15 minutes
 
+// Default Supertab Connect API base. A merchant's robots.txt may advertise several
+// licensing providers (e.g. rslcollective + Supertab); this SDK only holds Supertab
+// credentials, so selection prefers the block whose token `server` is on this host.
+// Mirrors SupertabConnect.baseUrl in index.ts; the class passes its configured value.
+const DEFAULT_SUPERTAB_BASE_URL = "https://api-connect.supertab.co";
+
 // In-memory cache for license.xml content, keyed by origin (e.g. "https://example.com")
 const licenseXmlCache = new Map<string, CachedLicenseXml>();
 
@@ -72,6 +78,9 @@ type ObtainLicenseTokenParams = {
   clientSecret: string;
   resourceUrl: string;
   usage?: UsageType;
+  /** Supertab Connect API base whose host the mint `server` is preferred to match
+   *  when a merchant advertises multiple licensing providers. Defaults to prod. */
+  supertabBaseUrl?: string;
   debug?: boolean;
 };
 
@@ -246,24 +255,56 @@ async function tryFetchOriginLicenseXml(
   }
 }
 
-/** True when the XML has a content block with a `server` that matches the resource. */
-function licenseXmlHasMintableMatch(
+/** True when `server`'s host matches the configured Supertab API base host. */
+function isSupertabServer(server: string | undefined, supertabBaseUrl: string): boolean {
+  if (!server) return false;
+  try {
+    return new URL(server).host === new URL(supertabBaseUrl).host;
+  } catch {
+    return false;
+  }
+}
+
+/** Pick the content block obtainLicenseToken would mint against: among server-bearing
+ *  blocks, prefer those whose host matches the Supertab base; fall back to all
+ *  server-bearing blocks when none match. Returns the best resource match, or null. */
+function selectMintableContent(
+  contentBlocks: ContentBlock[],
+  resourceUrl: string,
+  supertabBaseUrl: string,
+  debug?: boolean
+): ContentBlock | null {
+  const withServer = contentBlocks.filter((b) => !!b.server);
+  const supertab = withServer.filter((b) => isSupertabServer(b.server, supertabBaseUrl));
+  const pool = supertab.length > 0 ? supertab : withServer;
+  return findBestMatchingContent(pool, resourceUrl, debug);
+}
+
+type MintClass = "supertab" | "other" | "none";
+
+/** Classify a license.xml for the resource via the same selection the mint path uses. */
+function classifyLicenseXml(
   xml: string,
   resourceUrl: string,
-  debug: boolean | undefined
-): boolean {
-  const mintable = parseContentElements(xml, debug).filter((b) => !!b.server);
-  return findBestMatchingContent(mintable, resourceUrl, debug) !== null;
+  supertabBaseUrl: string,
+  debug?: boolean
+): MintClass {
+  const block = selectMintableContent(parseContentElements(xml, debug), resourceUrl, supertabBaseUrl, debug);
+  if (!block) return "none";
+  return isSupertabServer(block.server, supertabBaseUrl) ? "supertab" : "other";
 }
 
 /**
  * Resolve a license.xml via robots.txt `License:` directives, origin having failed.
- * Follows directives in document order and returns the first XML with a mintable
- * block for the resource. Throws a discovery-specific error if none qualify.
+ * Follows directives in document order. Prefers the first directive whose mintable
+ * block is Supertab-hosted, returning immediately; otherwise falls back to the first
+ * mintable directive of any other provider. Throws a discovery-specific error if none
+ * qualify.
  */
 async function discoverLicenseXmlViaRobots(
   origin: string,
   resourceUrl: string,
+  supertabBaseUrl: string,
   debug: boolean | undefined
 ): Promise<string> {
   const robotsUrl = `${origin}/robots.txt`;
@@ -285,6 +326,7 @@ async function discoverLicenseXmlViaRobots(
     );
   }
 
+  let fallback: string | null = null;
   for (const licenseUrl of directives) {
     try {
       const response = await fetch(licenseUrl, { headers: { "User-Agent": SDK_USER_AGENT } });
@@ -293,21 +335,28 @@ async function discoverLicenseXmlViaRobots(
         continue;
       }
       const xml = await response.text();
-      if (licenseXmlHasMintableMatch(xml, resourceUrl, debug)) {
-        if (debug) console.debug(`Resolved mintable license via robots.txt directive ${licenseUrl}`);
-        return xml;
+      const cls = classifyLicenseXml(xml, resourceUrl, supertabBaseUrl, debug);
+      if (cls === "supertab") {
+        if (debug) console.debug(`Resolved Supertab license via robots.txt directive ${licenseUrl}`);
+        return xml; // preferred provider — stop looking
       }
-      if (debug) console.debug(`License directive ${licenseUrl} has no mintable block for ${resourceUrl}, skipping`);
+      if (cls === "other" && fallback === null) {
+        if (debug) console.debug(`Directive ${licenseUrl} is mintable but not Supertab-hosted; holding as fallback`);
+        fallback = xml;
+      } else if (debug && cls === "none") {
+        console.debug(`License directive ${licenseUrl} has no mintable block for ${resourceUrl}, skipping`);
+      }
     } catch (err) {
       if (debug) console.debug(`License directive ${licenseUrl} fetch failed (${String(err)}), skipping`);
     }
   }
-
+  if (fallback !== null) return fallback;
   throw new Error(`No mintable RSL license found via robots.txt for ${resourceUrl}`);
 }
 
 async function fetchLicenseXml(
   resourceUrl: string,
+  supertabBaseUrl: string,
   debug: boolean | undefined
 ): Promise<string> {
   const origin = new URL(resourceUrl).origin;
@@ -331,7 +380,7 @@ async function fetchLicenseXml(
     return originXml;
   }
 
-  const discovered = await discoverLicenseXmlViaRobots(origin, resourceUrl, debug);
+  const discovered = await discoverLicenseXmlViaRobots(origin, resourceUrl, supertabBaseUrl, debug);
   // Cached by origin, not by resource/license URL: v1 assumes one mintable license
   // per merchant covers the whole origin. If a merchant ever publishes multiple
   // resource-partitioned mintable directives, key the cache by resolved license URL
@@ -524,9 +573,10 @@ export async function obtainLicenseToken({
   clientSecret,
   resourceUrl,
   usage,
+  supertabBaseUrl = DEFAULT_SUPERTAB_BASE_URL,
   debug,
 }: ObtainLicenseTokenParams): Promise<string | undefined> {
-  const xml = await fetchLicenseXml(resourceUrl, debug);
+  const xml = await fetchLicenseXml(resourceUrl, supertabBaseUrl, debug);
   if (debug) {
     console.debug(`Fetched license.xml (${xml.length} chars)`);
   }
@@ -558,11 +608,10 @@ export async function obtainLicenseToken({
     }
   }
 
-  const tokenContentBlocks = contentBlocks.filter((block) => !!block.server);
-  const matchedContent = findBestMatchingContent(tokenContentBlocks, resourceUrl, debug);
+  const matchedContent = selectMintableContent(contentBlocks, resourceUrl, supertabBaseUrl, debug);
   if (!matchedContent) {
     if (debug) {
-      const patterns = tokenContentBlocks.map(b => b.urlPattern).join(", ");
+      const patterns = contentBlocks.filter((b) => !!b.server).map((b) => b.urlPattern).join(", ");
       console.error(`No <content> element matches resource URL: ${resourceUrl}. Available patterns: ${patterns}`);
     }
     throw new Error(

@@ -643,17 +643,62 @@ describe("license discovery (robots.txt)", () => {
     const origin = "http://disc-early-return.com";
     const paidUrl = "https://api.test/license.xml";
     const laterUrl = "https://later.test/license.xml";
+    const supertabServer = "http://mint.test";
     const mock = mockRoutes({
       [`${origin}/license.xml`]: { ok: false, status: 404 },
       [`${origin}/robots.txt`]: { body: [`License: ${paidUrl}`, `License: ${laterUrl}`].join("\n") },
-      [paidUrl]: { body: rsl(block(`${origin}/articles/*`, "http://mint.test")) },
+      [paidUrl]: { body: rsl(block(`${origin}/articles/*`, supertabServer)) },
       [laterUrl]: { body: rsl(block(`${origin}/articles/*`, "http://mint2.test")) },
     });
 
-    await obtainLicenseToken({ clientId: "d4", clientSecret: "s", resourceUrl: `${origin}/articles/x` });
+    await obtainLicenseToken({
+      clientId: "d4", clientSecret: "s", resourceUrl: `${origin}/articles/x`, supertabBaseUrl: supertabServer,
+    });
 
     expect(called(mock, paidUrl)).toBe(true);
     expect(called(mock, laterUrl)).toBe(false); // never fetched
+  });
+
+  it("prefers the Supertab-hosted license over another provider's, even when the other is listed first", async () => {
+    const origin = "http://disc-multi-provider.com";
+    const otherUrl = "https://attr.example/attribution.xml";
+    const supertabUrl = "https://api.example/license.xml";
+    const otherServer = "https://api.rslcollective.example";
+    const supertabServer = "https://api.example"; // == supertabBaseUrl host
+    const mock = mockRoutes({
+      [`${origin}/license.xml`]: { ok: false, status: 404 },
+      [`${origin}/robots.txt`]: { body: [`License: ${otherUrl}`, `License: ${supertabUrl}`].join("\n") },
+      [otherUrl]: { body: rsl(block(`${origin}/*`, otherServer)) },
+      [supertabUrl]: { body: rsl(block(`${origin}/*`, supertabServer)) },
+    });
+
+    const token = await obtainLicenseToken({
+      clientId: "dm", clientSecret: "s", resourceUrl: `${origin}/x`, supertabBaseUrl: supertabServer,
+    });
+
+    expect(token).toBeDefined();
+    expect(called(mock, `${supertabServer}/token`)).toBe(true);
+    expect(called(mock, `${otherServer}/token`)).toBe(false);
+  });
+
+  it("falls back to a single non-Supertab provider when it is the only mintable option", async () => {
+    const origin = "http://disc-single-other-provider.com";
+    const licUrl = "https://api.rslcollective.example/attribution.xml";
+    const otherServer = "https://api.rslcollective.example";
+    const mock = mockRoutes({
+      [`${origin}/license.xml`]: { ok: false, status: 404 },
+      [`${origin}/robots.txt`]: { body: `License: ${licUrl}` },
+      [licUrl]: { body: rsl(block(`${origin}/*`, otherServer)) },
+    });
+
+    // Default supertabBaseUrl (omitted) — never matches otherServer, so "prefer" falls
+    // back to minting against the sole available provider instead of refusing outright.
+    const token = await obtainLicenseToken({
+      clientId: "d8", clientSecret: "s", resourceUrl: `${origin}/x`,
+    });
+
+    expect(token).toBeDefined();
+    expect(called(mock, `${otherServer}/token`)).toBe(true);
   });
 
   it("throws a non-mintable error when directives offer only non-mintable licenses", async () => {

@@ -465,6 +465,7 @@ export class SupertabConnect {
       clientSecret: options.clientSecret,
       resourceUrl: options.resourceUrl,
       usage: options.usage,
+      supertabBaseUrl: SupertabConnect.baseUrl,
       debug: options.debug,
     });
   }
