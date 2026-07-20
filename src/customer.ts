@@ -198,6 +198,7 @@ async function generateLicenseToken({
  * Extract RSL `License:` directive URLs from a robots.txt body, in document order.
  * The directive is site-level, so user-agent grouping is ignored. A URL cannot
  * contain whitespace, so `\S+` naturally stops before any trailing inline comment.
+ * Only valid absolute URLs (per the spec) are included; malformed URLs are skipped.
  */
 function parseRobotsLicenseDirectives(robotsTxt: string): string[] {
   const urls: string[] = [];
@@ -205,7 +206,14 @@ function parseRobotsLicenseDirectives(robotsTxt: string): string[] {
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) continue;
     const match = line.match(/^license\s*:\s*(\S+)/i);
-    if (match) urls.push(match[1]);
+    if (match) {
+      try {
+        new URL(match[1]);
+        urls.push(match[1]);
+      } catch {
+        // malformed URL — skip per spec
+      }
+    }
   }
   return urls;
 }

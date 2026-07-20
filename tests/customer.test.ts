@@ -529,4 +529,13 @@ describe("parseRobotsLicenseDirectives", () => {
   it("returns an empty array when no License directive is present", () => {
     expect(parseRobotsLicenseDirectives("User-agent: *\nDisallow: /")).toEqual([]);
   });
+
+  it("skips malformed URLs", () => {
+    expect(parseRobotsLicenseDirectives("License: not-a-url")).toEqual([]);
+  });
+
+  it("keeps valid directives while dropping malformed ones", () => {
+    const robots = ["License: not-a-url", "License: https://x.com/l.xml"].join("\n");
+    expect(parseRobotsLicenseDirectives(robots)).toEqual(["https://x.com/l.xml"]);
+  });
 });
