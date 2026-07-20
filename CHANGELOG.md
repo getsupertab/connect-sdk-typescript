@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.4] — 2026-07-20
+
+### Added
+
+- **RSL `robots.txt` license discovery in the customer SDK.** When a merchant does not
+  self-host `/license.xml` at its origin (returns non-ok), `obtainLicenseToken` now falls
+  back to the RSL discovery pointer: it fetches `${origin}/robots.txt`, follows the
+  `License:` directives, and resolves the referenced `license.xml`. This makes token
+  acquisition work for passive merchants that reference an API-hosted license via
+  `robots.txt` instead of serving one at their origin. The origin-served path is unchanged
+  — self-hosting merchants see no extra request.
+- **Supertab-preferred provider selection.** When a merchant advertises multiple licensing
+  providers (e.g. an attribution license plus a Supertab one), selection prefers the block
+  whose token `server` host matches the configured Supertab base (`setBaseUrl`, default
+  `https://api-connect.supertab.co`), falling back to another provider only when none match.
+  The same selection is shared by discovery and minting, so a token is only ever requested
+  from the provider that was actually selected.
+
+### Security
+
+- Discovered `License:` URLs are restricted to `http(s)` schemes, so an inline `data:` /
+  `file:` reference in a merchant's `robots.txt` cannot be fetched.
+
+## [2.2.3] — 2026-07-20
+
+### Changed
+
+- **Status probe hardening (parity fixes surfaced by the Python SDK).**
+  - The status challenge now requires both `exp` and `iat`; a signed challenge without an
+    expiry is no longer accepted (previously replayable indefinitely under jose v6).
+  - The status probe at `/.well-known/supertab/status` is only answered for `GET`; other
+    methods flow through to normal handling / origin instead of being intercepted.
+  - The `/status` self-report's `eventReporting` now reflects the *effective* analytics
+    state (enabled flag OR an injected custom transport), not just the raw flag.
+  - The status probe matches the `Bearer` auth scheme case-insensitively per RFC 9110.
+
 ## [2.2.2] — 2026-07-14
 
 ### Added
