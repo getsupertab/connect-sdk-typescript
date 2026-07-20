@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   parseContentElements,
   findBestMatchingContent,
+  parseRobotsLicenseDirectives,
   obtainLicenseToken,
   ContentBlock,
   UsageType,
@@ -498,5 +499,34 @@ describe("obtainLicenseToken caching", () => {
     expect(token).toBeDefined();
     expect(xmlFetches(mock)).toHaveLength(1);
     expect(tokenFetches(mock)).toHaveLength(1);
+  });
+});
+
+describe("parseRobotsLicenseDirectives", () => {
+  it("extracts a single License directive", () => {
+    expect(parseRobotsLicenseDirectives("License: https://x.com/license.xml")).toEqual([
+      "https://x.com/license.xml",
+    ]);
+  });
+
+  it("preserves document order for multiple directives", () => {
+    const robots = ["License: https://a.com/attribution.xml", "License: https://b.com/license.xml"].join("\n");
+    expect(parseRobotsLicenseDirectives(robots)).toEqual([
+      "https://a.com/attribution.xml",
+      "https://b.com/license.xml",
+    ]);
+  });
+
+  it("is case-insensitive on the directive name", () => {
+    expect(parseRobotsLicenseDirectives("license: https://x.com/l.xml")).toEqual(["https://x.com/l.xml"]);
+  });
+
+  it("ignores blank lines, comments, and unrelated directives", () => {
+    const robots = ["# comment", "User-agent: *", "Disallow: /private", "", "License: https://x.com/l.xml"].join("\n");
+    expect(parseRobotsLicenseDirectives(robots)).toEqual(["https://x.com/l.xml"]);
+  });
+
+  it("returns an empty array when no License directive is present", () => {
+    expect(parseRobotsLicenseDirectives("User-agent: *\nDisallow: /")).toEqual([]);
   });
 });

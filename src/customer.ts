@@ -194,6 +194,22 @@ async function generateLicenseToken({
   return retrieveLicenseToken(tokenEndpoint, requestOptions, debug);
 }
 
+/**
+ * Extract RSL `License:` directive URLs from a robots.txt body, in document order.
+ * The directive is site-level, so user-agent grouping is ignored. A URL cannot
+ * contain whitespace, so `\S+` naturally stops before any trailing inline comment.
+ */
+function parseRobotsLicenseDirectives(robotsTxt: string): string[] {
+  const urls: string[] = [];
+  for (const rawLine of robotsTxt.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const match = line.match(/^license\s*:\s*(\S+)/i);
+    if (match) urls.push(match[1]);
+  }
+  return urls;
+}
+
 async function fetchLicenseXml(
   resourceUrl: string,
   debug: boolean | undefined
@@ -393,7 +409,7 @@ function findBestMatchingContent(
   return bestMatch;
 }
 
-export { parseContentElements, findBestMatchingContent };
+export { parseContentElements, findBestMatchingContent, parseRobotsLicenseDirectives };
 export type { ContentBlock };
 
 /**
