@@ -92,6 +92,14 @@ honored (deliberate; keeps single-provider behavior unchanged). A shared
 `selectMintableContent` implements this and is used by **both** the discovery gate and
 the mint path, so discovery can never resolve a license the mint path would then reject.
 
+**Why not hard-restrict to Supertab?** RSL is an open standard, and this SDK's token flow
+is deliberately RSL-generic: a bot may legitimately use it to obtain a token from *any*
+RSL-compliant provider, not only Supertab. Hard-restricting the mint `server` to the
+Supertab host would break that. The residual credential-exposure concern (posting client
+credentials to a sole non-Supertab token endpoint) is the accepted cost of staying
+standard-generic; the Supertab-host *preference* still ensures that whenever a Supertab
+license is on offer, that is what gets used. (Reviewed and chosen over always-restrict.)
+
 ## Caching
 
 Unchanged shape: the resolved license.xml is cached **by origin** with the
