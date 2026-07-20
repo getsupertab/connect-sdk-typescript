@@ -140,7 +140,8 @@ export class SupertabConnect {
     this.enforcement = config.enforcement ?? EnforcementMode.OBSERVE;
     this.botDetector = config.botDetector;
     this.debug = config.debug ?? false;
-    this.analyticsEnabled = config.analyticsEnabled ?? false;
+    // A custom transport emits regardless of the flag, so report it as enabled.
+    this.analyticsEnabled = (config.analyticsEnabled ?? false) || config.analyticsTransport != null;
     this.analyticsTransport = SupertabConnect.buildAnalyticsTransport(config);
 
     // Register this as the singleton instance
@@ -277,9 +278,11 @@ export class SupertabConnect {
     // Cheap substring pre-filter so the common request path skips URL parsing.
     if (request.url.includes("/.well-known/supertab/status")) {
       const url = new URL(request.url);
-      if (url.pathname === "/.well-known/supertab/status") {
+      if (url.pathname === "/.well-known/supertab/status" && request.method === "GET") {
         const authHeader = request.headers.get("Authorization") ?? "";
-        const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+        // The auth-scheme is case-insensitive per RFC 9110, and 1+ spaces may follow it.
+        const bearerMatch = authHeader.match(/^Bearer +(.+)$/i);
+        const token = bearerMatch ? bearerMatch[1] : "";
         const ok = token
           ? await verifyStatusChallenge(token, {
               expectedAudience: url.origin,
@@ -589,7 +592,7 @@ export class SupertabConnect {
     try {
       // The self-report status probe carries an Authorization: Bearer challenge, not
       // x-license-auth, so it must be let through to handleRequest rather than passed to origin.
-      const isStatusProbe = request.uri === "/.well-known/supertab/status";
+      const isStatusProbe = request.uri === "/.well-known/supertab/status" && request.method === "GET";
       const license_auth_header = request.headers?.["x-license-auth"];
       if (!license_auth_header && !isStatusProbe) {
         // No license auth header means the request is either from a human or from an unidentifiable bot.

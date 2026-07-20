@@ -46,6 +46,20 @@ describe("verifyStatusChallenge", () => {
     expect(await verifyStatusChallenge(expiredToken, { expectedAudience: "https://acme.com", baseUrl: "https://api" })).toBe(false);
   });
 
+  it("rejects a challenge missing exp or iat", async () => {
+    const { privateKey } = await setup();
+    const noExp = await new SignJWT({ aud: "https://acme.com", purpose: "status-probe" })
+      .setProtectedHeader({ alg: "ES256", kid: "test-kid" })
+      .setIssuedAt()
+      .sign(privateKey);
+    const noIat = await new SignJWT({ aud: "https://acme.com", purpose: "status-probe" })
+      .setProtectedHeader({ alg: "ES256", kid: "test-kid" })
+      .setExpirationTime("60s")
+      .sign(privateKey);
+    expect(await verifyStatusChallenge(noExp, { expectedAudience: "https://acme.com", baseUrl: "https://api" })).toBe(false);
+    expect(await verifyStatusChallenge(noIat, { expectedAudience: "https://acme.com", baseUrl: "https://api" })).toBe(false);
+  });
+
   it("retries with refreshed JWKS after key rotation (JwksKeyNotFoundError on first fetch)", async () => {
     // Generate the signing key pair
     const { publicKey, privateKey } = await generateKeyPair("ES256");
@@ -169,6 +183,32 @@ describe("handleRequest — /.well-known/supertab/status branch", () => {
     expect(body.eventReporting).toBe(false);
   });
 
+  it("reports eventReporting=true when a custom transport is injected without the flag", async () => {
+    vi.spyOn(statusModule, "verifyStatusChallenge").mockResolvedValue(true);
+
+    const sdk = new SupertabConnect({
+      apiKey: "merchant-key",
+      analyticsTransport: new RecordingTransport(),
+    }, true);
+    const result = await sdk.handleRequest(makeStatusRequest("valid-token"));
+
+    expect(result.action).toBe(HandlerAction.RESPOND);
+    if (result.action !== HandlerAction.RESPOND) return;
+
+    expect(JSON.parse(result.body).eventReporting).toBe(true);
+  });
+
+  it("does not intercept non-GET requests to the status path", async () => {
+    const verifySpy = vi.spyOn(statusModule, "verifyStatusChallenge");
+
+    const sdk = new SupertabConnect({ apiKey: "merchant-key" }, true);
+    const result = await sdk.handleRequest(makeStatusRequest("valid-token", "https://acme.com", "POST"));
+
+    // Falls through to normal handling: no license token, no bot detector → ALLOW.
+    expect(result.action).toBe(HandlerAction.ALLOW);
+    expect(verifySpy).not.toHaveBeenCalled();
+  });
+
   it("returns RESPOND with status 404 and minimal body on invalid challenge", async () => {
     vi.spyOn(statusModule, "verifyStatusChallenge").mockResolvedValue(false);
 
@@ -185,6 +225,25 @@ describe("handleRequest — /.well-known/supertab/status branch", () => {
     expect(result.headers["Cache-Control"]).toBe("no-store");
     expect(result.headers["Content-Type"]).toBe("application/json");
   });
+
+  it.each(["bearer", "BEARER", "BeArEr"])(
+    "accepts the challenge with a case-variant auth scheme (%s)",
+    async (scheme) => {
+      const verifySpy = vi.spyOn(statusModule, "verifyStatusChallenge").mockResolvedValue(true);
+
+      const sdk = new SupertabConnect({ apiKey: "merchant-key" }, true);
+      const request = new Request("https://acme.com/.well-known/supertab/status", {
+        method: "GET",
+        headers: { Authorization: `${scheme} valid-token` },
+      });
+      const result = await sdk.handleRequest(request);
+
+      expect(result.action).toBe(HandlerAction.RESPOND);
+      if (result.action !== HandlerAction.RESPOND) return;
+      expect(result.status).toBe(200);
+      expect(verifySpy).toHaveBeenCalledWith("valid-token", expect.anything());
+    }
+  );
 
   it("returns 404 when Authorization header is absent", async () => {
     // verifyStatusChallenge should NOT be called at all when there's no token

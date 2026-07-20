@@ -27,6 +27,8 @@ export async function verifyStatusChallenge(token: string, opts: StatusChallenge
       audience: opts.expectedAudience,
       algorithms: ["ES256"],
       clockTolerance: "5s",
+      // jose does not require exp by default; without it a challenge would verify forever.
+      requiredClaims: ["exp", "iat"],
     });
 
     return payload["purpose"] === "status-probe";
