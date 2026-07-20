@@ -48,11 +48,16 @@ Discovery order inside `fetchLicenseXml`:
    - Parse **all** `License:` directives (treated as global; user-agent grouping
      is ignored — the RSL `License:` directive is site-level).
    - Iterate directives **in document order**. For each: fetch the referenced
-     URL, parse its `<content>` blocks, and check for one whose `url` pattern
-     matches the requested resource **and** carries a `server` (mint endpoint).
-   - Take the **first** directive that yields such a mintable block. Cache the
-     resolved XML by origin. Early-return — do not fetch remaining directives.
-4. **No mintable license found** → throw a discovery-specific error (below).
+     URL and classify it for the resource via the shared `selectMintableContent`
+     (see Provider disambiguation): `supertab` (a mintable block whose `server`
+     host matches the configured Supertab base), `other` (a mintable block on a
+     different host), or `none`.
+   - **Prefer Supertab:** return the first `supertab` directive immediately
+     (early-return). Hold the first `other` directive as a fallback and keep
+     looking. If no `supertab` directive appears, return the held fallback.
+     Cache the resolved XML by origin.
+4. **No mintable license found** (every directive `none`) → throw a
+   discovery-specific error (below).
 
 ### Why origin-first over robots-first
 
@@ -62,14 +67,30 @@ Discovery order inside `fetchLicenseXml`:
 - Keeps request-path work minimal for the common case ("remove work from the
   request path").
 
-### Why "first mintable block wins" for multiple directives
+## Provider disambiguation (multiple mintable directives)
 
-`inverse.com` lists two `License:` URLs. The existing selection logic already
-requires a `<content>` block that matches the resource and has a `server`. The
-`rslcollective.org/attribution.xml` is a free-attribution license with no mint
-`server`, so it produces no mintable block and is naturally skipped; the Supertab
-license wins. No new "which one is the paid license" heuristic is introduced —
-"has a mintable `server` for this resource" already encodes the intent.
+`inverse.com` lists two `License:` URLs, and — verified against live data — **both**
+resolve to a `<content>` block with a `server`:
+
+- `rslcollective.org/attribution.xml` → `server="https://api.rslcollective.org"`
+  (free attribution).
+- The Supertab-hosted `license.xml` → `server="https://api-connect.supertab.co/urn:…"`
+  (the paid one this SDK holds credentials for).
+
+So "first block with a `server` wins" is wrong: document order picks rslcollective,
+and `obtainLicenseToken` would then POST the operator's Supertab `clientId:clientSecret`
+to `api.rslcollective.org/token` — wrong license **and** a credential leak to a third
+party. (An earlier draft of this spec wrongly assumed the attribution license had no
+`server`; live inspection disproved it.)
+
+**Rule — prefer Supertab among candidates:** among server-bearing blocks matching the
+resource, prefer those whose `server` host equals the configured Supertab base host
+(`SupertabConnect.baseUrl`, default `https://api-connect.supertab.co`, overridable);
+fall back to all server-bearing blocks only when none match. This is a *preference*,
+not a hard restriction — a merchant advertising a single non-Supertab provider is still
+honored (deliberate; keeps single-provider behavior unchanged). A shared
+`selectMintableContent` implements this and is used by **both** the discovery gate and
+the mint path, so discovery can never resolve a license the mint path would then reject.
 
 ## Caching
 
