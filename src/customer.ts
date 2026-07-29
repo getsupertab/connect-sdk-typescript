@@ -546,7 +546,7 @@ function findBestMatchingContent(
   return bestMatch;
 }
 
-export { parseContentElements, findBestMatchingContent, parseRobotsLicenseDirectives, licensePermitsUsage };
+export { parseContentElements, findBestMatchingContent, parseRobotsLicenseDirectives };
 export type { ContentBlock };
 
 /**
