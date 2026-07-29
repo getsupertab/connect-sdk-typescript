@@ -1,5 +1,6 @@
 import { verifyLicenseToken } from "../src/license";
 import { SupertabConnect, defaultBotDetector, EnforcementMode } from "../src/index";
+import { parseContentElements, findBestMatchingContent, findServerlessUsageContent } from "../src/customer";
 
 const MOCK_ORIGIN = "http://localhost:9999";
 
@@ -37,6 +38,34 @@ async function main() {
     const res: any = await inst.handleRequest(new Request(req.url, { headers: req.headers }));
     const headers = new Headers(res.headers ?? {});
     return print({ action: res.action, status: res.status ?? null, headers: rslHeaders(headers) });
+  }
+
+  if (scn.surface === "customer-match") {
+    const blocks = parseContentElements(input.license_xml, false);
+    const serverless = findServerlessUsageContent(blocks, input.resource_url, input.usage, false);
+    if (serverless) {
+      return print({ matched: true, matched_url_pattern: serverless.urlPattern, token_server: null, requires_token: false });
+    }
+    const block = findBestMatchingContent(blocks, input.resource_url, false);
+    if (!block) {
+      return print({ matched: false, matched_url_pattern: null, token_server: null, requires_token: false });
+    }
+    return print({ matched: true, matched_url_pattern: block.urlPattern, token_server: block.server ?? null, requires_token: true });
+  }
+
+  if (scn.surface === "customer-obtain") {
+    SupertabConnect.setBaseUrl(MOCK_ORIGIN);
+    try {
+      const token = await SupertabConnect.obtainLicenseToken({
+        clientId: input.client_id,
+        clientSecret: input.client_secret,
+        resourceUrl: input.resource_url,
+        usage: input.usage,
+      });
+      return print({ outcome: token ? "mint" : "no_token" });
+    } catch {
+      return print({ outcome: "error" });
+    }
   }
 
   throw new Error(`unhandled surface: ${scn.surface}`);

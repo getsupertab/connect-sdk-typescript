@@ -546,7 +546,7 @@ function findBestMatchingContent(
   return bestMatch;
 }
 
-export { parseContentElements, findBestMatchingContent, parseRobotsLicenseDirectives };
+export { parseContentElements, findBestMatchingContent, parseRobotsLicenseDirectives, licensePermitsUsage };
 export type { ContentBlock };
 
 /**
@@ -568,6 +568,8 @@ function findServerlessUsageContent(
 
   return findBestMatchingContent(matchingUsageBlocks, resourceUrl, debug);
 }
+
+export { findServerlessUsageContent };
 
 export async function obtainLicenseToken(
   { clientId, clientSecret, resourceUrl, usage, debug }: ObtainLicenseTokenParams,
