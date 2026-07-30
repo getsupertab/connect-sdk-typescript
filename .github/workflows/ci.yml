@@ -26,3 +26,36 @@ jobs:
 
       - name: Run tests
         run: npx vitest run --exclude 'tests/e2e/**'
+
+  conformance:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout SDK (the PR)
+        uses: actions/checkout@v4
+
+      - name: Checkout conformance suite (pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: getsupertab/connect-sdk-conformance
+          ref: v0.1.0
+          token: ${{ secrets.CONFORMANCE_REPO_TOKEN }}
+          path: _conformance
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install SDK dependencies
+        run: npm ci
+
+      - name: Install conformance dependencies
+        run: npm ci
+        working-directory: _conformance
+
+      - name: Run conformance corpus (TypeScript runner)
+        run: npm run conformance
+        working-directory: _conformance
+        env:
+          STC_TS_RUNNER_CWD: ${{ github.workspace }}
