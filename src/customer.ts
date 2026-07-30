@@ -569,6 +569,8 @@ function findServerlessUsageContent(
   return findBestMatchingContent(matchingUsageBlocks, resourceUrl, debug);
 }
 
+export { findServerlessUsageContent, selectMintableContent };
+
 export async function obtainLicenseToken(
   { clientId, clientSecret, resourceUrl, usage, debug }: ObtainLicenseTokenParams,
   // Supertab Connect API base whose host the mint `server` is preferred to match when a
