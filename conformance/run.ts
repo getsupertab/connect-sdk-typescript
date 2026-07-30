@@ -1,6 +1,6 @@
 import { verifyLicenseToken } from "../src/license";
 import { SupertabConnect, defaultBotDetector, EnforcementMode } from "../src/index";
-import { parseContentElements, findBestMatchingContent, findServerlessUsageContent } from "../src/customer";
+import { parseContentElements, selectMintableContent, findServerlessUsageContent } from "../src/customer";
 
 const MOCK_ORIGIN = "http://localhost:9999";
 
@@ -46,7 +46,10 @@ async function main() {
     if (serverless) {
       return print({ matched: true, matched_url_pattern: serverless.urlPattern, token_server: null, requires_token: false });
     }
-    const block = findBestMatchingContent(blocks, input.resource_url, false);
+    // Mirror obtainLicenseToken's mint path exactly: select among server-bearing
+    // blocks (with the Supertab-server preference) via the SDK's own selector,
+    // rather than re-deriving with findBestMatchingContent over all blocks.
+    const block = selectMintableContent(blocks, input.resource_url, MOCK_ORIGIN, false);
     if (!block) {
       return print({ matched: false, matched_url_pattern: null, token_server: null, requires_token: false });
     }
