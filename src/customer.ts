@@ -155,7 +155,9 @@ async function importKeyForAlgs(
   );
 }
 
-// Temporarily not exporting this function to reflect only client credentials flow being supported
+// Temporarily not exporting this function to reflect only client credentials flow being supported.
+// If re-enabled: its grant_type="rsl" payload still embeds `license`; mirror the STC-808 license
+// drop (or intentionally keep it) before exposing it.
 async function generateLicenseToken({
   clientId,
   kid,
@@ -279,6 +281,64 @@ function selectMintableContent(
     findBestMatchingContent(supertab, resourceUrl, debug) ??
     findBestMatchingContent(withServer, resourceUrl, debug)
   );
+}
+
+// Where to mint a token, decoupled from whether the live license.xml still grants
+// the resource. `matched` records whether a <content> block actually path-matched;
+// `licenseXml` carries that matched block's <license> chunk (present only on a match).
+type TokenEndpoint = { server: string; scope: string; matched: boolean; licenseXml?: string };
+
+/** Discover a token `server` for the origin from any server-bearing block,
+ *  Supertab-preferred. All of a merchant's Supertab <content> blocks point at the
+ *  same /{merchant_system_urn}/token, so any Supertab server for the origin is the
+ *  correct mint endpoint even when no block path-matches the requested resource. */
+function resolveOriginServer(
+  contentBlocks: ContentBlock[],
+  supertabBaseUrl: string
+): string | null {
+  const withServer = contentBlocks.filter((b) => !!b.server);
+  // Keep the Supertab-hosted subset explicit (mirrors selectMintableContent) rather
+  // than committing to `.find()`'s first hit: the endpoint-only path exists to honour a
+  // Supertab pinned Agreement, and if an origin ever advertises several DISTINCT Supertab
+  // servers (different merchant_system_urn) this is where we'd disambiguate instead of
+  // silently taking [0]. Fall back to any server only as a last resort.
+  const withSupertabServer = withServer.filter((b) => isSupertabServer(b.server, supertabBaseUrl));
+  const preferred = withSupertabServer[0] ?? withServer[0];
+  return preferred?.server ?? null;
+}
+
+/** Resolve where to mint, decoupled from entitlement (STC-808). Entitlement is
+ *  decided by the backend from client credentials + merchant-system URN against the
+ *  customer's pinned Agreement — NOT by the merchant's live public license.xml. So a
+ *  live license that no longer path-matches (or now prohibits) the resource must not
+ *  veto the mint; as long as a token endpoint is discoverable for the origin we still
+ *  attempt it and let the backend decide.
+ *  - matched: a <content> block path-matched → scope is its urlPattern.
+ *  - endpoint-only: no match, but a server is discoverable → scope is the origin.
+ *  - null: no server-bearing block anywhere (nothing to talk to). */
+function selectTokenEndpoint(
+  contentBlocks: ContentBlock[],
+  resourceUrl: string,
+  supertabBaseUrl: string,
+  debug?: boolean
+): TokenEndpoint | null {
+  const matched = selectMintableContent(contentBlocks, resourceUrl, supertabBaseUrl, debug);
+  if (matched?.server) {
+    return { server: matched.server, scope: matched.urlPattern, matched: true, licenseXml: matched.licenseXml };
+  }
+
+  const server = resolveOriginServer(contentBlocks, supertabBaseUrl);
+  if (server) {
+    const origin = new URL(resourceUrl).origin;
+    if (debug) {
+      console.debug(
+        `No <content> block matches ${resourceUrl}; endpoint-only mint against ${server} (backend decides entitlement)`
+      );
+    }
+    return { server, scope: origin, matched: false };
+  }
+
+  return null;
 }
 
 type MintClass = "supertab" | "other" | "none";
@@ -569,7 +629,8 @@ function findServerlessUsageContent(
   return findBestMatchingContent(matchingUsageBlocks, resourceUrl, debug);
 }
 
-export { findServerlessUsageContent, selectMintableContent };
+export { findServerlessUsageContent, selectMintableContent, selectTokenEndpoint };
+export type { TokenEndpoint };
 
 export async function obtainLicenseToken(
   { clientId, clientSecret, resourceUrl, usage, debug }: ObtainLicenseTokenParams,
@@ -593,6 +654,10 @@ export async function obtainLicenseToken(
     );
   }
 
+  // Intentional asymmetry (STC-808): the free/serverless lane has no Agreement, so
+  // free access is granted purely by the live public license.xml — the live license
+  // IS authoritative here. Only the paid mint lane below defers to the backend's
+  // pinned Agreement. Do not "fix" this by routing serverless through the backend.
   if (usage) {
     const serverlessUsageContent = findServerlessUsageContent(
       contentBlocks,
@@ -610,38 +675,50 @@ export async function obtainLicenseToken(
     }
   }
 
-  const matchedContent = selectMintableContent(contentBlocks, resourceUrl, supertabBaseUrl, debug);
-  if (!matchedContent) {
+  const endpoint = selectTokenEndpoint(contentBlocks, resourceUrl, supertabBaseUrl, debug);
+  if (!endpoint) {
     if (debug) {
-      const patterns = contentBlocks.filter((b) => !!b.server).map((b) => b.urlPattern).join(", ");
-      console.error(`No <content> element matches resource URL: ${resourceUrl}. Available patterns: ${patterns}`);
+      console.error(`No token endpoint discoverable in license.xml for resource URL: ${resourceUrl}`);
     }
     throw new Error(
-      `No <content> element in license.xml matches resource URL: ${resourceUrl}`
+      `No token endpoint discoverable in license.xml for resource URL: ${resourceUrl}`
     );
   }
 
   if (debug) {
-    console.debug("Matched content block for resource URL:", resourceUrl);
-    console.debug("Using license XML:", matchedContent.licenseXml);
+    console.debug(
+      endpoint.matched
+        ? `Matched content block for resource URL: ${resourceUrl}`
+        : `No matching <content> block for ${resourceUrl}; endpoint-only mint (backend decides entitlement)`
+    );
   }
 
-  // Cache tokens by server + urlPattern so path-only patterns (e.g. "/articles/*")
-  // on different origins/servers don't collide with each other.
-  const cacheKey = `${clientId}:${matchedContent.server}:${matchedContent.urlPattern}`;
+  // Cache tokens by server + scope. On the matched path `scope` is the block's
+  // urlPattern (token reuse across sibling paths, e.g. "/articles/*"); on the
+  // endpoint-only path it is the origin (one mintable license per origin — see
+  // fetchLicenseXml). clientId + server keep cross-client/cross-server isolation.
+  const cacheKey = `${clientId}:${endpoint.server}:${endpoint.scope}`;
   const cached = getCachedToken(cacheKey, debug);
   if (cached) return cached;
 
-  const tokenEndpoint = matchedContent.server + '/token';
+  const tokenEndpoint = endpoint.server + '/token';
   if (debug) {
     console.debug(`Requesting license token from ${tokenEndpoint}`);
   }
 
   const payload = new URLSearchParams({
     grant_type: "client_credentials",
-    license: matchedContent.licenseXml,
-    resource: matchedContent.urlPattern,
+    resource: resourceUrl,
   });
+  // STC-808: send the live <license> chunk only when a public <content> block actually
+  // path-matched the resource — there the public license still reflects the granted
+  // resource and can back the request. On the endpoint-only path (no match) it is omitted:
+  // the backend resolves the customer's single Active Agreement from client credentials +
+  // merchant-system URN and mints against its pinned snapshot instead.
+  // Allows us to continue supporting RSL standards.
+  if (endpoint.matched && endpoint.licenseXml) {
+    payload.set("license", endpoint.licenseXml);
+  }
 
   const requestOptions: RequestInit = {
     method: "POST",

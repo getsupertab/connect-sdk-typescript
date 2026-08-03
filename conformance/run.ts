@@ -1,6 +1,6 @@
 import { verifyLicenseToken } from "../src/license";
 import { SupertabConnect, defaultBotDetector, EnforcementMode } from "../src/index";
-import { parseContentElements, selectMintableContent, findServerlessUsageContent } from "../src/customer";
+import { parseContentElements, selectTokenEndpoint, findServerlessUsageContent } from "../src/customer";
 
 const MOCK_ORIGIN = "http://localhost:9999";
 
@@ -44,16 +44,23 @@ async function main() {
     const blocks = parseContentElements(input.license_xml, false);
     const serverless = findServerlessUsageContent(blocks, input.resource_url, input.usage, false);
     if (serverless) {
-      return print({ matched: true, matched_url_pattern: serverless.urlPattern, token_server: null, requires_token: false });
+      return print({ matched: true, matched_url_pattern: serverless.urlPattern, token_server: null, requires_token: false, mint_mode: "matched" });
     }
-    // Mirror obtainLicenseToken's mint path exactly: select among server-bearing
-    // blocks (with the Supertab-server preference) via the SDK's own selector,
-    // rather than re-deriving with findBestMatchingContent over all blocks.
-    const block = selectMintableContent(blocks, input.resource_url, MOCK_ORIGIN, false);
-    if (!block) {
-      return print({ matched: false, matched_url_pattern: null, token_server: null, requires_token: false });
+    // Mirror obtainLicenseToken's mint path exactly: resolve the token endpoint via the
+    // SDK's own selector. `matched` distinguishes a path-matched block from an
+    // endpoint-only mint (STC-808 divergence: no block matches but the customer may still
+    // hold an Active Agreement, so the backend is left to decide entitlement).
+    const ep = selectTokenEndpoint(blocks, input.resource_url, MOCK_ORIGIN, false);
+    if (!ep) {
+      return print({ matched: false, matched_url_pattern: null, token_server: null, requires_token: false, mint_mode: "none" });
     }
-    return print({ matched: true, matched_url_pattern: block.urlPattern, token_server: block.server ?? null, requires_token: true });
+    return print({
+      matched: ep.matched,
+      matched_url_pattern: ep.matched ? ep.scope : null,
+      token_server: ep.server,
+      requires_token: true,
+      mint_mode: ep.matched ? "matched" : "endpoint_only",
+    });
   }
 
   if (scn.surface === "customer-obtain") {
