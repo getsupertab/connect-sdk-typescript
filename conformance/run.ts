@@ -47,9 +47,9 @@ async function main() {
       return print({ matched: true, matched_url_pattern: serverless.urlPattern, token_server: null, requires_token: false });
     }
     // Mirror obtainLicenseToken's mint path exactly: resolve the token endpoint via the
-    // SDK's own selector. `matched` distinguishes a path-matched block from an
-    // endpoint-only mint (STC-808 divergence: no block matches but the customer may still
-    // hold an Active Agreement, so the backend is left to decide entitlement).
+    // SDK's own selector. `matched` distinguishes the RSL License path (a block path-matched
+    // → mint against its URN-scoped server) from the Agreement path (no match → license-less
+    // mint against the generic {base}/token, where the backend resolves the Active Agreement).
     const ep = selectTokenEndpoint(blocks, input.resource_url, MOCK_ORIGIN, false);
     if (!ep) {
       return print({ matched: false, matched_url_pattern: null, token_server: null, requires_token: false });

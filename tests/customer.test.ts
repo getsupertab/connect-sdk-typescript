@@ -514,7 +514,9 @@ describe("obtainLicenseToken (STC-808: license-less mint)", () => {
     return [b64url({ alg: "ES256", typ: "JWT" }), b64url({ exp, iss: "test" }), "sig"].join(".");
   };
 
-  const SERVER = "http://token-server.test";
+  const BASE = "http://supertab-api.test";  // Supertab Connect API base — host of the generic /token
+  const SERVER = `${BASE}/urn:sys:123`;     // a merchant's URN-scoped RSL License endpoint
+  const GENERIC = `${BASE}/token`;          // the generic license-less Agreement endpoint
   const lic = (extra = "") =>
     `<license type="t"><link rel="self" href="${SERVER}/license"/>${extra}</license>`;
 
@@ -547,45 +549,47 @@ describe("obtainLicenseToken (STC-808: license-less mint)", () => {
   const calledUrl = (mock: ReturnType<typeof vi.fn>, url: string) =>
     mock.mock.calls.some(([u]) => u === url);
 
-  it("sends the license chunk on a match, with the raw resource URL and Basic auth", async () => {
+  it("sends the license chunk to the URN-scoped endpoint on a match (RSL License path)", async () => {
     const origin = "http://stc808-wire.com";
     const xml = `<rsl><content url="${origin}/articles/*" server="${SERVER}">${lic()}</content></rsl>`;
     const { mock, tokenBodies } = stub(xml);
 
     const resourceUrl = `${origin}/articles/foo`;
-    const token = await obtainLicenseToken({ clientId: "c", clientSecret: "s", resourceUrl });
+    const token = await obtainLicenseToken({ clientId: "c", clientSecret: "s", resourceUrl }, BASE);
 
     expect(token).toBeDefined();
     expect(tokenBodies).toHaveLength(1);
+    expect(calledUrl(mock, `${SERVER}/token`)).toBe(true); // block's own URN-scoped endpoint
     const p = new URLSearchParams(tokenBodies[0]);
     expect(p.get("grant_type")).toBe("client_credentials");
     expect(p.get("resource")).toBe(resourceUrl); // raw URL, not the matched urlPattern
-    expect(p.has("license")).toBe(true); // STC-808: chunk kept when a <content> block matches
+    expect(p.has("license")).toBe(true); // chunk kept when a <content> block matches
     expect(p.get("license")).toBe(lic()); // the matched block's <license>
     const init = mock.mock.calls.find(([u]) => u.endsWith("/token"))?.[1] as any;
     expect(init.headers.Authorization).toBe("Basic " + btoa("c:s"));
   });
 
-  it("mints via endpoint-only discovery when no <content> block matches (divergence)", async () => {
+  it("mints license-less via the generic /token when no <content> block matches (Agreement path)", async () => {
     // Live license only covers /other/*, but the entitled customer requests /premium/article.
-    // Previously threw "No <content> element matches"; now the backend decides entitlement.
+    // Agreement path: request goes license-less to the generic {base}/token, not the URN endpoint.
     const origin = "http://stc808-diverged.com";
     const xml = `<rsl><content url="${origin}/other/*" server="${SERVER}">${lic()}</content></rsl>`;
     const { mock, tokenBodies } = stub(xml);
 
     const resourceUrl = `${origin}/premium/article`;
-    const token = await obtainLicenseToken({ clientId: "c", clientSecret: "s", resourceUrl });
+    const token = await obtainLicenseToken({ clientId: "c", clientSecret: "s", resourceUrl }, BASE);
 
     expect(token).toBeDefined();
     expect(tokenFetches(mock)).toHaveLength(1);
-    expect(calledUrl(mock, `${SERVER}/token`)).toBe(true);
+    expect(calledUrl(mock, GENERIC)).toBe(true);            // generic Agreement endpoint
+    expect(calledUrl(mock, `${SERVER}/token`)).toBe(false); // not the URN-scoped endpoint
     const p = new URLSearchParams(tokenBodies[0]);
     expect(p.get("resource")).toBe(resourceUrl);
     expect(p.has("license")).toBe(false);
   });
 
-  it("still mints when the live license prohibits the usage but a server is discoverable", async () => {
-    // Serverless block prohibits ai-train (diverged); a separate mint block covers the origin.
+  it("still mints when the live license prohibits the usage but a mint block matches the resource", async () => {
+    // Serverless block prohibits ai-train (diverged); a separate server-bearing block matches.
     const origin = "http://stc808-prohibits.com";
     const xml =
       `<rsl>` +
@@ -596,22 +600,23 @@ describe("obtainLicenseToken (STC-808: license-less mint)", () => {
 
     const token = await obtainLicenseToken({
       clientId: "c", clientSecret: "s", resourceUrl: `${origin}/articles/foo`, usage: UsageType.AI_TRAIN,
-    });
+    }, BASE);
 
     expect(token).toBeDefined();
     expect(tokenFetches(mock)).toHaveLength(1);
   });
 
-  it("shares one endpoint-only token across resources on the same origin", async () => {
+  it("shares one generic Agreement token across resources on the same origin", async () => {
     const origin = "http://stc808-endpoint-cache.com";
     const xml = `<rsl><content url="${origin}/other/*" server="${SERVER}">${lic()}</content></rsl>`;
     const { mock } = stub(xml);
 
-    await obtainLicenseToken({ clientId: "cc", clientSecret: "s", resourceUrl: `${origin}/premium/a` });
-    await obtainLicenseToken({ clientId: "cc", clientSecret: "s", resourceUrl: `${origin}/news/b` });
+    await obtainLicenseToken({ clientId: "cc", clientSecret: "s", resourceUrl: `${origin}/premium/a` }, BASE);
+    await obtainLicenseToken({ clientId: "cc", clientSecret: "s", resourceUrl: `${origin}/news/b` }, BASE);
 
-    // Both fall to the endpoint-only path (scope = origin) → single mint, cached and shared.
+    // Both fall to the Agreement path (scope = origin) → single mint, cached and shared.
     expect(tokenFetches(mock)).toHaveLength(1);
+    expect(calledUrl(mock, GENERIC)).toBe(true);
   });
 
   it("surfaces a backend rejection instead of vetoing client-side", async () => {
@@ -620,18 +625,21 @@ describe("obtainLicenseToken (STC-808: license-less mint)", () => {
     stub(xml, { tokenStatus: 403 });
 
     await expect(
-      obtainLicenseToken({ clientId: "c", clientSecret: "s", resourceUrl: `${origin}/x` })
+      obtainLicenseToken({ clientId: "c", clientSecret: "s", resourceUrl: `${origin}/x` }, BASE)
     ).rejects.toThrow(/403/);
   });
 
-  it("throws when no token endpoint is discoverable (no server-bearing block)", async () => {
+  it("mints via the generic /token even when no <content> block has a server", async () => {
+    // No server-bearing block anywhere: previously this threw; now the Agreement path still mints.
     const origin = "http://stc808-noserver.com";
     const xml = `<rsl><content url="${origin}/*"><license type="t"><link rel="self" href="http://x/l"/></license></content></rsl>`;
-    stub(xml);
+    const { mock, tokenBodies } = stub(xml);
 
-    await expect(
-      obtainLicenseToken({ clientId: "c", clientSecret: "s", resourceUrl: `${origin}/x` })
-    ).rejects.toThrow(/No token endpoint discoverable/);
+    const token = await obtainLicenseToken({ clientId: "c", clientSecret: "s", resourceUrl: `${origin}/x` }, BASE);
+
+    expect(token).toBeDefined();
+    expect(calledUrl(mock, GENERIC)).toBe(true);
+    expect(new URLSearchParams(tokenBodies[0]).has("license")).toBe(false);
   });
 });
 

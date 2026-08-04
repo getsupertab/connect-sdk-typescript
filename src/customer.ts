@@ -283,39 +283,24 @@ function selectMintableContent(
   );
 }
 
-// Where to mint a token, decoupled from whether the live license.xml still grants
-// the resource. `matched` records whether a <content> block actually path-matched;
-// `licenseXml` carries that matched block's <license> chunk (present only on a match).
+// Where to mint a token. Two lanes (STC-808):
+//  - matched (RSL License path): a <content> block path-matched → mint against that block's
+//    URN-scoped `server` and send its <license> chunk. `scope` is the block's urlPattern.
+//  - agreement path: no block matched → mint license-less against the generic `{baseUrl}/token`
+//    (see selectTokenEndpoint). `server` is the Supertab API base, `scope` is the origin,
+//    `licenseXml` is undefined.
 type TokenEndpoint = { server: string; scope: string; matched: boolean; licenseXml?: string };
 
-/** Discover a token `server` for the origin from any server-bearing block,
- *  Supertab-preferred. All of a merchant's Supertab <content> blocks point at the
- *  same /{merchant_system_urn}/token, so any Supertab server for the origin is the
- *  correct mint endpoint even when no block path-matches the requested resource. */
-function resolveOriginServer(
-  contentBlocks: ContentBlock[],
-  supertabBaseUrl: string
-): string | null {
-  const withServer = contentBlocks.filter((b) => !!b.server);
-  // Keep the Supertab-hosted subset explicit (mirrors selectMintableContent) rather
-  // than committing to `.find()`'s first hit: the endpoint-only path exists to honour a
-  // Supertab pinned Agreement, and if an origin ever advertises several DISTINCT Supertab
-  // servers (different merchant_system_urn) this is where we'd disambiguate instead of
-  // silently taking [0]. Fall back to any server only as a last resort.
-  const withSupertabServer = withServer.filter((b) => isSupertabServer(b.server, supertabBaseUrl));
-  const preferred = withSupertabServer[0] ?? withServer[0];
-  return preferred?.server ?? null;
-}
-
-/** Resolve where to mint, decoupled from entitlement (STC-808). Entitlement is
- *  decided by the backend from client credentials + merchant-system URN against the
- *  customer's pinned Agreement — NOT by the merchant's live public license.xml. So a
- *  live license that no longer path-matches (or now prohibits) the resource must not
- *  veto the mint; as long as a token endpoint is discoverable for the origin we still
- *  attempt it and let the backend decide.
- *  - matched: a <content> block path-matched → scope is its urlPattern.
- *  - endpoint-only: no match, but a server is discoverable → scope is the origin.
- *  - null: no server-bearing block anywhere (nothing to talk to). */
+/** Resolve where to mint, decoupled from whether the live license.xml still grants the
+ *  resource (STC-808). Two lanes:
+ *  - matched: a <content> block path-matched → RSL License path. Mint against the block's own
+ *    URN-scoped `server` and send its <license> chunk; `scope` is the block's urlPattern.
+ *  - no match: the Agreement path. The backend resolves the merchant system from the resource
+ *    URL and the customer's single Active Agreement, so we don't need a URN from the license.
+ *    Mint license-less against the generic `{supertabBaseUrl}/token`; `scope` is the origin so
+ *    one agreement token is reused per origin. A live license that no longer path-matches (or
+ *    now prohibits) the resource therefore never vetoes the mint — the backend decides.
+ *  Returns null only when the resource URL has no origin (nothing to route on). */
 function selectTokenEndpoint(
   contentBlocks: ContentBlock[],
   resourceUrl: string,
@@ -327,18 +312,18 @@ function selectTokenEndpoint(
     return { server: matched.server, scope: matched.urlPattern, matched: true, licenseXml: matched.licenseXml };
   }
 
-  const server = resolveOriginServer(contentBlocks, supertabBaseUrl);
-  if (server) {
-    const origin = new URL(resourceUrl).origin;
-    if (debug) {
-      console.debug(
-        `No <content> block matches ${resourceUrl}; endpoint-only mint against ${server} (backend decides entitlement)`
-      );
-    }
-    return { server, scope: origin, matched: false };
+  let origin: string;
+  try {
+    origin = new URL(resourceUrl).origin;
+  } catch {
+    return null;
   }
-
-  return null;
+  if (debug) {
+    console.debug(
+      `No <content> block matches ${resourceUrl}; license-less mint against generic ${supertabBaseUrl}/token (backend resolves the Agreement)`
+    );
+  }
+  return { server: supertabBaseUrl, scope: origin, matched: false };
 }
 
 type MintClass = "supertab" | "other" | "none";
@@ -677,11 +662,12 @@ export async function obtainLicenseToken(
 
   const endpoint = selectTokenEndpoint(contentBlocks, resourceUrl, supertabBaseUrl, debug);
   if (!endpoint) {
+    // Only reachable when resourceUrl has no origin to route on.
     if (debug) {
-      console.error(`No token endpoint discoverable in license.xml for resource URL: ${resourceUrl}`);
+      console.error(`Cannot resolve a token endpoint for resource URL: ${resourceUrl}`);
     }
     throw new Error(
-      `No token endpoint discoverable in license.xml for resource URL: ${resourceUrl}`
+      `Cannot resolve a token endpoint for resource URL: ${resourceUrl}`
     );
   }
 
@@ -689,14 +675,14 @@ export async function obtainLicenseToken(
     console.debug(
       endpoint.matched
         ? `Matched content block for resource URL: ${resourceUrl}`
-        : `No matching <content> block for ${resourceUrl}; endpoint-only mint (backend decides entitlement)`
+        : `No matching <content> block for ${resourceUrl}; license-less mint via generic /token (backend resolves the Agreement)`
     );
   }
 
   // Cache tokens by server + scope. On the matched path `scope` is the block's
   // urlPattern (token reuse across sibling paths, e.g. "/articles/*"); on the
-  // endpoint-only path it is the origin (one mintable license per origin — see
-  // fetchLicenseXml). clientId + server keep cross-client/cross-server isolation.
+  // agreement path `server` is the shared Supertab base and `scope` is the origin
+  // (one agreement token per origin). clientId + server keep cross-client isolation.
   const cacheKey = `${clientId}:${endpoint.server}:${endpoint.scope}`;
   const cached = getCachedToken(cacheKey, debug);
   if (cached) return cached;

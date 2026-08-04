@@ -449,15 +449,15 @@ export class SupertabConnect {
    * Request a license token from the Supertab Connect token endpoint.
    * If usage type is specified and matching serverless content permits it, skips token request and returns undefined.
    *
-   * The request always carries client credentials + the resource URL. The `<license>` chunk is
-   * sent only when the merchant's live public license.xml still has a `<content>` block matching
-   * the resource — there the public license reflects the granted resource, which keeps the flow
-   * RSL-standards compliant. When no block matches but a token endpoint is still discoverable, the
-   * chunk is omitted: the backend resolves the customer's single Active Agreement from the
-   * credentials and the merchant-system URN and mints against the Agreement's pinned license
-   * snapshot, so entitlement is decided server-side. In both cases the mint is attempted whenever a
-   * token endpoint is discoverable and the backend has the final say — a diverged license.xml that
-   * no longer grants the resource does not veto the request client-side.
+   * The request always carries client credentials + the resource URL, and takes one of two lanes:
+   * - RSL License path: the merchant's live public license.xml still has a `<content>` block
+   *   matching the resource. The `<license>` chunk is sent to that block's own URN-scoped
+   *   `{server}/token` endpoint, keeping the flow RSL-standards compliant.
+   * - Agreement path: no block matches. The chunk is omitted and the request goes license-less to
+   *   the generic `{baseUrl}/token` endpoint, where the backend resolves the merchant system from
+   *   the resource URL and the customer's single Active Agreement and mints against that
+   *   Agreement's pinned license snapshot. Entitlement is decided server-side, so a diverged
+   *   license.xml that no longer grants the resource never vetoes the request client-side.
    * @param options.clientId OAuth client identifier.
    * @param options.clientSecret OAuth client secret for client_credentials flow.
    * @param options.resourceUrl Resource URL attempting to access with a License.
