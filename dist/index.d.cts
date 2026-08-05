@@ -367,6 +367,16 @@ declare class SupertabConnect {
     /**
      * Request a license token from the Supertab Connect token endpoint.
      * If usage type is specified and matching serverless content permits it, skips token request and returns undefined.
+     *
+     * The request always carries client credentials + the resource URL, and takes one of two lanes:
+     * - RSL License path: the merchant's live public license.xml still has a `<content>` block
+     *   matching the resource. The `<license>` chunk is sent to that block's own URN-scoped
+     *   `{server}/token` endpoint, keeping the flow RSL-standards compliant.
+     * - Agreement path: no block matches. The chunk is omitted and the request goes license-less to
+     *   the generic `{baseUrl}/token` endpoint, where the backend resolves the merchant system from
+     *   the resource URL and the customer's single Active Agreement and mints against that
+     *   Agreement's pinned license snapshot. Entitlement is decided server-side, so a diverged
+     *   license.xml that no longer grants the resource never vetoes the request client-side.
      * @param options.clientId OAuth client identifier.
      * @param options.clientSecret OAuth client secret for client_credentials flow.
      * @param options.resourceUrl Resource URL attempting to access with a License.

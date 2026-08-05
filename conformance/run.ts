@@ -1,6 +1,6 @@
 import { verifyLicenseToken } from "../src/license";
 import { SupertabConnect, defaultBotDetector, EnforcementMode } from "../src/index";
-import { parseContentElements, selectMintableContent, findServerlessUsageContent } from "../src/customer";
+import { parseContentElements, selectTokenEndpoint, findServerlessUsageContent } from "../src/customer";
 
 const MOCK_ORIGIN = "http://localhost:9999";
 
@@ -46,14 +46,20 @@ async function main() {
     if (serverless) {
       return print({ matched: true, matched_url_pattern: serverless.urlPattern, token_server: null, requires_token: false });
     }
-    // Mirror obtainLicenseToken's mint path exactly: select among server-bearing
-    // blocks (with the Supertab-server preference) via the SDK's own selector,
-    // rather than re-deriving with findBestMatchingContent over all blocks.
-    const block = selectMintableContent(blocks, input.resource_url, MOCK_ORIGIN, false);
-    if (!block) {
+    // Mirror obtainLicenseToken's mint path exactly: resolve the token endpoint via the
+    // SDK's own selector. `matched` distinguishes the RSL License path (a block path-matched
+    // → mint against its URN-scoped server) from the Agreement path (no match → license-less
+    // mint against the generic {base}/token, where the backend resolves the Active Agreement).
+    const ep = selectTokenEndpoint(blocks, input.resource_url, MOCK_ORIGIN, false);
+    if (!ep) {
       return print({ matched: false, matched_url_pattern: null, token_server: null, requires_token: false });
     }
-    return print({ matched: true, matched_url_pattern: block.urlPattern, token_server: block.server ?? null, requires_token: true });
+    return print({
+      matched: ep.matched,
+      matched_url_pattern: ep.matched ? ep.scope : null,
+      token_server: ep.server,
+      requires_token: true,
+    });
   }
 
   if (scn.surface === "customer-obtain") {
