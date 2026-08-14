@@ -91,14 +91,17 @@ export async function handleCloudflareRequest(
   originUrl?: string
 ): Promise<Response> {
   const cf = (request as unknown as { cf?: Record<string, any> }).cf;
+  // Read once and branch on truthiness for both: `.has()` would report `cdn_declared` for a
+  // present-but-empty header, whose address normalizes to the "::" sentinel.
+  const cfConnectingIp = request.headers.get("cf-connecting-ip");
   const result = await handler.handleRequest(request, {
     ctx,
     sourceCdn: "cloudflare",
     requestId: request.headers.get("cf-ray") ?? undefined,
     // cf-connecting-ip is Cloudflare's own view of who connected to it; absent leaves
     // clientIp undefined, which normalizes to the "::" sentinel.
-    clientIp: request.headers.get("cf-connecting-ip") ?? undefined,
-    clientIpSource: request.headers.has("cf-connecting-ip") ? "cdn_declared" : "absent",
+    clientIp: cfConnectingIp || undefined,
+    clientIpSource: cfConnectingIp ? "cdn_declared" : "absent",
     requestCountry: request.headers.get("cf-ipcountry") ?? cf?.country ?? null,
     requestAsn: typeof cf?.asn === "number" ? cf.asn : null,
     tlsFingerprint: cf?.botManagement?.ja3Hash ?? null,
@@ -172,6 +175,21 @@ export async function handleFastlyRequest(
   }
 
   const asnHeader = request.headers.get("fastly-client-asn");
+
+  // The address and its provenance must come from the SAME branch. Selecting them with two
+  // independent expressions lets a caller-supplied address be labelled by a header it did not
+  // come from — reporting `cdn_declared` for an address the CDN never vouched for.
+  const contextClientIp = clientContext?.clientIp;
+  const headerClientIp = request.headers.get("fastly-client-ip");
+  const resolvedClientIp = contextClientIp || headerClientIp || undefined;
+  const resolvedClientIpSource: ClientIpSource | undefined = contextClientIp
+    ? // Only the caller knows where its own address came from; undefined stays NULL rather
+      // than being inferred from a header that did not supply it.
+      clientContext?.clientIpSource
+    : headerClientIp
+      ? "cdn_declared"
+      : "absent";
+
   const webRequest = new Request(originalUrl, {
     method: request.method,
     headers: request.headers,
@@ -181,12 +199,8 @@ export async function handleFastlyRequest(
     ctx,
     sourceCdn: "fastly",
     // Prefer caller-supplied values (Compute: event.client.*) over header fallbacks (VCL only).
-    clientIp: clientContext?.clientIp ?? request.headers.get("fastly-client-ip") ?? undefined,
-    // Mirrors the clientIp fallback above: the resolver's own verdict when it supplied one,
-    // otherwise the VCL-only header, otherwise nothing was available at all.
-    clientIpSource:
-      clientContext?.clientIpSource ??
-      (request.headers.has("fastly-client-ip") ? "cdn_declared" : "absent"),
+    clientIp: resolvedClientIp,
+    clientIpSource: resolvedClientIpSource,
     requestCountry: clientContext?.requestCountry !== undefined ? clientContext.requestCountry : (request.headers.get("fastly-client-country-code") ?? null),
     requestAsn: clientContext?.requestAsn !== undefined ? clientContext.requestAsn : parseAsn(asnHeader),
     // JA3 comes from event.client.tlsJA3MD5 on Compute; the header is VCL-only.

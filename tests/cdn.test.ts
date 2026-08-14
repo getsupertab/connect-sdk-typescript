@@ -119,6 +119,20 @@ describe("handleCloudflareRequest client signals", () => {
     expect(handler.calls[0].clientIp).toBeUndefined();
     expect(handler.calls[0].clientIpSource).toBe("absent");
   });
+
+  it("reports absent for a present-but-empty cf-connecting-ip", async () => {
+    // The header exists but carries no address, so clientIp normalizes to the "::" sentinel.
+    // Testing presence rather than value would label that sentinel `cdn_declared`.
+    const handler = recordingHandler();
+    const request = new Request("https://example.com/article", {
+      headers: { "cf-connecting-ip": "" },
+    });
+
+    await handleCloudflareRequest(handler, request, ctx);
+
+    expect(handler.calls[0].clientIp).toBeUndefined();
+    expect(handler.calls[0].clientIpSource).toBe("absent");
+  });
 });
 
 describe("handleFastlyRequest client signals", () => {
@@ -185,6 +199,19 @@ describe("handleFastlyRequest client signals", () => {
 
     expect(handler.calls[0].clientIp).toBe("10.0.0.1");
     expect(handler.calls[0].clientIpSource).toBe("cdn_declared");
+  });
+
+  it("never labels a caller-supplied address with the VCL header's provenance", async () => {
+    // req() carries fastly-client-ip: 10.0.0.1, but the address in play came from the
+    // caller. Deriving the source separately would stamp `cdn_declared` on an address
+    // Fastly never vouched for — the claim must stay undeclared instead.
+    const handler = recordingHandler();
+    await handleFastlyRequest(handler, req(), "origin", undefined, {
+      clientIp: "203.0.113.9",
+    });
+
+    expect(handler.calls[0].clientIp).toBe("203.0.113.9");
+    expect(handler.calls[0].clientIpSource).toBeUndefined();
   });
 
   it("reports absent when neither the resolver nor the VCL header supplies an address", async () => {
