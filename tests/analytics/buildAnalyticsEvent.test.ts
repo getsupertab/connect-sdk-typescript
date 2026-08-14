@@ -93,6 +93,8 @@ describe("buildAnalyticsEvent", () => {
       cdn_verified_bot_category: null,
       request_priority: null,
       tls_fingerprint_ja4: null,
+      // Capture v3 — this context declares no provenance for the address it supplied.
+      client_ip_source: null,
     });
   });
 
@@ -119,6 +121,24 @@ describe("buildAnalyticsEvent", () => {
       expect(event.request_country).toBeNull();
       expect(event.request_asn).toBeNull();
       expect(event.tls_fingerprint).toBeNull();
+    });
+  });
+
+  describe("client_ip_source", () => {
+    it("records the provenance the caller declares, verbatim", () => {
+      const event = buildAnalyticsEvent(
+        makeRequest(),
+        baseDecision,
+        ctx({ clientIp: "1.2.3.4", clientIpSource: "connection" })
+      );
+      expect(event.client_ip_source).toBe("connection");
+    });
+
+    it("stays null when the caller declares no source", () => {
+      // A direct handleRequest caller supplies an address whose provenance only it knows.
+      // Inferring "cdn_declared" here would launder an undeclared claim into the warehouse.
+      const event = buildAnalyticsEvent(makeRequest(), baseDecision, ctx({ clientIp: "1.2.3.4" }));
+      expect(event.client_ip_source).toBeNull();
     });
   });
 
@@ -501,10 +521,10 @@ describe("buildAnalyticsEvent", () => {
     });
   });
 
-  describe("Capture v2 — schema_version", () => {
-    it("emits schema_version 2", () => {
+  describe("schema_version", () => {
+    it("emits schema_version 3", () => {
       const event = buildAnalyticsEvent(makeRequest(), baseDecision, ctx());
-      expect(event.schema_version).toBe(2);
+      expect(event.schema_version).toBe(3);
     });
   });
 });

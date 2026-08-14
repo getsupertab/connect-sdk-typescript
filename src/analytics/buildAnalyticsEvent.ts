@@ -1,11 +1,21 @@
 import { EnforcementMode } from "../types";
 import { normalizeClientIp } from "./ip";
-import { AnalyticsEvent, CdnRequestSignals, Decision, SCHEMA_VERSION, SourceCdn } from "./types";
+import {
+  AnalyticsEvent,
+  CdnRequestSignals,
+  ClientIpSource,
+  Decision,
+  SCHEMA_VERSION,
+  SourceCdn,
+} from "./types";
 
 export interface BuildAnalyticsEventContext {
   requestId: string;
   sourceCdn: SourceCdn | null;
   clientIp?: string | null;
+  // Where clientIp came from. Omitted by callers that can't say, and stays null then —
+  // provenance is asserted by whoever resolved the address, never inferred here.
+  clientIpSource?: ClientIpSource | null;
   timestamp?: Date;
   requestCountry?: string | null;
   requestAsn?: number | null;
@@ -178,6 +188,9 @@ export function buildAnalyticsEvent(
     cdn_verified_bot_category: cdn.cdn_verified_bot_category ?? null,
     request_priority: cdn.request_priority ?? null,
     tls_fingerprint_ja4: cdn.tls_fingerprint_ja4 ?? null,
+
+    // --- Capture v3 ---
+    client_ip_source: context.clientIpSource ?? null,
   };
 }
 
