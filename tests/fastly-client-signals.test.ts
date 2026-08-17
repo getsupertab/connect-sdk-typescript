@@ -26,6 +26,10 @@ describe("resolveFastlyClientSignals", () => {
     );
     expect(signals).toEqual({
       clientIp: "203.0.113.5",
+      // The socket peer: the viewer here, but an upstream hop on a chain whose VCL edge
+      // dropped the header — indistinguishable from in here, so report the branch taken
+      // rather than a verdict about the address.
+      clientIpSource: "connection",
       requestCountry: "DE",
       requestAsn: 3320,
       tlsFingerprint: "real-ja3",
@@ -41,6 +45,7 @@ describe("resolveFastlyClientSignals", () => {
       })
     );
     expect(signals.clientIp).toBe("198.51.100.7");
+    expect(signals.clientIpSource).toBe("cdn_declared");
     expect(signals.tlsFingerprint).toBeNull();
     // Geo derives from the header IP via fastly:geolocation, unavailable in tests → null
     // (never the hop's 54113 / US).

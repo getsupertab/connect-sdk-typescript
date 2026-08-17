@@ -323,6 +323,7 @@ export class SupertabConnect {
     const requestId = context?.requestId ?? crypto.randomUUID();
     const sourceCdn = context?.sourceCdn ?? null;
     const clientIp = context?.clientIp;
+    const clientIpSource = context?.clientIpSource;
     const ctx = context?.ctx;
     const requestCountry = context?.requestCountry;
     const requestAsn = context?.requestAsn;
@@ -335,6 +336,7 @@ export class SupertabConnect {
           requestId,
           sourceCdn,
           clientIp,
+          clientIpSource,
           requestCountry,
           requestAsn,
           tlsFingerprint,

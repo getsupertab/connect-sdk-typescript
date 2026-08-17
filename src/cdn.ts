@@ -7,7 +7,7 @@ import {
   CloudFrontRequestEvent,
   CloudFrontRequestResult,
 } from "./types";
-import { CdnRequestSignals } from "./analytics/types";
+import { CdnRequestSignals, ClientIpSource } from "./analytics/types";
 import { hostRSLicenseXML } from "./license";
 
 /** Parse a CDN ASN header (e.g. "13335" or "AS13335") to a positive integer, or null. */
@@ -58,6 +58,10 @@ export interface HandleRequestContext {
   // Omitted when the request did not pass through a CDN (e.g. invoked directly via the SDK).
   sourceCdn?: "cloudflare" | "fastly" | "cloudfront";
   clientIp?: string;
+  // Provenance of clientIp. Only whoever resolved the address can assert this, so a caller
+  // supplying its own clientIp and omitting this leaves the column NULL rather than having
+  // the SDK guess on its behalf.
+  clientIpSource?: ClientIpSource;
   requestId?: string;
   requestCountry?: string | null;
   requestAsn?: number | null;
@@ -87,11 +91,17 @@ export async function handleCloudflareRequest(
   originUrl?: string
 ): Promise<Response> {
   const cf = (request as unknown as { cf?: Record<string, any> }).cf;
+  // Read once and branch on truthiness for both: `.has()` would report `cdn_declared` for a
+  // present-but-empty header, whose address normalizes to the "::" sentinel.
+  const cfConnectingIp = request.headers.get("cf-connecting-ip");
   const result = await handler.handleRequest(request, {
     ctx,
     sourceCdn: "cloudflare",
     requestId: request.headers.get("cf-ray") ?? undefined,
-    clientIp: request.headers.get("cf-connecting-ip") ?? undefined,
+    // cf-connecting-ip is Cloudflare's own view of who connected to it; absent leaves
+    // clientIp undefined, which normalizes to the "::" sentinel.
+    clientIp: cfConnectingIp || undefined,
+    clientIpSource: cfConnectingIp ? "cdn_declared" : "absent",
     requestCountry: request.headers.get("cf-ipcountry") ?? cf?.country ?? null,
     requestAsn: typeof cf?.asn === "number" ? cf.asn : null,
     tlsFingerprint: cf?.botManagement?.ja3Hash ?? null,
@@ -145,6 +155,7 @@ export async function handleFastlyRequest(
   // headers. The caller (fastlyHandleRequests) passes them through from event.client.
   clientContext?: {
     clientIp?: string;
+    clientIpSource?: ClientIpSource;
     requestCountry?: string | null;
     requestAsn?: number | null;
     tlsFingerprint?: string | null;
@@ -164,6 +175,21 @@ export async function handleFastlyRequest(
   }
 
   const asnHeader = request.headers.get("fastly-client-asn");
+
+  // The address and its provenance must come from the SAME branch. Selecting them with two
+  // independent expressions lets a caller-supplied address be labelled by a header it did not
+  // come from — reporting `cdn_declared` for an address the CDN never vouched for.
+  const contextClientIp = clientContext?.clientIp;
+  const headerClientIp = request.headers.get("fastly-client-ip");
+  const resolvedClientIp = contextClientIp || headerClientIp || undefined;
+  const resolvedClientIpSource: ClientIpSource | undefined = contextClientIp
+    ? // Only the caller knows where its own address came from; undefined stays NULL rather
+      // than being inferred from a header that did not supply it.
+      clientContext?.clientIpSource
+    : headerClientIp
+      ? "cdn_declared"
+      : "absent";
+
   const webRequest = new Request(originalUrl, {
     method: request.method,
     headers: request.headers,
@@ -173,7 +199,8 @@ export async function handleFastlyRequest(
     ctx,
     sourceCdn: "fastly",
     // Prefer caller-supplied values (Compute: event.client.*) over header fallbacks (VCL only).
-    clientIp: clientContext?.clientIp ?? request.headers.get("fastly-client-ip") ?? undefined,
+    clientIp: resolvedClientIp,
+    clientIpSource: resolvedClientIpSource,
     requestCountry: clientContext?.requestCountry !== undefined ? clientContext.requestCountry : (request.headers.get("fastly-client-country-code") ?? null),
     requestAsn: clientContext?.requestAsn !== undefined ? clientContext.requestAsn : parseAsn(asnHeader),
     // JA3 comes from event.client.tlsJA3MD5 on Compute; the header is VCL-only.
@@ -240,7 +267,10 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
   const result = await handler.handleRequest(webRequest, {
     sourceCdn: "cloudfront",
     requestId: config?.requestId ?? undefined,
+    // Lambda@Edge exposes the viewer address as an event field rather than a header, but
+    // it means the same thing as cf-connecting-ip: CloudFront's view of who reached it.
     clientIp: cfRequest.clientIp,
+    clientIpSource: cfRequest.clientIp ? "cdn_declared" : "absent",
     requestCountry: headers.get("cloudfront-viewer-country") ?? null,
     requestAsn: parseAsn(asnHeader),
     tlsFingerprint: headers.get("cloudfront-viewer-ja3-fingerprint") ?? null,

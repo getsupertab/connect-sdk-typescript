@@ -113,6 +113,24 @@ describe("SupertabConnect analytics wiring", () => {
     expect(event.tls_fingerprint).toBe("ja3-abc");
   });
 
+  it("leaves client_ip_source null when the caller supplies an address but no provenance", async () => {
+    // The direct-integration case (host apps, the PHP SDK): only the caller knows whether
+    // its address came from a trusted header or from REMOTE_ADDR behind a proxy. Guessing
+    // would put an unearned claim in the warehouse, so an undeclared source stays NULL.
+    const transport = new RecordingTransport();
+    const sdk = new SupertabConnect({
+      apiKey: "merchant-key",
+      enforcement: EnforcementMode.OBSERVE,
+      botDetector: defaultBotDetector,
+      analyticsTransport: transport,
+    });
+
+    await sdk.handleRequest(botRequest(), { clientIp: "203.0.113.9" });
+
+    expect(transport.events[0].client_ip).toBe("::ffff:203.0.113.9");
+    expect(transport.events[0].client_ip_source).toBeNull();
+  });
+
   it("emits source_cdn=null when invoked without a CDN context", async () => {
     const transport = new RecordingTransport();
     const sdk = new SupertabConnect({
