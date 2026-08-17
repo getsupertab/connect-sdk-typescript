@@ -7,6 +7,7 @@ import {
   Decision,
   SCHEMA_VERSION,
   SourceCdn,
+  StatusSource,
 } from "./types";
 
 export interface BuildAnalyticsEventContext {
@@ -16,6 +17,11 @@ export interface BuildAnalyticsEventContext {
   // Where clientIp came from. Omitted by callers that can't say, and stays null then —
   // provenance is asserted by whoever resolved the address, never inferred here.
   clientIpSource?: ClientIpSource | null;
+  // The status of the response served, and why it is what it is. Only a caller that waited
+  // for the response can supply these; one that did not says so with `unobserved` rather
+  // than leaving a null nothing can interpret.
+  statusCode?: number | null;
+  statusSource?: StatusSource | null;
   timestamp?: Date;
   requestCountry?: string | null;
   requestAsn?: number | null;
@@ -206,6 +212,8 @@ export function buildAnalyticsEvent(
 
     // --- Capture v3 ---
     client_ip_source: reconcileIpSource(clientIp, context.clientIpSource),
+    status_code: context.statusCode ?? null,
+    status_source: context.statusSource ?? null,
   };
 }
 

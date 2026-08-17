@@ -86,10 +86,30 @@ export enum HandlerAction {
   RESPOND = "respond",
 }
 
-export type HandlerResult =
+/**
+ * Why an analytics event's `status_code` holds what it holds. A bare null is uninterpretable:
+ * "the origin failed, so there is no status" is a fact about the request, while "this runtime
+ * never sees responses" is a gap in our capture, and a score that averages the two is wrong
+ * in a way nothing downstream can detect.
+ */
+export type StatusSource = "observed" | "origin_error" | "unobserved";
+
+/**
+ * Present on a HandlerResult only when the caller opted into deferred analytics and the SDK
+ * could honour it. Call it once the final response is in hand — from a `finally`, so a thrown
+ * origin fetch still reports. Calling it is what sends the event: skip it and no event is sent
+ * at all. Calling it twice sends one event, not two.
+ */
+export interface ResponseReporter {
+  reportResponse?: (status: number | null, source?: StatusSource) => void;
+}
+
+export type HandlerResult = (
   | { action: HandlerAction.ALLOW; headers?: Record<string, string> }
   | { action: HandlerAction.BLOCK; status: number; body: string; headers: Record<string, string> }
-  | { action: HandlerAction.RESPOND; status: number; body: string; headers: Record<string, string> };
+  | { action: HandlerAction.RESPOND; status: number; body: string; headers: Record<string, string> }
+) &
+  ResponseReporter;
 
 export enum CDNStatusDescription {
   Unauthorized = "Unauthorized",

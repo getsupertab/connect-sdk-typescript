@@ -160,6 +160,125 @@ describe("SupertabConnect analytics wiring", () => {
   });
 });
 
+describe("deferred analytics (status capture)", () => {
+  const ctx = { waitUntil: () => {} };
+
+  function sdkWith(transport: RecordingTransport): SupertabConnect {
+    return new SupertabConnect({
+      apiKey: "merchant-key",
+      enforcement: EnforcementMode.OBSERVE,
+      botDetector: defaultBotDetector,
+      analyticsTransport: transport,
+    });
+  }
+
+  beforeEach(() => SupertabConnect.resetInstance());
+  afterEach(() => SupertabConnect.resetInstance());
+
+  it("sends nothing until the response is reported", async () => {
+    const transport = new RecordingTransport();
+
+    const result = await sdkWith(transport).handleRequest(botRequest(), { ctx, deferAnalytics: true });
+
+    expect(transport.events).toHaveLength(0);
+    result.reportResponse?.(200);
+    expect(transport.events).toHaveLength(1);
+  });
+
+  it("records the reported status as observed", async () => {
+    const transport = new RecordingTransport();
+
+    const result = await sdkWith(transport).handleRequest(botRequest(), { ctx, deferAnalytics: true });
+    result.reportResponse?.(404);
+
+    expect(transport.events[0].status_code).toBe(404);
+    expect(transport.events[0].status_source).toBe("observed");
+  });
+
+  it("records origin_error when the caller reports no status", async () => {
+    // The wrapper's finally fires with a null status when the origin fetch threw. That is a
+    // fact about the request — the origin failed — not a gap in our capture, and scoring
+    // must be able to tell the two apart.
+    const transport = new RecordingTransport();
+
+    const result = await sdkWith(transport).handleRequest(botRequest(), { ctx, deferAnalytics: true });
+    result.reportResponse?.(null, "origin_error");
+
+    expect(transport.events[0].status_code).toBeNull();
+    expect(transport.events[0].status_source).toBe("origin_error");
+  });
+
+  it("emits eagerly as unobserved when there is no ExecutionContext to defer into", async () => {
+    // Deferral is a request, not a command. Without waitUntil a deferred emit would start as
+    // the response returns and could be lost to teardown, so delivery wins over the status —
+    // and the event says which, instead of leaving a null nothing can read.
+    const transport = new RecordingTransport();
+
+    const result = await sdkWith(transport).handleRequest(botRequest(), { deferAnalytics: true });
+
+    expect(transport.events).toHaveLength(1);
+    expect(transport.events[0].status_code).toBeNull();
+    expect(transport.events[0].status_source).toBe("unobserved");
+    expect(result.reportResponse).toBeUndefined();
+  });
+
+  it("emits eagerly as unobserved when the caller never opts in", async () => {
+    const transport = new RecordingTransport();
+
+    await sdkWith(transport).handleRequest(botRequest(), { ctx });
+
+    expect(transport.events).toHaveLength(1);
+    expect(transport.events[0].status_source).toBe("unobserved");
+  });
+
+  it("sends one event when the response is reported twice", async () => {
+    // A wrapper that reports in a finally *and* on an early return must not double-count.
+    const transport = new RecordingTransport();
+
+    const result = await sdkWith(transport).handleRequest(botRequest(), { ctx, deferAnalytics: true });
+    result.reportResponse?.(200);
+    result.reportResponse?.(500);
+
+    expect(transport.events).toHaveLength(1);
+    expect(transport.events[0].status_code).toBe(200);
+  });
+
+  it("sends nothing for a path that never emitted, even when reported", async () => {
+    // The self-report status probe returns without emitting. Reporting a response for it must
+    // not conjure an event that the un-deferred path would never have produced.
+    const transport = new RecordingTransport();
+    const probe = new Request("https://example.com/.well-known/supertab/status", {
+      method: "GET",
+      headers: { "User-Agent": "curl/8.0" },
+    });
+
+    const result = await sdkWith(transport).handleRequest(probe, { ctx, deferAnalytics: true });
+    result.reportResponse?.(404);
+
+    expect(transport.events).toHaveLength(0);
+  });
+
+  it("still reports the status on the BLOCK path", async () => {
+    const transport = new RecordingTransport();
+    const sdk = new SupertabConnect({
+      apiKey: "merchant-key",
+      enforcement: EnforcementMode.ENFORCE,
+      botDetector: defaultBotDetector,
+      analyticsTransport: transport,
+    });
+
+    const result = await sdk.handleRequest(botRequest(), { ctx, deferAnalytics: true });
+    if (result.action !== HandlerAction.BLOCK) throw new Error("expected a BLOCK");
+    result.reportResponse?.(result.status);
+
+    // The status we serve is as much "what the client got" as the origin's is — final_action
+    // records why we blocked, status_code what the blocked client actually saw.
+    expect(transport.events[0].final_action).toBe("block");
+    expect(transport.events[0].status_source).toBe("observed");
+    expect(transport.events[0].status_code).toBe(result.status);
+  });
+});
+
 describe("constructor warning for misrouted Fastly options", () => {
   beforeEach(() => SupertabConnect.resetInstance());
   afterEach(() => SupertabConnect.resetInstance());

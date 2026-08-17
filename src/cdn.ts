@@ -7,7 +7,7 @@ import {
   CloudFrontRequestEvent,
   CloudFrontRequestResult,
 } from "./types";
-import { CdnRequestSignals, ClientIpSource } from "./analytics/types";
+import { CdnRequestSignals, ClientIpSource, StatusSource } from "./analytics/types";
 import { hostRSLicenseXML } from "./license";
 
 /** Parse a CDN ASN header (e.g. "13335" or "AS13335") to a positive integer, or null. */
@@ -62,6 +62,11 @@ export interface HandleRequestContext {
   // supplying its own clientIp and omitting this leaves the column NULL rather than having
   // the SDK guess on its behalf.
   clientIpSource?: ClientIpSource;
+  // Hold the analytics event back until the caller reports the response, so it can carry a
+  // real status_code. A request, not a command: the SDK honours it only when `ctx` is present
+  // to keep the runtime alive for the emit, and otherwise sends eagerly as before. Opting in
+  // means you MUST call `result.reportResponse(...)` — from a `finally` — or no event is sent.
+  deferAnalytics?: boolean;
   requestId?: string;
   requestCountry?: string | null;
   requestAsn?: number | null;
@@ -96,6 +101,7 @@ export async function handleCloudflareRequest(
   const cfConnectingIp = request.headers.get("cf-connecting-ip");
   const result = await handler.handleRequest(request, {
     ctx,
+    deferAnalytics: true,
     sourceCdn: "cloudflare",
     requestId: request.headers.get("cf-ray") ?? undefined,
     // cf-connecting-ip is Cloudflare's own view of who connected to it; absent leaves
@@ -108,29 +114,40 @@ export async function handleCloudflareRequest(
     cdnSignals: cf ? extractCloudflareCdnSignals(cf) : undefined,
   });
 
-  switch (result.action) {
-    case HandlerAction.RESPOND:
-    case HandlerAction.BLOCK:
+  // Reported in a finally so a thrown origin fetch still sends the event: losing the status
+  // is acceptable, losing the whole row is not. `status` arrives with the response headers,
+  // so reading it costs nothing and never waits on a body.
+  let status: number | null = null;
+  let source: StatusSource | undefined;
+  try {
+    // BLOCK / RESPOND: the status is ours and already decided.
+    if (result.action !== HandlerAction.ALLOW) {
+      status = result.status;
       return new Response(result.body, {
         status: result.status,
         headers: new Headers(result.headers),
       });
-    case HandlerAction.ALLOW: {
-      // When `originUrl` is provided, forward to that host while preserving
-      // path / query / method / headers / body. Decouples validation URL
-      // (request.url, used for token audience checks) from fetch destination.
-      // Production Cloudflare deployments can omit this — Workers Routes put
-      // the Worker on the publisher's hostname, so `fetch(request)` already
-      // resolves to the origin via the edge.
-      const fetchTarget = originUrl
-        ? new Request(
-            `${new URL(originUrl).origin}${new URL(request.url).pathname}${new URL(request.url).search}`,
-            request
-          )
-        : request;
-      const originResponse = await fetch(fetchTarget);
-      return applyResponseHeaders(originResponse, result.headers);
     }
+    // When `originUrl` is provided, forward to that host while preserving
+    // path / query / method / headers / body. Decouples validation URL
+    // (request.url, used for token audience checks) from fetch destination.
+    // Production Cloudflare deployments can omit this — Workers Routes put
+    // the Worker on the publisher's hostname, so `fetch(request)` already
+    // resolves to the origin via the edge.
+    const fetchTarget = originUrl
+      ? new Request(
+          `${new URL(originUrl).origin}${new URL(request.url).pathname}${new URL(request.url).search}`,
+          request
+        )
+      : request;
+    // Set before the await and cleared after, so a throw leaves "origin_error" standing.
+    source = "origin_error";
+    const originResponse = await fetch(fetchTarget);
+    status = originResponse.status;
+    source = undefined;
+    return applyResponseHeaders(originResponse, result.headers);
+  } finally {
+    result.reportResponse?.(status, source);
   }
 }
 
@@ -197,6 +214,7 @@ export async function handleFastlyRequest(
 
   const result = await handler.handleRequest(webRequest, {
     ctx,
+    deferAnalytics: true,
     sourceCdn: "fastly",
     // Prefer caller-supplied values (Compute: event.client.*) over header fallbacks (VCL only).
     clientIp: resolvedClientIp,
@@ -212,17 +230,26 @@ export async function handleFastlyRequest(
     },
   });
 
-  switch (result.action) {
-    case HandlerAction.RESPOND:
-    case HandlerAction.BLOCK:
+  // See handleCloudflareRequest: reported in a finally so a failed origin fetch costs the
+  // status, not the event.
+  let status: number | null = null;
+  let source: StatusSource | undefined;
+  try {
+    if (result.action !== HandlerAction.ALLOW) {
+      status = result.status;
       return new Response(result.body, {
         status: result.status,
         headers: new Headers(result.headers),
       });
-    case HandlerAction.ALLOW: {
-      const originResponse = await fetch(request, { backend: originBackend } as RequestInit);
-      return applyResponseHeaders(originResponse, result.headers);
     }
+    // Set before the await and cleared after, so a throw leaves "origin_error" standing.
+    source = "origin_error";
+    const originResponse = await fetch(request, { backend: originBackend } as RequestInit);
+    status = originResponse.status;
+    source = undefined;
+    return applyResponseHeaders(originResponse, result.headers);
+  } finally {
+    result.reportResponse?.(status, source);
   }
 }
 

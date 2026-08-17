@@ -39,6 +39,7 @@ import {
   AnalyticsEvent,
   AnalyticsTransport,
   Decision,
+  StatusSource,
   TOKEN_OUTCOME_BY_REASON,
   TokenOutcome,
 } from "./analytics/types";
@@ -275,6 +276,73 @@ export class SupertabConnect {
    * @returns A promise that resolves with the handler result indicating ALLOW or BLOCK
    */
   async handleRequest(request: Request, context?: HandleRequestContext): Promise<HandlerResult> {
+    const ctx = context?.ctx;
+    // Deferral is honoured only when there is an ExecutionContext to hold the runtime open.
+    // Nothing new lands on the request path either way — the emit is already fire-and-forget
+    // and a response's status arrives with its headers — but a deferred emit *starts* as the
+    // response is returned, so without waitUntil it is likelier to be dropped than an eager
+    // one. Falling back to an eager emit trades the status for delivery, and says so in
+    // status_source rather than leaving a null nothing can read.
+    const deferring = context?.deferAnalytics === true && ctx !== undefined;
+
+    const requestId = context?.requestId ?? crypto.randomUUID();
+    const send = (decision: Decision, statusCode: number | null, statusSource: StatusSource): void => {
+      try {
+        const event = buildAnalyticsEvent(request, decision, {
+          requestId,
+          sourceCdn: context?.sourceCdn ?? null,
+          clientIp: context?.clientIp,
+          clientIpSource: context?.clientIpSource,
+          statusCode,
+          statusSource,
+          requestCountry: context?.requestCountry,
+          requestAsn: context?.requestAsn,
+          tlsFingerprint: context?.tlsFingerprint,
+          cdnSignals: context?.cdnSignals,
+        });
+        this.analyticsTransport.emit(event, ctx);
+      } catch (err) {
+        if (this.debug) {
+          console.error("[SupertabConnect] failed to build/emit analytics event:", err);
+        }
+      }
+    };
+
+    // Held until the caller reports the response. Every decide() path still calls emit()
+    // exactly where it always did; only the sending moves.
+    let pending: Decision | null = null;
+    const emit = (decision: Decision): void => {
+      if (deferring) {
+        pending = decision;
+        return;
+      }
+      send(decision, null, "unobserved");
+    };
+
+    const result = await this.decide(request, context, emit);
+
+    if (deferring) {
+      result.reportResponse = (status: number | null, source?: StatusSource): void => {
+        const decision = pending;
+        // Cleared first so a second call is a no-op rather than a duplicate row, and so a
+        // path that never emitted (the status probe) reports nothing.
+        pending = null;
+        if (decision === null) return;
+        send(decision, status, status !== null ? "observed" : (source ?? "unobserved"));
+      };
+    }
+    return result;
+  }
+
+  /**
+   * The enforcement decision itself. Split out so the public entry point has one exit at
+   * which to attach the response reporter — every emit() call below stays where it was.
+   */
+  private async decide(
+    request: Request,
+    context: HandleRequestContext | undefined,
+    emit: (decision: Decision) => void
+  ): Promise<HandlerResult> {
     // Cheap substring pre-filter so the common request path skips URL parsing.
     if (request.url.includes("/.well-known/supertab/status")) {
       const url = new URL(request.url);
@@ -320,35 +388,7 @@ export class SupertabConnect {
     const rawUrl = request.url;
     const userAgent = request.headers.get("User-Agent") || "unknown";
 
-    const requestId = context?.requestId ?? crypto.randomUUID();
-    const sourceCdn = context?.sourceCdn ?? null;
-    const clientIp = context?.clientIp;
-    const clientIpSource = context?.clientIpSource;
     const ctx = context?.ctx;
-    const requestCountry = context?.requestCountry;
-    const requestAsn = context?.requestAsn;
-    const tlsFingerprint = context?.tlsFingerprint;
-    const cdnSignals = context?.cdnSignals;
-
-    const emit = (decision: Decision): void => {
-      try {
-        const event = buildAnalyticsEvent(request, decision, {
-          requestId,
-          sourceCdn,
-          clientIp,
-          clientIpSource,
-          requestCountry,
-          requestAsn,
-          tlsFingerprint,
-          cdnSignals,
-        });
-        this.analyticsTransport.emit(event, ctx);
-      } catch (err) {
-        if (this.debug) {
-          console.error("[SupertabConnect] failed to build/emit analytics event:", err);
-        }
-      }
-    };
 
     // Token present → validate, regardless of bot detection — except in DISABLED
     // mode, which short-circuits to ALLOW without verification.
