@@ -4,6 +4,7 @@ import {
   extractCloudflareCdnSignals,
   handleFastlyRequest,
   handleCloudflareRequest,
+  handleCloudfrontRequest,
 } from "../src/cdn";
 import { HandlerAction } from "../src/types";
 
@@ -129,6 +130,44 @@ describe("handleCloudflareRequest client signals", () => {
     });
 
     await handleCloudflareRequest(handler, request, ctx);
+
+    expect(handler.calls[0].clientIp).toBeUndefined();
+    expect(handler.calls[0].clientIpSource).toBe("absent");
+  });
+});
+
+describe("handleCloudfrontRequest client signals", () => {
+  // Lambda@Edge hands the viewer address to the function as an event field, not a header.
+  const cfEvent = (clientIp?: string) => ({
+    Records: [
+      {
+        cf: {
+          config: { requestId: "req-1" },
+          request: {
+            clientIp,
+            method: "GET",
+            uri: "/article",
+            querystring: "",
+            headers: { host: [{ key: "Host", value: "example.com" }] },
+          },
+        },
+      },
+    ],
+  });
+
+  it("reports cdn_declared when CloudFront supplies the viewer address", async () => {
+    const handler = recordingHandler();
+
+    await handleCloudfrontRequest(handler, cfEvent("203.0.113.9") as any);
+
+    expect(handler.calls[0].clientIp).toBe("203.0.113.9");
+    expect(handler.calls[0].clientIpSource).toBe("cdn_declared");
+  });
+
+  it("reports absent when the event carries no client address", async () => {
+    const handler = recordingHandler();
+
+    await handleCloudfrontRequest(handler, cfEvent(undefined) as any);
 
     expect(handler.calls[0].clientIp).toBeUndefined();
     expect(handler.calls[0].clientIpSource).toBe("absent");

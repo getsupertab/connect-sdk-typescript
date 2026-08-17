@@ -1,5 +1,5 @@
 import { EnforcementMode } from "../types";
-import { normalizeClientIp } from "./ip";
+import { normalizeClientIp, UNSPECIFIED as UNSPECIFIED_IP } from "./ip";
 import {
   AnalyticsEvent,
   CdnRequestSignals,
@@ -77,6 +77,20 @@ function truncate(value: string | null, max = MAX_FIELD_LENGTH): string | null {
   return value.length > max ? value.slice(0, max) : value;
 }
 
+// The wrappers decide provenance from whether an address was *available*, before
+// normalizeClientIp has had a chance to reject it. A malformed value (a spoofed
+// Fastly-Client-IP, say) becomes the "::" sentinel, and the row would then claim a CDN
+// vouched for an address that is no longer there. Reconcile the two here, the one place
+// that sees both. An undeclared source stays null: only the caller knows its provenance,
+// and "we have no address" is not something to assert on its behalf.
+function reconcileIpSource(
+  normalizedIp: string,
+  declared: ClientIpSource | null | undefined
+): ClientIpSource | null {
+  if (declared === undefined || declared === null) return null;
+  return normalizedIp === UNSPECIFIED_IP ? "absent" : declared;
+}
+
 function isEdgeHeader(name: string): boolean {
   if (EDGE_HEADER_NAMES.has(name)) return true;
   return EDGE_HEADER_PREFIXES.some((prefix) => name.startsWith(prefix));
@@ -130,6 +144,7 @@ export function buildAnalyticsEvent(
   const url = safeUrl(request.url);
   const query = querySignals(url);
   const cdn = context.cdnSignals ?? {};
+  const clientIp = normalizeClientIp(context.clientIp);
 
   return {
     timestamp: isoUtc(timestamp),
@@ -138,7 +153,7 @@ export function buildAnalyticsEvent(
     source_cdn: context.sourceCdn,
 
     user_agent: headers.get("user-agent") ?? "",
-    client_ip: normalizeClientIp(context.clientIp),
+    client_ip: clientIp,
     path: url?.pathname ?? "",
     method: request.method,
     referer: headers.get("referer") ?? "",
@@ -190,7 +205,7 @@ export function buildAnalyticsEvent(
     tls_fingerprint_ja4: cdn.tls_fingerprint_ja4 ?? null,
 
     // --- Capture v3 ---
-    client_ip_source: context.clientIpSource ?? null,
+    client_ip_source: reconcileIpSource(clientIp, context.clientIpSource),
   };
 }
 

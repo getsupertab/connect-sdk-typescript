@@ -1,7 +1,8 @@
 const IPV4_RE = /^(?:25[0-5]|2[0-4]\d|[01]?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|[01]?\d?\d)){3}$/;
 const IPV6_RE = /^[0-9a-fA-F:]+$/;
 
-const UNSPECIFIED = "::";
+/** What client_ip becomes when no usable address was available. */
+export const UNSPECIFIED = "::";
 
 export function normalizeClientIp(raw: string | undefined | null): string {
   if (!raw) return UNSPECIFIED;

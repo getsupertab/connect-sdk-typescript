@@ -140,6 +140,45 @@ describe("buildAnalyticsEvent", () => {
       const event = buildAnalyticsEvent(makeRequest(), baseDecision, ctx({ clientIp: "1.2.3.4" }));
       expect(event.client_ip_source).toBeNull();
     });
+
+    it.each(["not-an-ip", "999.1.1.1", "   "])(
+      "downgrades a declared source to absent when %s normalizes to the sentinel",
+      (malformed) => {
+        // The wrappers decide provenance from whether an address was available, before
+        // normalization can reject it — so a spoofed Fastly-Client-IP arrives here as
+        // "cdn_declared". Emitting that next to "::" would claim the CDN vouched for an
+        // address the event no longer carries, and `cdn_declared` is exactly what a query
+        // filters on to get trustworthy addresses.
+        const event = buildAnalyticsEvent(
+          makeRequest(),
+          baseDecision,
+          ctx({ clientIp: malformed, clientIpSource: "cdn_declared" })
+        );
+
+        expect(event.client_ip).toBe("::");
+        expect(event.client_ip_source).toBe("absent");
+      }
+    );
+
+    it("keeps a declared source when the address survives normalization", () => {
+      const event = buildAnalyticsEvent(
+        makeRequest(),
+        baseDecision,
+        ctx({ clientIp: "1.2.3.4", clientIpSource: "cdn_declared" })
+      );
+
+      expect(event.client_ip).toBe("::ffff:1.2.3.4");
+      expect(event.client_ip_source).toBe("cdn_declared");
+    });
+
+    it("leaves an undeclared source null even when the address is the sentinel", () => {
+      // "absent" is a claim about what the emitter looked for. A caller that declared
+      // nothing gets nothing asserted on its behalf, sentinel or not.
+      const event = buildAnalyticsEvent(makeRequest(), baseDecision, ctx({ clientIp: "nonsense" }));
+
+      expect(event.client_ip).toBe("::");
+      expect(event.client_ip_source).toBeNull();
+    });
   });
 
   describe("HTTP Message Signature headers", () => {
