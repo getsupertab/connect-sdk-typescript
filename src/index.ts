@@ -308,29 +308,50 @@ export class SupertabConnect {
       }
     };
 
-    // Held until the caller reports the response. Every decide() path still calls emit()
-    // exactly where it always did; only the sending moves.
+    // Always held until decide() returns, so the event carries whatever is known by then.
+    // Every decide() path still calls emit() exactly where it always did; only the sending
+    // moves. Only an allowed request has anything left to wait for.
     let pending: Decision | null = null;
     const emit = (decision: Decision): void => {
-      if (deferring) {
-        pending = decision;
-        return;
-      }
-      send(decision, null, "unobserved");
+      pending = decision;
+    };
+    // Taken on the way out so a second report is a no-op rather than a duplicate row, and a
+    // path that never emitted (the status probe) reports nothing.
+    const take = (): Decision | null => {
+      const decision = pending;
+      pending = null;
+      return decision;
     };
 
-    const result = await this.decide(request, context, emit);
-
-    if (deferring) {
-      result.reportResponse = (status: number | null, source?: StatusSource): void => {
-        const decision = pending;
-        // Cleared first so a second call is a no-op rather than a duplicate row, and so a
-        // path that never emitted (the status probe) reports nothing.
-        pending = null;
-        if (decision === null) return;
-        send(decision, status, status !== null ? "observed" : (source ?? "unobserved"));
-      };
+    let result: HandlerResult;
+    try {
+      result = await this.decide(request, context, emit);
+    } catch (err) {
+      // decide() emits before it builds its result, so a throw in between would otherwise
+      // drop an event that would have been sent had it been emitted eagerly.
+      const decision = take();
+      if (decision !== null) send(decision, null, "unobserved");
+      throw err;
     }
+
+    if (result.action !== HandlerAction.ALLOW) {
+      // The status is ours and already decided — nothing to wait for, deferring or not.
+      const decision = take();
+      if (decision !== null) send(decision, result.status, "observed");
+      return result;
+    }
+
+    if (!deferring) {
+      const decision = take();
+      if (decision !== null) send(decision, null, "unobserved");
+      return result;
+    }
+
+    result.reportResponse = (status: number | null, source?: StatusSource): void => {
+      const decision = take();
+      if (decision === null) return;
+      send(decision, status, status !== null ? "observed" : (source ?? "unobserved"));
+    };
     return result;
   }
 

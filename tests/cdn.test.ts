@@ -185,12 +185,36 @@ describe("wrapper status reporting", () => {
     expect(handler.reported).toEqual([[null, "origin_error"]]);
   });
 
-  it("reports our own status on the BLOCK path", async () => {
+  it("reports nothing from the wrapper on the BLOCK path", async () => {
+    // A blocked request already knows its own status, so handleRequest sends the event itself
+    // and attaches no reporter. The wrapper must not report a null over the top of it.
     const handler = reportingHandler(HandlerAction.BLOCK, 401);
 
-    await handleCloudflareRequest(handler as any, new Request("https://example.com/a"), ctx);
+    const response = await handleCloudflareRequest(handler as any, new Request("https://example.com/a"), ctx);
 
-    expect(handler.reported).toEqual([[401, undefined]]);
+    expect(response.status).toBe(401);
+    expect(handler.reported).toEqual([]);
+  });
+
+  it("reports the fail-open retry's status rather than origin_error", async () => {
+    // cloudflareHandleRequests retries a failed origin fetch, so reporting from a boundary
+    // the retry sits outside of would record "origin_error" for a request the client saw
+    // served. origin_error means no response reached the client at all.
+    const handler = reportingHandler(HandlerAction.ALLOW);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new Error("origin down"))
+      .mockResolvedValueOnce(new Response("ok", { status: 200 }));
+
+    let response: Response;
+    try {
+      response = await handleCloudflareRequest(handler as any, new Request("https://example.com/a"), ctx);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+
+    expect(response.status).toBe(200);
+    expect(handler.reported).toEqual([[200, undefined]]);
   });
 
   it("reports the origin's status on the Fastly ALLOW path", async () => {
@@ -204,6 +228,24 @@ describe("wrapper status reporting", () => {
     }
 
     expect(handler.reported).toEqual([[301, undefined]]);
+  });
+
+  it("reports the fail-open retry's status on the Fastly ALLOW path", async () => {
+    const handler = reportingHandler(HandlerAction.ALLOW);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new Error("backend unreachable"))
+      .mockResolvedValueOnce(new Response("ok", { status: 200 }));
+
+    let response: Response;
+    try {
+      response = await handleFastlyRequest(handler as any, new Request("https://example.com/a"), "origin");
+    } finally {
+      fetchSpy.mockRestore();
+    }
+
+    expect(response.status).toBe(200);
+    expect(handler.reported).toEqual([[200, undefined]]);
   });
 });
 

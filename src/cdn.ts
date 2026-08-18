@@ -64,8 +64,9 @@ export interface HandleRequestContext {
   clientIpSource?: ClientIpSource;
   // Hold the analytics event back until the caller reports the response, so it can carry a
   // real status_code. A request, not a command: the SDK honours it only when `ctx` is present
-  // to keep the runtime alive for the emit, and otherwise sends eagerly as before. Opting in
-  // means you MUST call `result.reportResponse(...)` — from a `finally` — or no event is sent.
+  // to keep the runtime alive for the emit, and otherwise sends eagerly. Only ALLOW is ever
+  // held — a blocked request already knows its own status — so `reportResponse` is attached
+  // only there, and opting in means you MUST call it from a `finally` or that event is lost.
   deferAnalytics?: boolean;
   requestId?: string;
   requestCountry?: string | null;
@@ -114,20 +115,22 @@ export async function handleCloudflareRequest(
     cdnSignals: cf ? extractCloudflareCdnSignals(cf) : undefined,
   });
 
+  // BLOCK / RESPOND already carried their own status out of handleRequest, which attaches the
+  // reporter only for ALLOW. Returned before the try so nothing reports a null status for a
+  // response whose status was never in doubt.
+  if (result.action !== HandlerAction.ALLOW) {
+    return new Response(result.body, {
+      status: result.status,
+      headers: new Headers(result.headers),
+    });
+  }
+
   // Reported in a finally so a thrown origin fetch still sends the event: losing the status
   // is acceptable, losing the whole row is not. `status` arrives with the response headers,
   // so reading it costs nothing and never waits on a body.
   let status: number | null = null;
   let source: StatusSource | undefined;
   try {
-    // BLOCK / RESPOND: the status is ours and already decided.
-    if (result.action !== HandlerAction.ALLOW) {
-      status = result.status;
-      return new Response(result.body, {
-        status: result.status,
-        headers: new Headers(result.headers),
-      });
-    }
     // When `originUrl` is provided, forward to that host while preserving
     // path / query / method / headers / body. Decouples validation URL
     // (request.url, used for token audience checks) from fetch destination.
@@ -142,7 +145,15 @@ export async function handleCloudflareRequest(
       : request;
     // Set before the await and cleared after, so a throw leaves "origin_error" standing.
     source = "origin_error";
-    const originResponse = await fetch(fetchTarget);
+    let originResponse: Response;
+    try {
+      originResponse = await fetch(fetchTarget);
+    } catch {
+      // Fail open here rather than leaving it to cloudflareHandleRequests, so the status
+      // reported is the one the client actually receives. Reporting from a boundary the
+      // retry sits outside of would record "origin_error" for a request the retry served.
+      originResponse = await fetch(request);
+    }
     status = originResponse.status;
     source = undefined;
     return applyResponseHeaders(originResponse, result.headers);
@@ -230,21 +241,28 @@ export async function handleFastlyRequest(
     },
   });
 
-  // See handleCloudflareRequest: reported in a finally so a failed origin fetch costs the
-  // status, not the event.
+  // See handleCloudflareRequest for both: non-ALLOW returns before the try, and the origin
+  // status is reported in a finally so a failed fetch costs the status, not the event.
+  if (result.action !== HandlerAction.ALLOW) {
+    return new Response(result.body, {
+      status: result.status,
+      headers: new Headers(result.headers),
+    });
+  }
+
   let status: number | null = null;
   let source: StatusSource | undefined;
   try {
-    if (result.action !== HandlerAction.ALLOW) {
-      status = result.status;
-      return new Response(result.body, {
-        status: result.status,
-        headers: new Headers(result.headers),
-      });
-    }
     // Set before the await and cleared after, so a throw leaves "origin_error" standing.
     source = "origin_error";
-    const originResponse = await fetch(request, { backend: originBackend } as RequestInit);
+    let originResponse: Response;
+    try {
+      originResponse = await fetch(request, { backend: originBackend } as RequestInit);
+    } catch {
+      // See handleCloudflareRequest: fail open here so the reported status is the one the
+      // client receives, rather than letting fastlyHandleRequests retry outside the reporter.
+      originResponse = await fetch(request, { backend: originBackend } as RequestInit);
+    }
     status = originResponse.status;
     source = undefined;
     return applyResponseHeaders(originResponse, result.headers);
