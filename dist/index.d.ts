@@ -49,7 +49,23 @@ declare enum HandlerAction {
     BLOCK = "block",
     RESPOND = "respond"
 }
-type HandlerResult = {
+/**
+ * Why an analytics event's `status_code` holds what it holds. A bare null is uninterpretable:
+ * "the origin failed, so there is no status" is a fact about the request, while "this runtime
+ * never sees responses" is a gap in our capture, and a score that averages the two is wrong
+ * in a way nothing downstream can detect.
+ */
+type StatusSource = "observed" | "origin_error" | "unobserved";
+/**
+ * Present on a HandlerResult only when the caller opted into deferred analytics and the SDK
+ * could honour it. Call it once the final response is in hand — from a `finally`, so a thrown
+ * origin fetch still reports. Calling it is what sends the event: skip it and no event is sent
+ * at all. Calling it twice sends one event, not two.
+ */
+interface ResponseReporter {
+    reportResponse?: (status: number | null, source?: StatusSource) => void;
+}
+type HandlerResult = ({
     action: HandlerAction.ALLOW;
     headers?: Record<string, string>;
 } | {
@@ -62,7 +78,7 @@ type HandlerResult = {
     status: number;
     body: string;
     headers: Record<string, string>;
-};
+}) & ResponseReporter;
 declare enum CDNStatusDescription {
     Unauthorized = "Unauthorized",
     PaymentRequired = "Payment Required",
@@ -173,6 +189,21 @@ declare enum UsageType {
 }
 
 type SourceCdn = "cloudflare" | "fastly" | "cloudfront";
+/**
+ * Where `client_ip` came from. Provenance, never a verdict on the address — whether
+ * it is the visitor or a middleman is decided in the warehouse, against `request_asn`.
+ *
+ * - `cdn_declared` — the CDN's view of who connected *to it*. The strongest claim any
+ *   CDN can make, and still only one hop out: if something sits in front of the CDN,
+ *   this is that something.
+ * - `connection` — the socket peer this runtime observed. The real client on a direct
+ *   deployment, an upstream hop on a chained one; the runtime cannot tell which.
+ * - `absent` — no address available, so `client_ip` is the `::` sentinel.
+ *
+ * Undeclared (omitted) is a fourth state and stays NULL: an integrator passing its own
+ * `clientIp` knows its provenance and we do not, so we never guess on its behalf.
+ */
+type ClientIpSource = "cdn_declared" | "connection" | "absent";
 type TokenOutcome = "absent" | "valid" | "expired" | "invalid_signature" | "invalid_audience" | "invalid_resource" | "invalid_issuer" | "malformed" | "server_error" | "not_validated";
 type FinalAction = "allow" | "observe" | "block";
 interface AnalyticsEvent {
@@ -221,6 +252,9 @@ interface AnalyticsEvent {
     cdn_verified_bot_category: string | null;
     request_priority: string | null;
     tls_fingerprint_ja4: string | null;
+    client_ip_source: ClientIpSource | null;
+    status_code: number | null;
+    status_source: StatusSource | null;
 }
 /**
  * CDN-supplied request signals that cannot be read from the portable `Request`
@@ -249,6 +283,8 @@ interface HandleRequestContext {
     ctx?: ExecutionContext;
     sourceCdn?: "cloudflare" | "fastly" | "cloudfront";
     clientIp?: string;
+    clientIpSource?: ClientIpSource;
+    deferAnalytics?: boolean;
     requestId?: string;
     requestCountry?: string | null;
     requestAsn?: number | null;
@@ -364,6 +400,11 @@ declare class SupertabConnect {
      * @returns A promise that resolves with the handler result indicating ALLOW or BLOCK
      */
     handleRequest(request: Request, context?: HandleRequestContext): Promise<HandlerResult>;
+    /**
+     * The enforcement decision itself. Split out so the public entry point has one exit at
+     * which to attach the response reporter — every emit() call below stays where it was.
+     */
+    private decide;
     /**
      * Request a license token from the Supertab Connect token endpoint.
      * If usage type is specified and matching serverless content permits it, skips token request and returns undefined.
