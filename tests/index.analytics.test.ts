@@ -7,6 +7,7 @@ import {
   NoopAnalyticsTransport,
 } from "../src/analytics/transport";
 import { ExecutionContext } from "../src/types";
+import * as license from "../src/license";
 
 class RecordingTransport implements AnalyticsTransport {
   public events: AnalyticsEvent[] = [];
@@ -157,6 +158,166 @@ describe("SupertabConnect analytics wiring", () => {
 
     // The throwing transport must not affect enforcement: observe-mode bot → ALLOW pass-through.
     expect(result.action).toBe(HandlerAction.ALLOW);
+  });
+});
+
+describe("deferred analytics (status capture)", () => {
+  const ctx = { waitUntil: () => {} };
+
+  function sdkWith(transport: RecordingTransport): SupertabConnect {
+    return new SupertabConnect({
+      apiKey: "merchant-key",
+      enforcement: EnforcementMode.OBSERVE,
+      botDetector: defaultBotDetector,
+      analyticsTransport: transport,
+    });
+  }
+
+  beforeEach(() => SupertabConnect.resetInstance());
+  afterEach(() => SupertabConnect.resetInstance());
+
+  it("sends nothing until the response is reported", async () => {
+    const transport = new RecordingTransport();
+
+    const result = await sdkWith(transport).handleRequest(botRequest(), { ctx, deferAnalytics: true });
+
+    expect(transport.events).toHaveLength(0);
+    result.reportResponse?.(200);
+    expect(transport.events).toHaveLength(1);
+  });
+
+  it("records the reported status as observed", async () => {
+    const transport = new RecordingTransport();
+
+    const result = await sdkWith(transport).handleRequest(botRequest(), { ctx, deferAnalytics: true });
+    result.reportResponse?.(404);
+
+    expect(transport.events[0].status_code).toBe(404);
+    expect(transport.events[0].status_source).toBe("observed");
+  });
+
+  it("records origin_error when the caller reports no status", async () => {
+    // The wrapper's finally fires with a null status when the origin fetch threw. That is a
+    // fact about the request — the origin failed — not a gap in our capture, and scoring
+    // must be able to tell the two apart.
+    const transport = new RecordingTransport();
+
+    const result = await sdkWith(transport).handleRequest(botRequest(), { ctx, deferAnalytics: true });
+    result.reportResponse?.(null, "origin_error");
+
+    expect(transport.events[0].status_code).toBeNull();
+    expect(transport.events[0].status_source).toBe("origin_error");
+  });
+
+  it("emits eagerly as unobserved when there is no ExecutionContext to defer into", async () => {
+    // Deferral is a request, not a command. Without waitUntil a deferred emit would start as
+    // the response returns and could be lost to teardown, so delivery wins over the status —
+    // and the event says which, instead of leaving a null nothing can read.
+    const transport = new RecordingTransport();
+
+    const result = await sdkWith(transport).handleRequest(botRequest(), { deferAnalytics: true });
+
+    expect(transport.events).toHaveLength(1);
+    expect(transport.events[0].status_code).toBeNull();
+    expect(transport.events[0].status_source).toBe("unobserved");
+    expect(result.reportResponse).toBeUndefined();
+  });
+
+  it("emits eagerly as unobserved when the caller never opts in", async () => {
+    const transport = new RecordingTransport();
+
+    await sdkWith(transport).handleRequest(botRequest(), { ctx });
+
+    expect(transport.events).toHaveLength(1);
+    expect(transport.events[0].status_source).toBe("unobserved");
+  });
+
+  it("sends one event when the response is reported twice", async () => {
+    // A wrapper that reports in a finally *and* on an early return must not double-count.
+    const transport = new RecordingTransport();
+
+    const result = await sdkWith(transport).handleRequest(botRequest(), { ctx, deferAnalytics: true });
+    result.reportResponse?.(200);
+    result.reportResponse?.(500);
+
+    expect(transport.events).toHaveLength(1);
+    expect(transport.events[0].status_code).toBe(200);
+  });
+
+  it("sends nothing for a path that never emitted, even when reported", async () => {
+    // The self-report status probe returns without emitting. Reporting a response for it must
+    // not conjure an event that the un-deferred path would never have produced.
+    const transport = new RecordingTransport();
+    const probe = new Request("https://example.com/.well-known/supertab/status", {
+      method: "GET",
+      headers: { "User-Agent": "curl/8.0" },
+    });
+
+    const result = await sdkWith(transport).handleRequest(probe, { ctx, deferAnalytics: true });
+    result.reportResponse?.(404);
+
+    expect(transport.events).toHaveLength(0);
+  });
+
+  function enforcingSdk(transport: RecordingTransport): SupertabConnect {
+    return new SupertabConnect({
+      apiKey: "merchant-key",
+      enforcement: EnforcementMode.ENFORCE,
+      botDetector: defaultBotDetector,
+      analyticsTransport: transport,
+    });
+  }
+
+  it("sends the BLOCK status immediately, without waiting to be reported", async () => {
+    // A blocked request already knows its own status, so there is nothing to wait for and no
+    // window in which the event can be lost. The status we serve is as much "what the client
+    // got" as the origin's is — final_action records why we blocked, status_code what the
+    // blocked client actually saw.
+    const transport = new RecordingTransport();
+
+    const result = await enforcingSdk(transport).handleRequest(botRequest(), { ctx, deferAnalytics: true });
+    if (result.action !== HandlerAction.BLOCK) throw new Error("expected a BLOCK");
+
+    expect(transport.events).toHaveLength(1);
+    expect(result.reportResponse).toBeUndefined();
+    expect(transport.events[0].final_action).toBe("block");
+    expect(transport.events[0].status_source).toBe("observed");
+    expect(transport.events[0].status_code).toBe(result.status);
+  });
+
+  it("captures the BLOCK status even when the caller never opts into deferral", async () => {
+    // The status is ours either way, so an integration that does not defer should not be
+    // recording "unobserved" for a response it chose itself.
+    const transport = new RecordingTransport();
+
+    const result = await enforcingSdk(transport).handleRequest(botRequest(), { ctx });
+    if (result.action !== HandlerAction.BLOCK) throw new Error("expected a BLOCK");
+
+    expect(transport.events[0].status_source).toBe("observed");
+    expect(transport.events[0].status_code).toBe(result.status);
+  });
+
+  it("still sends the event when the decision throws after emitting", async () => {
+    // decide() emits before it builds its result. Holding the emit must not make a throw in
+    // between lose an event that an eager emit would already have sent.
+    const transport = new RecordingTransport();
+    const boom = new Error("result construction failed");
+    const buildSpy = vi.spyOn(license, "buildBlockResult").mockImplementation(() => {
+      throw boom;
+    });
+
+    try {
+      await expect(
+        enforcingSdk(transport).handleRequest(botRequest(), { ctx, deferAnalytics: true })
+      ).rejects.toThrow(boom);
+    } finally {
+      buildSpy.mockRestore();
+    }
+
+    expect(transport.events).toHaveLength(1);
+    expect(transport.events[0].final_action).toBe("block");
+    expect(transport.events[0].status_code).toBeNull();
+    expect(transport.events[0].status_source).toBe("unobserved");
   });
 });
 

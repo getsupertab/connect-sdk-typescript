@@ -1,4 +1,6 @@
-import { EnforcementMode, ExecutionContext, LicenseTokenInvalidReason } from "../types";
+import { EnforcementMode, ExecutionContext, LicenseTokenInvalidReason, StatusSource } from "../types";
+
+export type { StatusSource };
 
 export const SCHEMA_VERSION = 3;
 
@@ -108,6 +110,10 @@ export interface AnalyticsEvent {
 
   // --- Capture v3 (schema_version 3) ---
   client_ip_source: ClientIpSource | null;
+  // The status of the response actually served — the origin's answer on ALLOW, ours on
+  // BLOCK/RESPOND. Null whenever status_source says it could not be read.
+  status_code: number | null;
+  status_source: StatusSource | null;
 }
 
 /**

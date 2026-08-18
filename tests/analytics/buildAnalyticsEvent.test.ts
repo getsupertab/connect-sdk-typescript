@@ -93,8 +93,11 @@ describe("buildAnalyticsEvent", () => {
       cdn_verified_bot_category: null,
       request_priority: null,
       tls_fingerprint_ja4: null,
-      // Capture v3 — this context declares no provenance for the address it supplied.
+      // Capture v3 — this context declares no provenance for the address it supplied,
+      // and never waited for a response.
       client_ip_source: null,
+      status_code: null,
+      status_source: null,
     });
   });
 
