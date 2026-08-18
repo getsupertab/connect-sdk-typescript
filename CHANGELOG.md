@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] — 2026-08-18
+
+### Added
+
+- **Schema v3 capture: `client_ip_source`, `status_code`, `status_source`.** Events now record
+  where the client address came from and what HTTP status the client actually received.
+  `client_ip_source` (`cdn_declared` / `connection` / `absent`) captures provenance rather than
+  a verdict — only whoever resolved an address can say where it came from, so a caller that
+  supplies its own and declares no source leaves the column null instead of having the SDK
+  guess. `status_code` is the status finally served, and `status_source`
+  (`observed` / `origin_error` / `unobserved`) says why it holds what it holds, so a null can be
+  read rather than merely noticed: an origin that failed is a fact about the request, not a gap
+  in capture.
+- **Opt-in deferred analytics (`deferAnalytics`).** Every `emit()` previously fired inside
+  `handleRequest`, which returns before the wrapper fetches origin — so on the ALLOW path the
+  status was not yet known. Callers may now ask the SDK to hold the event until they report the
+  response via `result.reportResponse(status, source)`. It is a request, not a command: the SDK
+  defers only when an `ExecutionContext` is present to keep the runtime alive for the emit, and
+  otherwise emits eagerly as `unobserved` — delivery beats status, and the event says which.
+  The Cloudflare and Fastly wrappers opt in and report from a `finally`. A blocked request
+  already knows its own status, so it is never held.
+
+### Fixed
+
+- **The reported status is now the one the client actually received.** The CDN wrappers reported
+  the origin status from a boundary that the fail-open retry in `cloudflareHandleRequests` /
+  `fastlyHandleRequests` sat outside of, so a transient origin failure that the retry then
+  served as a 200 was recorded as `origin_error` with a null status. The retry moved inside the
+  reporting boundary; `origin_error` now means no response reached the client at all.
+
 ## [2.2.4] — 2026-07-20
 
 ### Added
