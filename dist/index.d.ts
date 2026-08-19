@@ -123,6 +123,26 @@ interface CloudfrontHandlerOptions {
     apiKey: string;
     botDetector?: BotDetector;
     enforcement?: EnforcementMode;
+    /** Enable debug logging (default: false). */
+    debug?: boolean;
+    /**
+     * Toggle relay analytics emission (default: false). Lambda@Edge has no `waitUntil`
+     * keep-alive, so the emit is awaited to completion before the response returns rather
+     * than fired-and-forgotten. Only requests carrying an `x-license-auth` header reach
+     * this path, so the cost lands on licensed/identified-bot traffic, not human traffic.
+     */
+    analyticsEnabled?: boolean;
+    /**
+     * Base URL of the analytics ingest relay, for non-prod deployments (e.g.
+     * `https://ingest-connect.sbx.supertab.co`). Defaults to the prod ingest service.
+     */
+    analyticsBaseUrl?: string;
+    /**
+     * Optional cap (ms) on the pre-response wait for the analytics emit / event recording.
+     * Default: no cap — everything is awaited to completion. When set, whatever is still
+     * in flight at expiry is dropped.
+     */
+    analyticsTimeoutMs?: number;
 }
 type RSLVerificationResult = {
     valid: boolean;
@@ -330,12 +350,15 @@ declare class SupertabConnect {
     private static _instance;
     /**
      * Create a new SupertabConnect instance (singleton).
-     * Returns the existing instance if one exists with the same config.
+     * If an instance with the same apiKey already exists, it is reconfigured with the
+     * provided options (last write wins) and returned — important on warm serverless
+     * containers, where the module (and singleton) outlives a single invocation.
      * @param config SDK configuration including apiKey
      * @param reset Pass true to replace an existing instance with different config
-     * @throws If an instance with different config already exists and reset is false
+     * @throws If an instance with a different apiKey already exists and reset is false
      */
     constructor(config: SupertabConnectConfig, reset?: boolean);
+    private applyConfig;
     private static buildAnalyticsTransport;
     /**
      * Clear the singleton instance, allowing a new one to be created with different config.
@@ -474,8 +497,12 @@ declare class SupertabConnect {
      * Handle incoming requests for AWS CloudFront Lambda@Edge.
      * Use as the handler for an origin-request LambdaEdge function.
      * @param event The CloudFront origin-request event
-     * @param options Configuration including apiKey and optional botDetector/enforcement fields.
-     *   Relay analytics is not supported on CloudFront — only Cloudflare and Fastly emit events.
+     * @param options Configuration including apiKey and optional botDetector/enforcement/debug fields.
+     * @param options.analyticsEnabled Toggle relay analytics emission (default: false). Lambda@Edge
+     *   has no `waitUntil`, so the emit is awaited to completion before the response returns —
+     *   see CloudfrontHandlerOptions.
+     * @param options.analyticsTimeoutMs Optional cap (ms) on that wait; events still in flight
+     *   when it expires are dropped. Default: no cap, fully awaited.
      */
     static cloudfrontHandleRequests<TRequest extends Record<string, any>>(event: CloudFrontRequestEvent<TRequest>, options: CloudfrontHandlerOptions): Promise<CloudFrontRequestResult<TRequest>>;
 }
