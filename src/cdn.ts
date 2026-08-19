@@ -53,6 +53,36 @@ export function extractCloudflareCdnSignals(cf: Record<string, any>): CdnRequest
   };
 }
 
+/**
+ * Map CloudFront's `cloudfront-viewer-*` request headers onto the Capture-v2 signal
+ * contract. Fail-open: pure header reads, never throws. Fields CloudFront does not expose
+ * as viewer headers stay null. The `cloudfront-viewer-tls` header packs version and cipher
+ * as `<version>:<cipher>:<handshake>` (e.g. `TLSv1.3:TLS_AES_128_GCM_SHA256:fullHandshake`).
+ */
+export function extractCloudfrontCdnSignals(headers: Headers): CdnRequestSignals {
+  const tls = headers.get("cloudfront-viewer-tls");
+  let tlsVersion: string | null = null;
+  let tlsCipher: string | null = null;
+  if (tls) {
+    const [version, cipher] = tls.split(":");
+    tlsVersion = version || null;
+    tlsCipher = cipher || null;
+  }
+  return {
+    accept_encoding: headers.get("accept-encoding"),
+    http_protocol: headers.get("cloudfront-viewer-http-version"),
+    tls_version: tlsVersion,
+    tls_cipher: tlsCipher,
+    tls_client_hello_length: null,
+    tls_client_extensions_sha1: null,
+    as_organization: headers.get("cloudfront-viewer-as-name"),
+    client_tcp_rtt: null,
+    cdn_verified_bot_category: null,
+    request_priority: null,
+    tls_fingerprint_ja4: headers.get("cloudfront-viewer-ja4-fingerprint"),
+  };
+}
+
 export interface HandleRequestContext {
   ctx?: ExecutionContext;
   // Omitted when the request did not pass through a CDN (e.g. invoked directly via the SDK).
@@ -244,6 +274,7 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
     requestCountry: headers.get("cloudfront-viewer-country") ?? null,
     requestAsn: parseAsn(asnHeader),
     tlsFingerprint: headers.get("cloudfront-viewer-ja3-fingerprint") ?? null,
+    cdnSignals: extractCloudfrontCdnSignals(headers),
   });
 
   if (result.action === HandlerAction.BLOCK || result.action === HandlerAction.RESPOND) {

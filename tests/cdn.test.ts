@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { parseAsn, extractCloudflareCdnSignals, handleFastlyRequest } from "../src/cdn";
-import { HandlerAction } from "../src/types";
+import {
+  parseAsn,
+  extractCloudflareCdnSignals,
+  extractCloudfrontCdnSignals,
+  handleFastlyRequest,
+  handleCloudfrontRequest,
+} from "../src/cdn";
+import { HandlerAction, CloudFrontRequestEvent } from "../src/types";
 
 // Records the context handed to handleRequest and short-circuits with a RESPOND
 // so no origin fetch happens during the test.
@@ -58,6 +64,79 @@ describe("extractCloudflareCdnSignals", () => {
   it("reads JA4 from botManagement when present (Enterprise)", () => {
     const signals = extractCloudflareCdnSignals({ botManagement: { ja4: "t13d1516h2_..." } });
     expect(signals.tls_fingerprint_ja4).toBe("t13d1516h2_...");
+  });
+});
+
+describe("extractCloudfrontCdnSignals", () => {
+  const h = (init: Record<string, string>) => new Headers(init);
+
+  it("maps viewer headers, splitting cloudfront-viewer-tls into version and cipher", () => {
+    const signals = extractCloudfrontCdnSignals(
+      h({
+        "accept-encoding": "gzip, br",
+        "cloudfront-viewer-http-version": "2.0",
+        "cloudfront-viewer-tls": "TLSv1.3:TLS_AES_128_GCM_SHA256:fullHandshake",
+        "cloudfront-viewer-as-name": "AMAZON-02",
+        "cloudfront-viewer-ja4-fingerprint": "t13d1516h2_...",
+      })
+    );
+
+    expect(signals.accept_encoding).toBe("gzip, br");
+    expect(signals.http_protocol).toBe("2.0");
+    expect(signals.tls_version).toBe("TLSv1.3");
+    expect(signals.tls_cipher).toBe("TLS_AES_128_GCM_SHA256");
+    expect(signals.as_organization).toBe("AMAZON-02");
+    expect(signals.tls_fingerprint_ja4).toBe("t13d1516h2_...");
+  });
+
+  it("nulls signals CloudFront does not expose, and TLS parts when the header is absent", () => {
+    const signals = extractCloudfrontCdnSignals(h({}));
+    expect(signals.tls_version).toBeNull();
+    expect(signals.tls_cipher).toBeNull();
+    expect(signals.accept_encoding).toBeNull();
+    expect(signals.tls_client_hello_length).toBeNull();
+    expect(signals.client_tcp_rtt).toBeNull();
+    expect(signals.cdn_verified_bot_category).toBeNull();
+    expect(signals.request_priority).toBeNull();
+    expect(signals.tls_fingerprint_ja4).toBeNull();
+  });
+});
+
+describe("handleCloudfrontRequest", () => {
+  const event = (): CloudFrontRequestEvent => ({
+    Records: [
+      {
+        cf: {
+          config: { requestId: "req-1" },
+          request: {
+            uri: "/article",
+            method: "GET",
+            querystring: "",
+            clientIp: "203.0.113.9",
+            headers: {
+              host: [{ key: "Host", value: "example.com" }],
+              "cloudfront-viewer-tls": [{ value: "TLSv1.3:TLS_AES_128_GCM_SHA256:fullHandshake" }],
+            },
+          },
+        },
+      },
+    ],
+  });
+
+  it("passes cloudfront source and cdnSignals into handleRequest", async () => {
+    const calls: any[] = [];
+    const handler = {
+      handleRequest: async (_req: Request, context?: any) => {
+        calls.push(context);
+        return { action: HandlerAction.RESPOND, status: 200, body: "ok", headers: {} };
+      },
+    };
+
+    await handleCloudfrontRequest(handler, event());
+
+    expect(calls[0].sourceCdn).toBe("cloudfront");
+    expect(calls[0].cdnSignals.tls_version).toBe("TLSv1.3");
+    expect(calls[0].cdnSignals.tls_cipher).toBe("TLS_AES_128_GCM_SHA256");
   });
 });
 
