@@ -93,6 +93,21 @@ describe("HttpAnalyticsTransport", () => {
     expect(waitUntil.mock.calls[0][0]).toBeInstanceOf(Promise);
   });
 
+  it("passes ctx.signal through to the fetch so a deadline can abort the emit", async () => {
+    fetchMock.mockResolvedValue(new Response("", { status: 202 }));
+    const controller = new AbortController();
+    const transport = new HttpAnalyticsTransport({
+      url: "https://relay.test/ingest/events",
+      apiKey: "t",
+    });
+
+    transport.emit(fixtureEvent, { waitUntil: () => {}, signal: controller.signal });
+    await flush();
+
+    const [, options] = fetchMock.mock.calls[0];
+    expect(options.signal).toBe(controller.signal);
+  });
+
   it("does not throw when fetch rejects", async () => {
     fetchMock.mockRejectedValue(new Error("network down"));
     const transport = new HttpAnalyticsTransport({

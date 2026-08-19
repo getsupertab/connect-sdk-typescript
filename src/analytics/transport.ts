@@ -31,6 +31,9 @@ export class HttpAnalyticsTransport implements AnalyticsTransport {
         "User-Agent": SDK_USER_AGENT,
       },
       body,
+      // Runtimes with a background-work deadline (CloudFront) abort the emit through this;
+      // undefined elsewhere.
+      signal: ctx?.signal,
     };
     if (globalThis.fastly) {
       options = { ...options, backend: FASTLY_BACKEND };

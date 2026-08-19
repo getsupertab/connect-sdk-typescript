@@ -9,6 +9,13 @@ export enum EnforcementMode {
 
 export interface ExecutionContext {
   waitUntil(promise: Promise<void>): void;
+  /**
+   * Cancellation signal for background work (analytics emit, legacy event recording).
+   * Set by runtimes that must bound that work with a hard deadline (CloudFront
+   * Lambda@Edge); absent on platforms whose native context keeps work alive
+   * (Cloudflare, Fastly).
+   */
+  signal?: AbortSignal;
 }
 
 export type BotDetector = (request: Request, ctx?: ExecutionContext) => boolean;
@@ -166,9 +173,10 @@ export interface CloudfrontHandlerOptions {
   debug?: boolean;
   /**
    * Toggle relay analytics emission (default: false). Lambda@Edge has no `waitUntil`
-   * keep-alive, so the emit is awaited to completion before the response returns rather
-   * than fired-and-forgotten. Only requests carrying an `x-license-auth` header reach
-   * this path, so the cost lands on licensed/identified-bot traffic, not human traffic.
+   * keep-alive, so the emit is awaited before the response returns rather than
+   * fired-and-forgotten (bounded by `backgroundWorkTimeoutMs`). Only requests carrying
+   * an `x-license-auth` header reach this path, so the cost lands on
+   * licensed/identified-bot traffic, not human traffic.
    */
   analyticsEnabled?: boolean;
   /**
@@ -177,11 +185,13 @@ export interface CloudfrontHandlerOptions {
    */
   analyticsBaseUrl?: string;
   /**
-   * Optional cap (ms) on the pre-response wait for the analytics emit / event recording.
-   * Default: no cap — everything is awaited to completion. When set, whatever is still
-   * in flight at expiry is dropped.
+   * Absolute budget (ms), measured from handler entry, on the pre-response wait for
+   * background work (the analytics emit and legacy event recording). At the deadline the
+   * in-flight calls are ABORTED — not merely abandoned — so nothing keeps running into a
+   * frozen/reused Lambda environment. Default: no budget — everything is awaited to
+   * completion. Non-finite or non-positive values are ignored with a warning.
    */
-  analyticsTimeoutMs?: number;
+  backgroundWorkTimeoutMs?: number;
 }
 
 export type RSLVerificationResult = {

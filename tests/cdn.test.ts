@@ -206,26 +206,86 @@ describe("handleCloudfrontRequest", () => {
     }
   });
 
-  it("logs the drain with the cap when debug is on", async () => {
+  it("logs settled background work with the budget when debug is on", async () => {
     const handler = emittingHandler(Promise.resolve());
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
       await handleCloudfrontRequest(handler, event(), 3000, true);
       expect(log).toHaveBeenCalledTimes(1);
       const line = log.mock.calls[0][0] as string;
-      expect(line).toContain("cloudfront drain: 1 pending");
-      expect(line).toContain("(cap 3000ms)");
+      expect(line).toContain("background work: 1 calls settled");
+      expect(line).toContain("(budget 3000ms)");
     } finally {
       log.mockRestore();
     }
   });
 
-  it("returns within the timeout even if the emit never settles", async () => {
-    const handler = emittingHandler(new Promise<void>(() => {})); // never resolves
-    const result = await handleCloudfrontRequest(handler, event(), 20);
+  it("returns at the deadline even if a signal-ignoring emit never settles, and logs timed_out", async () => {
+    const handler = emittingHandler(new Promise<void>(() => {})); // never resolves, ignores the signal
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const result = await handleCloudfrontRequest(handler, event(), 20, true);
 
-    // The RESPOND decision still produces a CloudFront response result.
+      // The RESPOND decision still produces a CloudFront response result.
+      expect((result as any).status).toBe("200");
+      const line = log.mock.calls[0][0] as string;
+      expect(line).toContain("timed out");
+      expect(line).toContain("in-flight calls aborted");
+      expect(line).not.toContain("settled");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("exposes an AbortSignal on ctx only when a budget is set", async () => {
+    const withBudget = emittingHandler(Promise.resolve());
+    await handleCloudfrontRequest(withBudget, event(), 1000);
+    expect(withBudget.calls[0].ctx.signal).toBeInstanceOf(AbortSignal);
+
+    const withoutBudget = emittingHandler(Promise.resolve());
+    await handleCloudfrontRequest(withoutBudget, event());
+    expect(withoutBudget.calls[0].ctx.signal).toBeUndefined();
+  });
+
+  it("aborts in-flight background work at the deadline", async () => {
+    let aborted = false;
+    const handler = {
+      handleRequest: async (_req: Request, context?: any) => {
+        const signal: AbortSignal = context.ctx.signal;
+        // Settles only on abort, like a fetch honoring the signal.
+        context.ctx.waitUntil(
+          new Promise<void>((resolve) => {
+            signal.addEventListener("abort", () => { aborted = true; resolve(); });
+          })
+        );
+        return { action: HandlerAction.RESPOND, status: 200, body: "ok", headers: {} };
+      },
+    };
+
+    const result = await handleCloudfrontRequest(handler, event(), 20);
+    expect(aborted).toBe(true);
     expect((result as any).status).toBe("200");
+  });
+
+  it("ignores an invalid budget with a warning and awaits background work to completion", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      for (const invalid of [0, -1, NaN]) {
+        let settled = false;
+        const emit = new Promise<void>((resolve) =>
+          setTimeout(() => { settled = true; resolve(); }, 50)
+        );
+        const handler = emittingHandler(emit);
+
+        await handleCloudfrontRequest(handler, event(), invalid);
+        expect(settled).toBe(true);
+        expect(handler.calls[0].ctx.signal).toBeUndefined();
+      }
+      expect(warn).toHaveBeenCalledTimes(3);
+      expect(warn.mock.calls[0][0]).toContain("invalid backgroundWorkTimeoutMs");
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 

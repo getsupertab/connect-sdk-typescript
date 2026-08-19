@@ -101,9 +101,10 @@ export class SupertabConnect {
 
   /**
    * Create a new SupertabConnect instance (singleton).
-   * If an instance with the same apiKey already exists, it is reconfigured with the
-   * provided options (last write wins) and returned — important on warm serverless
-   * containers, where the module (and singleton) outlives a single invocation.
+   * If an instance with the same apiKey already exists it is returned UNCHANGED —
+   * options are applied only on first construction (instances are never mutated after
+   * creation, so in-flight requests always see a consistent configuration). Use
+   * `resetInstance()` (or `reset: true`) to build one with different options.
    * @param config SDK configuration including apiKey
    * @param reset Pass true to replace an existing instance with different config
    * @throws If an instance with a different apiKey already exists and reset is false
@@ -126,10 +127,10 @@ export class SupertabConnect {
         );
       }
 
-      // Same apiKey: re-apply the mutable options so flags passed on this invocation
-      // (analyticsEnabled/debug/...) take effect on warm containers. The JWKS cache is
-      // module-level, so nothing valuable is discarded.
-      SupertabConnect._instance.applyConfig(config);
+      // Same apiKey: return the existing instance unchanged. Deployed handlers pass the
+      // same static options on every invocation, so the first construction is
+      // authoritative; mutating the shared instance here would let one caller's options
+      // leak into another caller's in-flight request.
       return SupertabConnect._instance;
     }
     if (reset && SupertabConnect._instance) {
@@ -143,19 +144,15 @@ export class SupertabConnect {
       );
     }
     this.apiKey = config.apiKey;
-    this.applyConfig(config);
-
-    // Register this as the singleton instance
-    SupertabConnect._instance = this;
-  }
-
-  private applyConfig(config: SupertabConnectConfig): void {
     this.enforcement = config.enforcement ?? EnforcementMode.OBSERVE;
     this.botDetector = config.botDetector;
     this.debug = config.debug ?? false;
     // A custom transport emits regardless of the flag, so report it as enabled.
     this.analyticsEnabled = (config.analyticsEnabled ?? false) || config.analyticsTransport != null;
     this.analyticsTransport = SupertabConnect.buildAnalyticsTransport(config);
+
+    // Register this as the singleton instance
+    SupertabConnect._instance = this;
   }
 
   private static buildAnalyticsTransport(config: SupertabConnectConfig): AnalyticsTransport {
@@ -670,8 +667,9 @@ export class SupertabConnect {
    * @param options.analyticsEnabled Toggle relay analytics emission (default: false). Lambda@Edge
    *   has no `waitUntil`, so the emit is awaited to completion before the response returns —
    *   see CloudfrontHandlerOptions.
-   * @param options.analyticsTimeoutMs Optional cap (ms) on that wait; events still in flight
-   *   when it expires are dropped. Default: no cap, fully awaited.
+   * @param options.backgroundWorkTimeoutMs Absolute budget (ms) from handler entry for the
+   *   background work (analytics emit + legacy event recording); in-flight calls are aborted
+   *   at the deadline. Default: no budget, fully awaited.
    */
   static async cloudfrontHandleRequests<TRequest extends Record<string, any>>(
     event: CloudFrontRequestEvent<TRequest>,
@@ -689,8 +687,8 @@ export class SupertabConnect {
         return request;
       }
       // Analytics uses the HTTP relay (no injected transport). Lambda@Edge has no waitUntil,
-      // so handleCloudfrontRequest awaits the emit before returning (capped only if
-      // analyticsTimeoutMs is set).
+      // so handleCloudfrontRequest awaits the background work before returning (bounded —
+      // and aborted at the deadline — only if backgroundWorkTimeoutMs is set).
       const instance = new SupertabConnect({
         apiKey: options.apiKey,
         botDetector: options.botDetector,
@@ -704,7 +702,7 @@ export class SupertabConnect {
           `[SupertabConnect] analytics: ${instance.analyticsEnabled ? "enabled (http)" : "disabled (noop)"}`
         );
       }
-      return await handleCloudfrontRequest(instance, event, options.analyticsTimeoutMs, options.debug);
+      return await handleCloudfrontRequest(instance, event, options.backgroundWorkTimeoutMs, options.debug);
     } catch (err) {
       console.error("[SupertabConnect] cloudfrontHandleRequests failed:", err);
       return request;

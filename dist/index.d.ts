@@ -5,6 +5,13 @@ declare enum EnforcementMode {
 }
 interface ExecutionContext {
     waitUntil(promise: Promise<void>): void;
+    /**
+     * Cancellation signal for background work (analytics emit, legacy event recording).
+     * Set by runtimes that must bound that work with a hard deadline (CloudFront
+     * Lambda@Edge); absent on platforms whose native context keeps work alive
+     * (Cloudflare, Fastly).
+     */
+    signal?: AbortSignal;
 }
 type BotDetector = (request: Request, ctx?: ExecutionContext) => boolean;
 interface SupertabConnectConfig {
@@ -127,9 +134,10 @@ interface CloudfrontHandlerOptions {
     debug?: boolean;
     /**
      * Toggle relay analytics emission (default: false). Lambda@Edge has no `waitUntil`
-     * keep-alive, so the emit is awaited to completion before the response returns rather
-     * than fired-and-forgotten. Only requests carrying an `x-license-auth` header reach
-     * this path, so the cost lands on licensed/identified-bot traffic, not human traffic.
+     * keep-alive, so the emit is awaited before the response returns rather than
+     * fired-and-forgotten (bounded by `backgroundWorkTimeoutMs`). Only requests carrying
+     * an `x-license-auth` header reach this path, so the cost lands on
+     * licensed/identified-bot traffic, not human traffic.
      */
     analyticsEnabled?: boolean;
     /**
@@ -138,11 +146,13 @@ interface CloudfrontHandlerOptions {
      */
     analyticsBaseUrl?: string;
     /**
-     * Optional cap (ms) on the pre-response wait for the analytics emit / event recording.
-     * Default: no cap — everything is awaited to completion. When set, whatever is still
-     * in flight at expiry is dropped.
+     * Absolute budget (ms), measured from handler entry, on the pre-response wait for
+     * background work (the analytics emit and legacy event recording). At the deadline the
+     * in-flight calls are ABORTED — not merely abandoned — so nothing keeps running into a
+     * frozen/reused Lambda environment. Default: no budget — everything is awaited to
+     * completion. Non-finite or non-positive values are ignored with a warning.
      */
-    analyticsTimeoutMs?: number;
+    backgroundWorkTimeoutMs?: number;
 }
 type RSLVerificationResult = {
     valid: boolean;
@@ -350,15 +360,15 @@ declare class SupertabConnect {
     private static _instance;
     /**
      * Create a new SupertabConnect instance (singleton).
-     * If an instance with the same apiKey already exists, it is reconfigured with the
-     * provided options (last write wins) and returned — important on warm serverless
-     * containers, where the module (and singleton) outlives a single invocation.
+     * If an instance with the same apiKey already exists it is returned UNCHANGED —
+     * options are applied only on first construction (instances are never mutated after
+     * creation, so in-flight requests always see a consistent configuration). Use
+     * `resetInstance()` (or `reset: true`) to build one with different options.
      * @param config SDK configuration including apiKey
      * @param reset Pass true to replace an existing instance with different config
      * @throws If an instance with a different apiKey already exists and reset is false
      */
     constructor(config: SupertabConnectConfig, reset?: boolean);
-    private applyConfig;
     private static buildAnalyticsTransport;
     /**
      * Clear the singleton instance, allowing a new one to be created with different config.
@@ -501,8 +511,9 @@ declare class SupertabConnect {
      * @param options.analyticsEnabled Toggle relay analytics emission (default: false). Lambda@Edge
      *   has no `waitUntil`, so the emit is awaited to completion before the response returns —
      *   see CloudfrontHandlerOptions.
-     * @param options.analyticsTimeoutMs Optional cap (ms) on that wait; events still in flight
-     *   when it expires are dropped. Default: no cap, fully awaited.
+     * @param options.backgroundWorkTimeoutMs Absolute budget (ms) from handler entry for the
+     *   background work (analytics emit + legacy event recording); in-flight calls are aborted
+     *   at the deadline. Default: no budget, fully awaited.
      */
     static cloudfrontHandleRequests<TRequest extends Record<string, any>>(event: CloudFrontRequestEvent<TRequest>, options: CloudfrontHandlerOptions): Promise<CloudFrontRequestResult<TRequest>>;
 }
