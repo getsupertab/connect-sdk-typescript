@@ -100,10 +100,12 @@ export class SupertabConnect {
 
   /**
    * Create a new SupertabConnect instance (singleton).
-   * Returns the existing instance if one exists with the same config.
+   * If an instance with the same apiKey already exists, it is reconfigured with the
+   * provided options (last write wins) and returned — important on warm serverless
+   * containers, where the module (and singleton) outlives a single invocation.
    * @param config SDK configuration including apiKey
    * @param reset Pass true to replace an existing instance with different config
-   * @throws If an instance with different config already exists and reset is false
+   * @throws If an instance with a different apiKey already exists and reset is false
    */
   public constructor(config: SupertabConnectConfig, reset: boolean = false) {
     // Warn before any early-return so the message fires regardless of singleton state.
@@ -123,7 +125,10 @@ export class SupertabConnect {
         );
       }
 
-      // If an instance already exists and reset is not requested, just return the existing instance
+      // Same apiKey: re-apply the mutable options so flags passed on this invocation
+      // (analyticsEnabled/debug/...) take effect on warm containers. The JWKS cache is
+      // module-level, so nothing valuable is discarded.
+      SupertabConnect._instance.applyConfig(config);
       return SupertabConnect._instance;
     }
     if (reset && SupertabConnect._instance) {
@@ -137,15 +142,19 @@ export class SupertabConnect {
       );
     }
     this.apiKey = config.apiKey;
+    this.applyConfig(config);
+
+    // Register this as the singleton instance
+    SupertabConnect._instance = this;
+  }
+
+  private applyConfig(config: SupertabConnectConfig): void {
     this.enforcement = config.enforcement ?? EnforcementMode.OBSERVE;
     this.botDetector = config.botDetector;
     this.debug = config.debug ?? false;
     // A custom transport emits regardless of the flag, so report it as enabled.
     this.analyticsEnabled = (config.analyticsEnabled ?? false) || config.analyticsTransport != null;
     this.analyticsTransport = SupertabConnect.buildAnalyticsTransport(config);
-
-    // Register this as the singleton instance
-    SupertabConnect._instance = this;
   }
 
   private static buildAnalyticsTransport(config: SupertabConnectConfig): AnalyticsTransport {

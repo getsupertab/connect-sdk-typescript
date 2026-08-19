@@ -199,6 +199,39 @@ describe("analytics transport selection (platform-agnostic constructor)", () => 
   });
 });
 
+describe("warm-container reconfiguration (singleton with same apiKey)", () => {
+  beforeEach(() => SupertabConnect.resetInstance());
+  afterEach(() => SupertabConnect.resetInstance());
+
+  function internals(sdk: SupertabConnect) {
+    return sdk as unknown as { analyticsEnabled: boolean; analyticsTransport: AnalyticsTransport; debug: boolean };
+  }
+
+  it("re-applies options on the existing instance instead of keeping stale ones", () => {
+    const first = new SupertabConnect({ apiKey: "k" });
+    expect(internals(first).analyticsEnabled).toBe(false);
+    expect(internals(first).analyticsTransport).toBeInstanceOf(NoopAnalyticsTransport);
+
+    const second = new SupertabConnect({ apiKey: "k", analyticsEnabled: true, debug: true });
+    expect(second).toBe(first);
+    expect(internals(second).analyticsEnabled).toBe(true);
+    expect(internals(second).analyticsTransport).toBeInstanceOf(HttpAnalyticsTransport);
+    expect(internals(second).debug).toBe(true);
+  });
+
+  it("last write wins: omitting a flag reverts it to the default", () => {
+    new SupertabConnect({ apiKey: "k", analyticsEnabled: true });
+    const sdk = new SupertabConnect({ apiKey: "k" });
+    expect(internals(sdk).analyticsEnabled).toBe(false);
+    expect(internals(sdk).analyticsTransport).toBeInstanceOf(NoopAnalyticsTransport);
+  });
+
+  it("still throws on a different apiKey without reset", () => {
+    new SupertabConnect({ apiKey: "k" });
+    expect(() => new SupertabConnect({ apiKey: "other" })).toThrow(/resetInstance/);
+  });
+});
+
 describe("analytics base URL resolution", () => {
   // The dedicated ingest service host the relay targets by default. Distinct from the
   // API base URL (token acquisition / JWKS / verify), which stays on api-connect.
