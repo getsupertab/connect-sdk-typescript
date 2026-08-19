@@ -31,3 +31,7 @@ demos/fastly/src/config.js
 tests/e2e/config.ts
 demos/cloudflront/dist/trust-policy.json
 AWSCLIV2.pkg
+
+# Keys and local build artifacts — never commit
+*.pem
+*.tgz
