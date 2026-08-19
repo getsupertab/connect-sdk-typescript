@@ -36,23 +36,45 @@ export class HttpAnalyticsTransport implements AnalyticsTransport {
       options = { ...options, backend: FASTLY_BACKEND };
     }
 
+    const requestId = event.request_id;
     const promise = (async () => {
+      const startedAt = Date.now();
       try {
         const response = await fetch(this.url, options);
-        if (!response.ok && this.debug) {
-          let detail = "";
-          try {
-            detail = await response.text();
-          } catch {
-            // ignore
+        // Always consume the body, debug or not: it releases the connection. It also carries
+        // the relay's {accepted: true|false} verdict, since the relay answers 200 even for
+        // events it ignores — a plain status check would call those a success.
+        let text = "";
+        try {
+          text = await response.text();
+        } catch {
+          // body read failed; status alone still gets logged
+        }
+        if (this.debug) {
+          const durationMs = Date.now() - startedAt;
+          if (response.ok) {
+            let accepted: boolean | undefined;
+            try {
+              accepted = JSON.parse(text)?.accepted;
+            } catch {
+              // non-JSON body; report the verdict as unknown
+            }
+            console.log(
+              `[SupertabConnect] analytics emit: status=${response.status} accepted=${accepted} request_id=${requestId} duration=${durationMs}ms`
+            );
+          } else {
+            const detail = text.slice(0, 200);
+            console.error(
+              `[SupertabConnect] analytics emit failed: status=${response.status} request_id=${requestId} duration=${durationMs}ms${detail ? ` — ${detail}` : ""}`
+            );
           }
-          console.error(
-            `[SupertabConnect] analytics emit failed: ${response.status}${detail ? ` — ${detail}` : ""}`
-          );
         }
       } catch (err) {
         if (this.debug) {
-          console.error("[SupertabConnect] analytics emit error:", err);
+          console.error(
+            `[SupertabConnect] analytics emit error: request_id=${requestId} duration=${Date.now() - startedAt}ms`,
+            err
+          );
         }
       }
     })();
