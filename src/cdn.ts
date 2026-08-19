@@ -246,7 +246,9 @@ function statusDescription(status: number): CDNStatusDescription {
  */
 export async function handleCloudfrontRequest<TRequest extends Record<string, any>>(
   handler: RequestHandler,
-  event: CloudFrontRequestEvent<TRequest>
+  event: CloudFrontRequestEvent<TRequest>,
+  analyticsTimeoutMs?: number,
+  debug: boolean = false
 ): Promise<CloudFrontRequestResult<TRequest>> {
   const cfRequest = event.Records[0].cf.request;
   const config = event.Records[0].cf.config;
@@ -266,8 +268,15 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
     headers: headers,
   });
 
+  // Lambda@Edge has no `waitUntil` — collect the analytics emit and legacy /events promises
+  // here and await them before returning, since a detached fetch is frozen when the handler
+  // resolves and would be dropped.
+  const pending: Promise<void>[] = [];
+  const ctx: ExecutionContext = { waitUntil: (promise) => { pending.push(promise); } };
+
   const asnHeader = headers.get("cloudfront-viewer-asn");
   const result = await handler.handleRequest(webRequest, {
+    ctx,
     sourceCdn: "cloudfront",
     requestId: config?.requestId ?? undefined,
     clientIp: cfRequest.clientIp,
@@ -276,6 +285,30 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
     tlsFingerprint: headers.get("cloudfront-viewer-ja3-fingerprint") ?? null,
     cdnSignals: extractCloudfrontCdnSignals(headers),
   });
+
+  // Drain the pending calls before returning. The promises swallow their own errors, so
+  // allSettled never rejects. By default the drain is unbounded (correctness over latency);
+  // an explicit analyticsTimeoutMs caps it, dropping whatever is still in flight.
+  if (pending.length) {
+    const startedAt = Date.now();
+    const drain = Promise.allSettled(pending);
+    if (analyticsTimeoutMs === undefined) {
+      await drain;
+    } else {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        drain,
+        new Promise<void>((resolve) => { timer = setTimeout(resolve, analyticsTimeoutMs); }),
+      ]);
+      clearTimeout(timer);
+    }
+    if (debug) {
+      console.log(
+        `[SupertabConnect] cloudfront drain: ${pending.length} pending settled in ${Date.now() - startedAt}ms` +
+          (analyticsTimeoutMs !== undefined ? ` (cap ${analyticsTimeoutMs}ms)` : "")
+      );
+    }
+  }
 
   if (result.action === HandlerAction.BLOCK || result.action === HandlerAction.RESPOND) {
     const responseHeaders: CloudFrontHeaders = {};

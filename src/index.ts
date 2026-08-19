@@ -603,8 +603,12 @@ export class SupertabConnect {
    * Handle incoming requests for AWS CloudFront Lambda@Edge.
    * Use as the handler for an origin-request LambdaEdge function.
    * @param event The CloudFront origin-request event
-   * @param options Configuration including apiKey and optional botDetector/enforcement fields.
-   *   Relay analytics is not supported on CloudFront — only Cloudflare and Fastly emit events.
+   * @param options Configuration including apiKey and optional botDetector/enforcement/debug fields.
+   * @param options.analyticsEnabled Toggle relay analytics emission (default: false). Lambda@Edge
+   *   has no `waitUntil`, so the emit is awaited to completion before the response returns —
+   *   see CloudfrontHandlerOptions.
+   * @param options.analyticsTimeoutMs Optional cap (ms) on that wait; events still in flight
+   *   when it expires are dropped. Default: no cap, fully awaited.
    */
   static async cloudfrontHandleRequests<TRequest extends Record<string, any>>(
     event: CloudFrontRequestEvent<TRequest>,
@@ -621,14 +625,23 @@ export class SupertabConnect {
         // No reasons to waste compute resources on the rest of the checks.
         return request;
       }
-      // Relay analytics is intentionally not wired for CloudFront yet (Cloudflare and Fastly only);
-      // the instance is built without analytics so it uses the no-op transport.
+      // Analytics uses the HTTP relay (no injected transport). Lambda@Edge has no waitUntil,
+      // so handleCloudfrontRequest awaits the emit before returning (capped only if
+      // analyticsTimeoutMs is set).
       const instance = new SupertabConnect({
         apiKey: options.apiKey,
         botDetector: options.botDetector,
         enforcement: options.enforcement,
+        analyticsEnabled: options.analyticsEnabled,
+        analyticsBaseUrl: options.analyticsBaseUrl,
+        debug: options.debug,
       });
-      return await handleCloudfrontRequest(instance, event);
+      if (options.debug) {
+        console.log(
+          `[SupertabConnect] analytics: ${instance.analyticsEnabled ? "enabled (http)" : "disabled (noop)"}`
+        );
+      }
+      return await handleCloudfrontRequest(instance, event, options.analyticsTimeoutMs, options.debug);
     } catch (err) {
       console.error("[SupertabConnect] cloudfrontHandleRequests failed:", err);
       return request;

@@ -142,6 +142,26 @@ export interface CloudfrontHandlerOptions {
   apiKey: string;
   botDetector?: BotDetector;
   enforcement?: EnforcementMode;
+  /** Enable debug logging (default: false). */
+  debug?: boolean;
+  /**
+   * Toggle relay analytics emission (default: false). Lambda@Edge has no `waitUntil`
+   * keep-alive, so the emit is awaited to completion before the response returns rather
+   * than fired-and-forgotten. Only requests carrying an `x-license-auth` header reach
+   * this path, so the cost lands on licensed/identified-bot traffic, not human traffic.
+   */
+  analyticsEnabled?: boolean;
+  /**
+   * Base URL of the analytics ingest relay, for non-prod deployments (e.g.
+   * `https://ingest-connect.sbx.supertab.co`). Defaults to the prod ingest service.
+   */
+  analyticsBaseUrl?: string;
+  /**
+   * Optional cap (ms) on the pre-response wait for the analytics emit / event recording.
+   * Default: no cap — everything is awaited to completion. When set, whatever is still
+   * in flight at expiry is dropped.
+   */
+  analyticsTimeoutMs?: number;
 }
 
 export type RSLVerificationResult = {

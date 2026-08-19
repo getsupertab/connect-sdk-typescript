@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   parseAsn,
   extractCloudflareCdnSignals,
@@ -137,6 +137,94 @@ describe("handleCloudfrontRequest", () => {
     expect(calls[0].sourceCdn).toBe("cloudfront");
     expect(calls[0].cdnSignals.tls_version).toBe("TLSv1.3");
     expect(calls[0].cdnSignals.tls_cipher).toBe("TLS_AES_128_GCM_SHA256");
+  });
+
+  // Handler that emits an analytics event via ctx.waitUntil, like the real transport path.
+  function emittingHandler(emitPromise: Promise<void>) {
+    const calls: any[] = [];
+    return {
+      calls,
+      handleRequest: async (_req: Request, context?: any) => {
+        calls.push(context);
+        context?.ctx?.waitUntil(emitPromise);
+        return { action: HandlerAction.RESPOND, status: 200, body: "ok", headers: {} };
+      },
+    };
+  }
+
+  it("hands handleRequest a ctx whose waitUntil collects pending work", async () => {
+    const handler = emittingHandler(Promise.resolve());
+    await handleCloudfrontRequest(handler, event());
+    expect(typeof handler.calls[0].ctx.waitUntil).toBe("function");
+  });
+
+  it("awaits the emit before returning when it settles quickly", async () => {
+    let settled = false;
+    const emit = Promise.resolve().then(() => { settled = true; });
+    const handler = emittingHandler(emit);
+
+    await handleCloudfrontRequest(handler, event());
+    expect(settled).toBe(true);
+  });
+
+  it("awaits a slow emit fully when no timeout is given", async () => {
+    let settled = false;
+    const emit = new Promise<void>((resolve) =>
+      setTimeout(() => { settled = true; resolve(); }, 150)
+    );
+    const handler = emittingHandler(emit);
+
+    await handleCloudfrontRequest(handler, event());
+    expect(settled).toBe(true);
+  });
+
+  it("drains all pending promises (analytics emit + legacy event recording)", async () => {
+    let first = false;
+    let second = false;
+    const handler = {
+      handleRequest: async (_req: Request, context?: any) => {
+        context?.ctx?.waitUntil(new Promise<void>((r) => setTimeout(() => { first = true; r(); }, 30)));
+        context?.ctx?.waitUntil(new Promise<void>((r) => setTimeout(() => { second = true; r(); }, 60)));
+        return { action: HandlerAction.RESPOND, status: 200, body: "ok", headers: {} };
+      },
+    };
+
+    await handleCloudfrontRequest(handler, event());
+    expect(first).toBe(true);
+    expect(second).toBe(true);
+  });
+
+  it("stays silent about the drain unless debug is on", async () => {
+    const handler = emittingHandler(Promise.resolve());
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await handleCloudfrontRequest(handler, event());
+      expect(log).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("logs the drain with the cap when debug is on", async () => {
+    const handler = emittingHandler(Promise.resolve());
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await handleCloudfrontRequest(handler, event(), 3000, true);
+      expect(log).toHaveBeenCalledTimes(1);
+      const line = log.mock.calls[0][0] as string;
+      expect(line).toContain("cloudfront drain: 1 pending");
+      expect(line).toContain("(cap 3000ms)");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("returns within the timeout even if the emit never settles", async () => {
+    const handler = emittingHandler(new Promise<void>(() => {})); // never resolves
+    const result = await handleCloudfrontRequest(handler, event(), 20);
+
+    // The RESPOND decision still produces a CloudFront response result.
+    expect((result as any).status).toBe("200");
   });
 });
 
