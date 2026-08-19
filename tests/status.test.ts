@@ -36,6 +36,50 @@ describe("verifyStatusChallenge", () => {
     expect(await verifyStatusChallenge(wrongAud, { expectedAudience: "https://acme.com", baseUrl: "https://api" })).toBe(false);
   });
 
+  it("names both audiences in the debug log on an aud mismatch", async () => {
+    const { privateKey } = await setup();
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const token = await sign(privateKey, { aud: "http://acme.com", purpose: "status-probe" });
+
+    expect(
+      await verifyStatusChallenge(token, {
+        expectedAudience: "https://acme.com",
+        baseUrl: "https://api",
+        debug: true,
+      })
+    ).toBe(false);
+
+    // The scheme-only divergence is the real-world failure; the message must show both
+    // sides so the mismatch is readable without decoding the token by hand.
+    const message = String(spy.mock.calls[0][0]);
+    expect(message).toContain("expected aud=https://acme.com");
+    expect(message).toContain('token aud="http://acme.com"');
+    spy.mockRestore();
+  });
+
+  it("does not log audiences when debug is off", async () => {
+    const { privateKey } = await setup();
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const token = await sign(privateKey, { aud: "http://acme.com", purpose: "status-probe" });
+    await verifyStatusChallenge(token, { expectedAudience: "https://acme.com", baseUrl: "https://api" });
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("reports an undecodable challenge rather than throwing", async () => {
+    await setup();
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(
+      await verifyStatusChallenge("not-a-jwt", {
+        expectedAudience: "https://acme.com",
+        baseUrl: "https://api",
+        debug: true,
+      })
+    ).toBe(false);
+    expect(String(spy.mock.calls[0][0])).toContain("token aud=<undecodable>");
+    spy.mockRestore();
+  });
+
   it("rejects an expired challenge", async () => {
     const { privateKey } = await setup();
     const expiredToken = await new SignJWT({ aud: "https://acme.com", purpose: "status-probe" })
