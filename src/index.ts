@@ -101,9 +101,10 @@ export class SupertabConnect {
 
   /**
    * Create a new SupertabConnect instance (singleton).
-   * If an instance with the same apiKey already exists, it is reconfigured with the
-   * provided options (last write wins) and returned — important on warm serverless
-   * containers, where the module (and singleton) outlives a single invocation.
+   * If an instance with the same apiKey already exists it is returned UNCHANGED —
+   * options are applied only on first construction (instances are never mutated after
+   * creation, so in-flight requests always see a consistent configuration). Use
+   * `resetInstance()` (or `reset: true`) to build one with different options.
    * @param config SDK configuration including apiKey
    * @param reset Pass true to replace an existing instance with different config
    * @throws If an instance with a different apiKey already exists and reset is false
@@ -126,10 +127,10 @@ export class SupertabConnect {
         );
       }
 
-      // Same apiKey: re-apply the mutable options so flags passed on this invocation
-      // (analyticsEnabled/debug/...) take effect on warm containers. The JWKS cache is
-      // module-level, so nothing valuable is discarded.
-      SupertabConnect._instance.applyConfig(config);
+      // Same apiKey: return the existing instance unchanged. Deployed handlers pass the
+      // same static options on every invocation, so the first construction is
+      // authoritative; mutating the shared instance here would let one caller's options
+      // leak into another caller's in-flight request.
       return SupertabConnect._instance;
     }
     if (reset && SupertabConnect._instance) {
@@ -143,19 +144,15 @@ export class SupertabConnect {
       );
     }
     this.apiKey = config.apiKey;
-    this.applyConfig(config);
-
-    // Register this as the singleton instance
-    SupertabConnect._instance = this;
-  }
-
-  private applyConfig(config: SupertabConnectConfig): void {
     this.enforcement = config.enforcement ?? EnforcementMode.OBSERVE;
     this.botDetector = config.botDetector;
     this.debug = config.debug ?? false;
     // A custom transport emits regardless of the flag, so report it as enabled.
     this.analyticsEnabled = (config.analyticsEnabled ?? false) || config.analyticsTransport != null;
     this.analyticsTransport = SupertabConnect.buildAnalyticsTransport(config);
+
+    // Register this as the singleton instance
+    SupertabConnect._instance = this;
   }
 
   private static buildAnalyticsTransport(config: SupertabConnectConfig): AnalyticsTransport {

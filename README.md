@@ -174,9 +174,14 @@ const supertabConnect = new SupertabConnect({
 The same flag is available on the Cloudflare, Fastly, and CloudFront convenience
 handlers (`cloudflareHandleRequests`, `fastlyHandleRequests`,
 `cloudfrontHandleRequests`) via their `options` object. On CloudFront the emit is
+<<<<<<< HEAD
 awaited before the response returns (see the CloudFront section above); coverage
 depends on the trigger — every request at viewer-request, licensed traffic and
 cache misses at origin-request.
+=======
+awaited before the response returns (see the CloudFront section above), and only
+licensed traffic reaches the handler.
+>>>>>>> feat/cloudfront-analytics
 
 **No extra credentials are required.** Analytics requests are authenticated with
 your configured merchant `apiKey` using `Authorization: Bearer <apiKey>`. The

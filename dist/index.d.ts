@@ -359,15 +359,15 @@ declare class SupertabConnect {
     private static _instance;
     /**
      * Create a new SupertabConnect instance (singleton).
-     * If an instance with the same apiKey already exists, it is reconfigured with the
-     * provided options (last write wins) and returned — important on warm serverless
-     * containers, where the module (and singleton) outlives a single invocation.
+     * If an instance with the same apiKey already exists it is returned UNCHANGED —
+     * options are applied only on first construction (instances are never mutated after
+     * creation, so in-flight requests always see a consistent configuration). Use
+     * `resetInstance()` (or `reset: true`) to build one with different options.
      * @param config SDK configuration including apiKey
      * @param reset Pass true to replace an existing instance with different config
      * @throws If an instance with a different apiKey already exists and reset is false
      */
     constructor(config: SupertabConnectConfig, reset?: boolean);
-    private applyConfig;
     private static buildAnalyticsTransport;
     /**
      * Clear the singleton instance, allowing a new one to be created with different config.
