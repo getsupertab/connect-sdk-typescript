@@ -7,7 +7,7 @@ import {
   CloudFrontRequestEvent,
   CloudFrontRequestResult,
 } from "./types";
-import { CdnRequestSignals } from "./analytics/types";
+import { CdnRequestSignals, ClientIpSource, StatusSource } from "./analytics/types";
 import { hostRSLicenseXML } from "./license";
 
 /** Parse a CDN ASN header (e.g. "13335" or "AS13335") to a positive integer, or null. */
@@ -88,6 +88,16 @@ export interface HandleRequestContext {
   // Omitted when the request did not pass through a CDN (e.g. invoked directly via the SDK).
   sourceCdn?: "cloudflare" | "fastly" | "cloudfront";
   clientIp?: string;
+  // Provenance of clientIp. Only whoever resolved the address can assert this, so a caller
+  // supplying its own clientIp and omitting this leaves the column NULL rather than having
+  // the SDK guess on its behalf.
+  clientIpSource?: ClientIpSource;
+  // Hold the analytics event back until the caller reports the response, so it can carry a
+  // real status_code. A request, not a command: the SDK honours it only when `ctx` is present
+  // to keep the runtime alive for the emit, and otherwise sends eagerly. Only ALLOW is ever
+  // held — a blocked request already knows its own status — so `reportResponse` is attached
+  // only there, and opting in means you MUST call it from a `finally` or that event is lost.
+  deferAnalytics?: boolean;
   requestId?: string;
   requestCountry?: string | null;
   requestAsn?: number | null;
@@ -117,40 +127,68 @@ export async function handleCloudflareRequest(
   originUrl?: string
 ): Promise<Response> {
   const cf = (request as unknown as { cf?: Record<string, any> }).cf;
+  // Read once and branch on truthiness for both: `.has()` would report `cdn_declared` for a
+  // present-but-empty header, whose address normalizes to the "::" sentinel.
+  const cfConnectingIp = request.headers.get("cf-connecting-ip");
   const result = await handler.handleRequest(request, {
     ctx,
+    deferAnalytics: true,
     sourceCdn: "cloudflare",
     requestId: request.headers.get("cf-ray") ?? undefined,
-    clientIp: request.headers.get("cf-connecting-ip") ?? undefined,
+    // cf-connecting-ip is Cloudflare's own view of who connected to it; absent leaves
+    // clientIp undefined, which normalizes to the "::" sentinel.
+    clientIp: cfConnectingIp || undefined,
+    clientIpSource: cfConnectingIp ? "cdn_declared" : "absent",
     requestCountry: request.headers.get("cf-ipcountry") ?? cf?.country ?? null,
     requestAsn: typeof cf?.asn === "number" ? cf.asn : null,
     tlsFingerprint: cf?.botManagement?.ja3Hash ?? null,
     cdnSignals: cf ? extractCloudflareCdnSignals(cf) : undefined,
   });
 
-  switch (result.action) {
-    case HandlerAction.RESPOND:
-    case HandlerAction.BLOCK:
-      return new Response(result.body, {
-        status: result.status,
-        headers: new Headers(result.headers),
-      });
-    case HandlerAction.ALLOW: {
-      // When `originUrl` is provided, forward to that host while preserving
-      // path / query / method / headers / body. Decouples validation URL
-      // (request.url, used for token audience checks) from fetch destination.
-      // Production Cloudflare deployments can omit this — Workers Routes put
-      // the Worker on the publisher's hostname, so `fetch(request)` already
-      // resolves to the origin via the edge.
-      const fetchTarget = originUrl
-        ? new Request(
-            `${new URL(originUrl).origin}${new URL(request.url).pathname}${new URL(request.url).search}`,
-            request
-          )
-        : request;
-      const originResponse = await fetch(fetchTarget);
-      return applyResponseHeaders(originResponse, result.headers);
+  // BLOCK / RESPOND already carried their own status out of handleRequest, which attaches the
+  // reporter only for ALLOW. Returned before the try so nothing reports a null status for a
+  // response whose status was never in doubt.
+  if (result.action !== HandlerAction.ALLOW) {
+    return new Response(result.body, {
+      status: result.status,
+      headers: new Headers(result.headers),
+    });
+  }
+
+  // Reported in a finally so a thrown origin fetch still sends the event: losing the status
+  // is acceptable, losing the whole row is not. `status` arrives with the response headers,
+  // so reading it costs nothing and never waits on a body.
+  let status: number | null = null;
+  let source: StatusSource | undefined;
+  try {
+    // When `originUrl` is provided, forward to that host while preserving
+    // path / query / method / headers / body. Decouples validation URL
+    // (request.url, used for token audience checks) from fetch destination.
+    // Production Cloudflare deployments can omit this — Workers Routes put
+    // the Worker on the publisher's hostname, so `fetch(request)` already
+    // resolves to the origin via the edge.
+    const fetchTarget = originUrl
+      ? new Request(
+          `${new URL(originUrl).origin}${new URL(request.url).pathname}${new URL(request.url).search}`,
+          request
+        )
+      : request;
+    // Set before the await and cleared after, so a throw leaves "origin_error" standing.
+    source = "origin_error";
+    let originResponse: Response;
+    try {
+      originResponse = await fetch(fetchTarget);
+    } catch {
+      // Fail open here rather than leaving it to cloudflareHandleRequests, so the status
+      // reported is the one the client actually receives. Reporting from a boundary the
+      // retry sits outside of would record "origin_error" for a request the retry served.
+      originResponse = await fetch(request);
     }
+    status = originResponse.status;
+    source = undefined;
+    return applyResponseHeaders(originResponse, result.headers);
+  } finally {
+    result.reportResponse?.(status, source);
   }
 }
 
@@ -175,6 +213,7 @@ export async function handleFastlyRequest(
   // headers. The caller (fastlyHandleRequests) passes them through from event.client.
   clientContext?: {
     clientIp?: string;
+    clientIpSource?: ClientIpSource;
     requestCountry?: string | null;
     requestAsn?: number | null;
     tlsFingerprint?: string | null;
@@ -194,6 +233,21 @@ export async function handleFastlyRequest(
   }
 
   const asnHeader = request.headers.get("fastly-client-asn");
+
+  // The address and its provenance must come from the SAME branch. Selecting them with two
+  // independent expressions lets a caller-supplied address be labelled by a header it did not
+  // come from — reporting `cdn_declared` for an address the CDN never vouched for.
+  const contextClientIp = clientContext?.clientIp;
+  const headerClientIp = request.headers.get("fastly-client-ip");
+  const resolvedClientIp = contextClientIp || headerClientIp || undefined;
+  const resolvedClientIpSource: ClientIpSource | undefined = contextClientIp
+    ? // Only the caller knows where its own address came from; undefined stays NULL rather
+      // than being inferred from a header that did not supply it.
+      clientContext?.clientIpSource
+    : headerClientIp
+      ? "cdn_declared"
+      : "absent";
+
   const webRequest = new Request(originalUrl, {
     method: request.method,
     headers: request.headers,
@@ -201,9 +255,11 @@ export async function handleFastlyRequest(
 
   const result = await handler.handleRequest(webRequest, {
     ctx,
+    deferAnalytics: true,
     sourceCdn: "fastly",
     // Prefer caller-supplied values (Compute: event.client.*) over header fallbacks (VCL only).
-    clientIp: clientContext?.clientIp ?? request.headers.get("fastly-client-ip") ?? undefined,
+    clientIp: resolvedClientIp,
+    clientIpSource: resolvedClientIpSource,
     requestCountry: clientContext?.requestCountry !== undefined ? clientContext.requestCountry : (request.headers.get("fastly-client-country-code") ?? null),
     requestAsn: clientContext?.requestAsn !== undefined ? clientContext.requestAsn : parseAsn(asnHeader),
     // JA3 comes from event.client.tlsJA3MD5 on Compute; the header is VCL-only.
@@ -215,17 +271,33 @@ export async function handleFastlyRequest(
     },
   });
 
-  switch (result.action) {
-    case HandlerAction.RESPOND:
-    case HandlerAction.BLOCK:
-      return new Response(result.body, {
-        status: result.status,
-        headers: new Headers(result.headers),
-      });
-    case HandlerAction.ALLOW: {
-      const originResponse = await fetch(request, { backend: originBackend } as RequestInit);
-      return applyResponseHeaders(originResponse, result.headers);
+  // See handleCloudflareRequest for both: non-ALLOW returns before the try, and the origin
+  // status is reported in a finally so a failed fetch costs the status, not the event.
+  if (result.action !== HandlerAction.ALLOW) {
+    return new Response(result.body, {
+      status: result.status,
+      headers: new Headers(result.headers),
+    });
+  }
+
+  let status: number | null = null;
+  let source: StatusSource | undefined;
+  try {
+    // Set before the await and cleared after, so a throw leaves "origin_error" standing.
+    source = "origin_error";
+    let originResponse: Response;
+    try {
+      originResponse = await fetch(request, { backend: originBackend } as RequestInit);
+    } catch {
+      // See handleCloudflareRequest: fail open here so the reported status is the one the
+      // client receives, rather than letting fastlyHandleRequests retry outside the reporter.
+      originResponse = await fetch(request, { backend: originBackend } as RequestInit);
     }
+    status = originResponse.status;
+    source = undefined;
+    return applyResponseHeaders(originResponse, result.headers);
+  } finally {
+    result.reportResponse?.(status, source);
   }
 }
 
@@ -279,7 +351,10 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
     ctx,
     sourceCdn: "cloudfront",
     requestId: config?.requestId ?? undefined,
+    // Lambda@Edge exposes the viewer address as an event field rather than a header, but
+    // it means the same thing as cf-connecting-ip: CloudFront's view of who reached it.
     clientIp: cfRequest.clientIp,
+    clientIpSource: cfRequest.clientIp ? "cdn_declared" : "absent",
     requestCountry: headers.get("cloudfront-viewer-country") ?? null,
     requestAsn: parseAsn(asnHeader),
     tlsFingerprint: headers.get("cloudfront-viewer-ja3-fingerprint") ?? null,

@@ -93,6 +93,11 @@ describe("buildAnalyticsEvent", () => {
       cdn_verified_bot_category: null,
       request_priority: null,
       tls_fingerprint_ja4: null,
+      // Capture v3 — this context declares no provenance for the address it supplied,
+      // and never waited for a response.
+      client_ip_source: null,
+      status_code: null,
+      status_source: null,
     });
   });
 
@@ -119,6 +124,63 @@ describe("buildAnalyticsEvent", () => {
       expect(event.request_country).toBeNull();
       expect(event.request_asn).toBeNull();
       expect(event.tls_fingerprint).toBeNull();
+    });
+  });
+
+  describe("client_ip_source", () => {
+    it("records the provenance the caller declares, verbatim", () => {
+      const event = buildAnalyticsEvent(
+        makeRequest(),
+        baseDecision,
+        ctx({ clientIp: "1.2.3.4", clientIpSource: "connection" })
+      );
+      expect(event.client_ip_source).toBe("connection");
+    });
+
+    it("stays null when the caller declares no source", () => {
+      // A direct handleRequest caller supplies an address whose provenance only it knows.
+      // Inferring "cdn_declared" here would launder an undeclared claim into the warehouse.
+      const event = buildAnalyticsEvent(makeRequest(), baseDecision, ctx({ clientIp: "1.2.3.4" }));
+      expect(event.client_ip_source).toBeNull();
+    });
+
+    it.each(["not-an-ip", "999.1.1.1", "   "])(
+      "downgrades a declared source to absent when %s normalizes to the sentinel",
+      (malformed) => {
+        // The wrappers decide provenance from whether an address was available, before
+        // normalization can reject it — so a spoofed Fastly-Client-IP arrives here as
+        // "cdn_declared". Emitting that next to "::" would claim the CDN vouched for an
+        // address the event no longer carries, and `cdn_declared` is exactly what a query
+        // filters on to get trustworthy addresses.
+        const event = buildAnalyticsEvent(
+          makeRequest(),
+          baseDecision,
+          ctx({ clientIp: malformed, clientIpSource: "cdn_declared" })
+        );
+
+        expect(event.client_ip).toBe("::");
+        expect(event.client_ip_source).toBe("absent");
+      }
+    );
+
+    it("keeps a declared source when the address survives normalization", () => {
+      const event = buildAnalyticsEvent(
+        makeRequest(),
+        baseDecision,
+        ctx({ clientIp: "1.2.3.4", clientIpSource: "cdn_declared" })
+      );
+
+      expect(event.client_ip).toBe("::ffff:1.2.3.4");
+      expect(event.client_ip_source).toBe("cdn_declared");
+    });
+
+    it("leaves an undeclared source null even when the address is the sentinel", () => {
+      // "absent" is a claim about what the emitter looked for. A caller that declared
+      // nothing gets nothing asserted on its behalf, sentinel or not.
+      const event = buildAnalyticsEvent(makeRequest(), baseDecision, ctx({ clientIp: "nonsense" }));
+
+      expect(event.client_ip).toBe("::");
+      expect(event.client_ip_source).toBeNull();
     });
   });
 
@@ -501,10 +563,10 @@ describe("buildAnalyticsEvent", () => {
     });
   });
 
-  describe("Capture v2 — schema_version", () => {
-    it("emits schema_version 2", () => {
+  describe("schema_version", () => {
+    it("emits schema_version 3", () => {
       const event = buildAnalyticsEvent(makeRequest(), baseDecision, ctx());
-      expect(event.schema_version).toBe(2);
+      expect(event.schema_version).toBe(3);
     });
   });
 });

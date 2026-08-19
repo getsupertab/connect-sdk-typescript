@@ -1,8 +1,26 @@
-import { EnforcementMode, ExecutionContext, LicenseTokenInvalidReason } from "../types";
+import { EnforcementMode, ExecutionContext, LicenseTokenInvalidReason, StatusSource } from "../types";
 
-export const SCHEMA_VERSION = 2;
+export type { StatusSource };
+
+export const SCHEMA_VERSION = 3;
 
 export type SourceCdn = "cloudflare" | "fastly" | "cloudfront";
+
+/**
+ * Where `client_ip` came from. Provenance, never a verdict on the address — whether
+ * it is the visitor or a middleman is decided in the warehouse, against `request_asn`.
+ *
+ * - `cdn_declared` — the CDN's view of who connected *to it*. The strongest claim any
+ *   CDN can make, and still only one hop out: if something sits in front of the CDN,
+ *   this is that something.
+ * - `connection` — the socket peer this runtime observed. The real client on a direct
+ *   deployment, an upstream hop on a chained one; the runtime cannot tell which.
+ * - `absent` — no address available, so `client_ip` is the `::` sentinel.
+ *
+ * Undeclared (omitted) is a fourth state and stays NULL: an integrator passing its own
+ * `clientIp` knows its provenance and we do not, so we never guess on its behalf.
+ */
+export type ClientIpSource = "cdn_declared" | "connection" | "absent";
 
 export type TokenOutcome =
   | "absent"
@@ -89,6 +107,13 @@ export interface AnalyticsEvent {
   cdn_verified_bot_category: string | null;
   request_priority: string | null;
   tls_fingerprint_ja4: string | null;
+
+  // --- Capture v3 (schema_version 3) ---
+  client_ip_source: ClientIpSource | null;
+  // The status of the response actually served — the origin's answer on ALLOW, ours on
+  // BLOCK/RESPOND. Null whenever status_source says it could not be read.
+  status_code: number | null;
+  status_source: StatusSource | null;
 }
 
 /**

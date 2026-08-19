@@ -1,7 +1,11 @@
 import { FastlyFetchEvent } from "./types";
+import { ClientIpSource } from "./analytics/types";
 
 export interface FastlyClientSignals {
   clientIp: string;
+  // Which of the two branches below produced clientIp. The distinction vanishes once the
+  // address is a bare string, and nothing downstream can recover it.
+  clientIpSource: ClientIpSource;
   requestCountry: string | null;
   requestAsn: number | null;
   tlsFingerprint: string | null;
@@ -42,6 +46,7 @@ export async function resolveFastlyClientSignals(event: FastlyFetchEvent): Promi
     const geo = getGeolocationForIpAddress?.(headerIp) ?? null;
     return {
       clientIp: headerIp,
+      clientIpSource: "cdn_declared",
       requestCountry: geo?.country_code ?? null,
       requestAsn: geo?.as_number ?? null,
       tlsFingerprint: null,
@@ -50,6 +55,11 @@ export async function resolveFastlyClientSignals(event: FastlyFetchEvent): Promi
   const client = event.client;
   return {
     clientIp: client.address,
+    // The socket peer. On a direct deployment that is the viewer; on a chain whose VCL edge
+    // did not set Fastly-Client-IP it is the upstream hop — and from in here the two are
+    // indistinguishable. Reporting the source rather than a verdict is the whole point:
+    // request_asn resolves it in the warehouse.
+    clientIpSource: "connection",
     requestCountry: client.geo?.country_code ?? null,
     requestAsn: client.geo?.as_number ?? null,
     tlsFingerprint: client.tlsJA3MD5 ?? null,
