@@ -166,11 +166,20 @@ export interface CloudfrontHandlerOptions {
   debug?: boolean;
   /**
    * Toggle relay analytics emission (default: false). Lambda@Edge has no `waitUntil`
-   * keep-alive, so the emit is awaited to completion before the response returns rather
-   * than fired-and-forgotten. Only requests carrying an `x-license-auth` header reach
-   * this path, so the cost lands on licensed/identified-bot traffic, not human traffic.
+   * keep-alive, so the emit is awaited before the response returns rather than
+   * fired-and-forgotten (capped by `analyticsTimeoutMs`). At origin-request only
+   * licensed/identified-bot traffic pays that cost; at viewer-request every request does.
    */
   analyticsEnabled?: boolean;
+  /**
+   * Whether to run the full verification/analytics pipeline on every request instead of
+   * only those carrying an `x-license-auth` header (or the status probe). Default
+   * (undefined): auto-detect — process everything when the event is a viewer-request
+   * (which fires pre-cache on all traffic and has no CloudFront Function headers), keep
+   * the `x-license-auth` gate at origin-request. Pass true/false to force either mode;
+   * note that forcing true at origin-request still only ever sees cache misses.
+   */
+  processAllRequests?: boolean;
   /**
    * Base URL of the analytics ingest relay, for non-prod deployments (e.g.
    * `https://ingest-connect.sbx.supertab.co`). Defaults to the prod ingest service.

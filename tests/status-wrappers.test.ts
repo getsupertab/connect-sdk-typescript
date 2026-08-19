@@ -136,3 +136,94 @@ describe("CloudFront wrapper — RESPOND action (status endpoint)", () => {
     expect(body).toEqual({ supertab: true });
   });
 });
+
+describe("CloudFront wrapper — trigger gating (viewer-request vs origin-request)", () => {
+  beforeEach(() => {
+    SupertabConnect.resetInstance();
+    // Belt-and-braces: no test here should hit the network.
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+  });
+
+  afterEach(() => {
+    SupertabConnect.resetInstance();
+    vi.restoreAllMocks();
+  });
+
+  // A plain unlicensed request (no x-license-auth, not the status probe).
+  function makeCfEvent(eventType?: string) {
+    return {
+      Records: [
+        {
+          cf: {
+            config: { requestId: "req-1", ...(eventType ? { eventType } : {}) },
+            request: {
+              uri: "/article",
+              method: "GET",
+              querystring: "",
+              clientIp: "1.2.3.4",
+              headers: { host: [{ key: "Host", value: "acme.com" }] },
+            },
+          },
+        },
+      ],
+    };
+  }
+
+  // botDetector: () => true + ENFORCE makes a processed unlicensed request return a block
+  // response (has `status`), while a gated one returns the raw request (has `uri`).
+  const enforcingOptions = {
+    apiKey: "merchant-key",
+    enforcement: EnforcementMode.ENFORCE,
+    botDetector: () => true,
+  };
+
+  it("viewer-request event: processes an unlicensed request (auto-detect)", async () => {
+    const result = await SupertabConnect.cloudfrontHandleRequests(
+      makeCfEvent("viewer-request"),
+      enforcingOptions
+    );
+
+    expect(result).toHaveProperty("status");
+    expect(result).not.toHaveProperty("uri");
+  });
+
+  it("origin-request event: still gated — unlicensed request passes through untouched", async () => {
+    const result = await SupertabConnect.cloudfrontHandleRequests(
+      makeCfEvent("origin-request"),
+      enforcingOptions
+    );
+
+    expect(result).toHaveProperty("uri", "/article");
+    expect(result).not.toHaveProperty("status");
+  });
+
+  it("absent eventType: still gated (back-compat with today's origin-request deployments)", async () => {
+    const result = await SupertabConnect.cloudfrontHandleRequests(
+      makeCfEvent(),
+      enforcingOptions
+    );
+
+    expect(result).toHaveProperty("uri", "/article");
+    expect(result).not.toHaveProperty("status");
+  });
+
+  it("processAllRequests: true forces processing on an origin-request event", async () => {
+    const result = await SupertabConnect.cloudfrontHandleRequests(
+      makeCfEvent("origin-request"),
+      { ...enforcingOptions, processAllRequests: true }
+    );
+
+    expect(result).toHaveProperty("status");
+    expect(result).not.toHaveProperty("uri");
+  });
+
+  it("processAllRequests: false forces the gate on a viewer-request event", async () => {
+    const result = await SupertabConnect.cloudfrontHandleRequests(
+      makeCfEvent("viewer-request"),
+      { ...enforcingOptions, processAllRequests: false }
+    );
+
+    expect(result).toHaveProperty("uri", "/article");
+    expect(result).not.toHaveProperty("status");
+  });
+});

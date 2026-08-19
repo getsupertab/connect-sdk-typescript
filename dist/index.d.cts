@@ -127,11 +127,20 @@ interface CloudfrontHandlerOptions {
     debug?: boolean;
     /**
      * Toggle relay analytics emission (default: false). Lambda@Edge has no `waitUntil`
-     * keep-alive, so the emit is awaited to completion before the response returns rather
-     * than fired-and-forgotten. Only requests carrying an `x-license-auth` header reach
-     * this path, so the cost lands on licensed/identified-bot traffic, not human traffic.
+     * keep-alive, so the emit is awaited before the response returns rather than
+     * fired-and-forgotten (capped by `analyticsTimeoutMs`). At origin-request only
+     * licensed/identified-bot traffic pays that cost; at viewer-request every request does.
      */
     analyticsEnabled?: boolean;
+    /**
+     * Whether to run the full verification/analytics pipeline on every request instead of
+     * only those carrying an `x-license-auth` header (or the status probe). Default
+     * (undefined): auto-detect — process everything when the event is a viewer-request
+     * (which fires pre-cache on all traffic and has no CloudFront Function headers), keep
+     * the `x-license-auth` gate at origin-request. Pass true/false to force either mode;
+     * note that forcing true at origin-request still only ever sees cache misses.
+     */
+    processAllRequests?: boolean;
     /**
      * Base URL of the analytics ingest relay, for non-prod deployments (e.g.
      * `https://ingest-connect.sbx.supertab.co`). Defaults to the prod ingest service.
@@ -495,8 +504,12 @@ declare class SupertabConnect {
     static fastlyHandleRequests(event: FastlyFetchEvent, merchantApiKey: string, originBackend: string, options?: FastlyHandlerOptions): Promise<Response>;
     /**
      * Handle incoming requests for AWS CloudFront Lambda@Edge.
-     * Use as the handler for an origin-request LambdaEdge function.
-     * @param event The CloudFront origin-request event
+     * Works at either trigger: attached at viewer-request it runs pre-cache on every request
+     * (full analytics coverage, no CloudFront Function needed); attached at origin-request it
+     * only processes requests the CloudFront Function stamped with `x-license-auth` (plus the
+     * status probe). The trigger is auto-detected from the event — see
+     * CloudfrontHandlerOptions.processAllRequests to force either mode.
+     * @param event The CloudFront request event (viewer-request or origin-request)
      * @param options Configuration including apiKey and optional botDetector/enforcement/debug fields.
      * @param options.analyticsEnabled Toggle relay analytics emission (default: false). Lambda@Edge
      *   has no `waitUntil`, so the emit is awaited to completion before the response returns —

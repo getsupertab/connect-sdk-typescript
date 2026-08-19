@@ -664,8 +664,12 @@ export class SupertabConnect {
 
   /**
    * Handle incoming requests for AWS CloudFront Lambda@Edge.
-   * Use as the handler for an origin-request LambdaEdge function.
-   * @param event The CloudFront origin-request event
+   * Works at either trigger: attached at viewer-request it runs pre-cache on every request
+   * (full analytics coverage, no CloudFront Function needed); attached at origin-request it
+   * only processes requests the CloudFront Function stamped with `x-license-auth` (plus the
+   * status probe). The trigger is auto-detected from the event — see
+   * CloudfrontHandlerOptions.processAllRequests to force either mode.
+   * @param event The CloudFront request event (viewer-request or origin-request)
    * @param options Configuration including apiKey and optional botDetector/enforcement/debug fields.
    * @param options.analyticsEnabled Toggle relay analytics emission (default: false). Lambda@Edge
    *   has no `waitUntil`, so the emit is awaited to completion before the response returns —
@@ -683,7 +687,12 @@ export class SupertabConnect {
       // x-license-auth, so it must be let through to handleRequest rather than passed to origin.
       const isStatusProbe = request.uri === "/.well-known/supertab/status" && request.method === "GET";
       const license_auth_header = request.headers?.["x-license-auth"];
-      if (!license_auth_header && !isStatusProbe) {
+      // At viewer-request there is no CloudFront Function ahead of us to stamp
+      // x-license-auth (AWS forbids both on one event), and the trigger fires pre-cache on
+      // ALL traffic — so every request is processed there, gated only at origin-request.
+      const cfConfig = event?.Records?.[0]?.cf?.config;
+      const processAll = options.processAllRequests ?? cfConfig?.eventType === "viewer-request";
+      if (!processAll && !license_auth_header && !isStatusProbe) {
         // No license auth header means the request is either from a human or from an unidentifiable bot.
         // No reasons to waste compute resources on the rest of the checks.
         return request;

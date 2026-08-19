@@ -312,7 +312,10 @@ function statusDescription(status: number): CDNStatusDescription {
 }
 
 /**
- * Handles an Origin request in CloudFront. Expects X-Original-Request-URL header to contain the original viewer request URL.
+ * Handles a CloudFront request event (viewer-request or origin-request). At origin-request
+ * the X-Original-Request-URL header carries the original viewer URL (the host header is the
+ * origin's); at viewer-request the header is absent and the host header IS the viewer host,
+ * so the fallback reconstruction below is already correct.
  * @param handler
  * @param event
  */
