@@ -664,18 +664,18 @@ export class SupertabConnect {
 
   /**
    * Handle incoming requests for AWS CloudFront Lambda@Edge.
-   * Works at either trigger: attached at viewer-request it runs pre-cache on every request
-   * (full analytics coverage, no CloudFront Function needed); attached at origin-request it
-   * only processes requests the CloudFront Function stamped with `x-license-auth` (plus the
-   * status probe). The trigger is auto-detected from the event — see
-   * CloudfrontHandlerOptions.processAllRequests to force either mode.
+   * Works at either trigger, auto-detected from the event's `config.eventType`: attached at
+   * viewer-request it runs pre-cache on every request (full analytics coverage, no CloudFront
+   * Function needed); attached at origin-request it only processes requests the CloudFront
+   * Function stamped with `x-license-auth` (plus the status probe).
    * @param event The CloudFront request event (viewer-request or origin-request)
    * @param options Configuration including apiKey and optional botDetector/enforcement/debug fields.
    * @param options.analyticsEnabled Toggle relay analytics emission (default: false). Lambda@Edge
    *   has no `waitUntil`, so the emit is awaited to completion before the response returns —
    *   see CloudfrontHandlerOptions.
-   * @param options.analyticsTimeoutMs Optional cap (ms) on that wait; events still in flight
-   *   when it expires are dropped. Default: no cap, fully awaited.
+   * @param options.backgroundWorkTimeoutMs Absolute budget (ms) from handler entry for the
+   *   background work (analytics emit + legacy event recording); in-flight calls are aborted
+   *   at the deadline. Default: no budget, fully awaited.
    */
   static async cloudfrontHandleRequests<TRequest extends Record<string, any>>(
     event: CloudFrontRequestEvent<TRequest>,
@@ -691,15 +691,15 @@ export class SupertabConnect {
       // x-license-auth (AWS forbids both on one event), and the trigger fires pre-cache on
       // ALL traffic — so every request is processed there, gated only at origin-request.
       const cfConfig = event?.Records?.[0]?.cf?.config;
-      const processAll = options.processAllRequests ?? cfConfig?.eventType === "viewer-request";
+      const processAll = cfConfig?.eventType === "viewer-request";
       if (!processAll && !license_auth_header && !isStatusProbe) {
         // No license auth header means the request is either from a human or from an unidentifiable bot.
         // No reasons to waste compute resources on the rest of the checks.
         return request;
       }
       // Analytics uses the HTTP relay (no injected transport). Lambda@Edge has no waitUntil,
-      // so handleCloudfrontRequest awaits the emit before returning (capped only if
-      // analyticsTimeoutMs is set).
+      // so handleCloudfrontRequest awaits the background work before returning (bounded —
+      // and aborted at the deadline — only if backgroundWorkTimeoutMs is set).
       const instance = new SupertabConnect({
         apiKey: options.apiKey,
         botDetector: options.botDetector,
@@ -713,7 +713,7 @@ export class SupertabConnect {
           `[SupertabConnect] analytics: ${instance.analyticsEnabled ? "enabled (http)" : "disabled (noop)"}`
         );
       }
-      return await handleCloudfrontRequest(instance, event, options.analyticsTimeoutMs, options.debug);
+      return await handleCloudfrontRequest(instance, event, options.backgroundWorkTimeoutMs, options.debug);
     } catch (err) {
       console.error("[SupertabConnect] cloudfrontHandleRequests failed:", err);
       return request;

@@ -322,9 +322,17 @@ function statusDescription(status: number): CDNStatusDescription {
 export async function handleCloudfrontRequest<TRequest extends Record<string, any>>(
   handler: RequestHandler,
   event: CloudFrontRequestEvent<TRequest>,
-  analyticsTimeoutMs?: number,
+  backgroundWorkTimeoutMs?: number,
   debug: boolean = false
 ): Promise<CloudFrontRequestResult<TRequest>> {
+  if (backgroundWorkTimeoutMs !== undefined &&
+      (!Number.isFinite(backgroundWorkTimeoutMs) || backgroundWorkTimeoutMs <= 0)) {
+    console.warn(
+      `[SupertabConnect] ignoring invalid backgroundWorkTimeoutMs: ${backgroundWorkTimeoutMs} (background work will be awaited to completion)`
+    );
+    backgroundWorkTimeoutMs = undefined;
+  }
+
   const cfRequest = event.Records[0].cf.request;
   const config = event.Records[0].cf.config;
 
@@ -346,9 +354,32 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
   // Lambda@Edge has no `waitUntil` — collect the analytics emit and legacy /events promises
   // here and await them before returning, since a detached fetch is frozen when the handler
   // resolves and would be dropped.
+  //
+  // backgroundWorkTimeoutMs is an absolute budget measured from HERE (so time spent in
+  // verification/JWKS counts against it, not just the drain). At the deadline the signal
+  // aborts the in-flight background fetches — merely abandoning them would leave work that
+  // can resume inside a later invocation of a reused environment.
   const pending: Promise<void>[] = [];
-  const ctx: ExecutionContext = { waitUntil: (promise) => { pending.push(promise); } };
+  const startedAt = Date.now();
+  let timedOut = false;
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  let controller: AbortController | undefined;
+  const deadline = new Promise<void>((resolve) => {
+    if (backgroundWorkTimeoutMs === undefined) return; // never resolves — no budget
+    controller = new AbortController();
+    deadlineTimer = setTimeout(() => {
+      timedOut = true;
+      controller!.abort();
+      resolve();
+    }, backgroundWorkTimeoutMs);
+  });
+  const ctx: ExecutionContext = {
+    waitUntil: (promise) => { pending.push(promise); },
+    signal: controller?.signal,
+  };
 
+  // These headers only exist at origin-request (CloudFront adds them after the viewer-request
+  // event, per origin request policy) — at viewer-request they degrade to null.
   const asnHeader = headers.get("cloudfront-viewer-asn");
   const result = await handler.handleRequest(webRequest, {
     ctx,
@@ -366,27 +397,21 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
 
   // Drain the pending calls before returning. The promises swallow their own errors, so
   // allSettled never rejects. By default the drain is unbounded (correctness over latency);
-  // an explicit analyticsTimeoutMs caps it, dropping whatever is still in flight.
+  // with a budget, the deadline both aborts the in-flight calls (real cancellation) and
+  // wins the race (hard return-time backstop for anything that ignores the signal).
   if (pending.length) {
-    const startedAt = Date.now();
-    const drain = Promise.allSettled(pending);
-    if (analyticsTimeoutMs === undefined) {
-      await drain;
-    } else {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      await Promise.race([
-        drain,
-        new Promise<void>((resolve) => { timer = setTimeout(resolve, analyticsTimeoutMs); }),
-      ]);
-      clearTimeout(timer);
-    }
+    await Promise.race([Promise.allSettled(pending), deadline]);
     if (debug) {
+      const elapsedMs = Date.now() - startedAt;
       console.log(
-        `[SupertabConnect] cloudfront drain: ${pending.length} pending settled in ${Date.now() - startedAt}ms` +
-          (analyticsTimeoutMs !== undefined ? ` (cap ${analyticsTimeoutMs}ms)` : "")
+        timedOut
+          ? `[SupertabConnect] cloudfront background work: timed out after ${elapsedMs}ms (budget ${backgroundWorkTimeoutMs}ms) — in-flight calls aborted`
+          : `[SupertabConnect] cloudfront background work: ${pending.length} calls settled in ${elapsedMs}ms` +
+            (backgroundWorkTimeoutMs !== undefined ? ` (budget ${backgroundWorkTimeoutMs}ms)` : "")
       );
     }
   }
+  clearTimeout(deadlineTimer);
 
   if (result.action === HandlerAction.BLOCK || result.action === HandlerAction.RESPOND) {
     const responseHeaders: CloudFrontHeaders = {};

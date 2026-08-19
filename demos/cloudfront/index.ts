@@ -22,8 +22,10 @@ export async function handler(
     apiKey: MERCHANT_API_KEY,
     analyticsEnabled: true,
     debug: true,
-    // Viewer-request Lambdas have a hard 5s timeout; this cap never trips in normal
-    // operation but keeps a hung ingest/backend from turning into a 5xx for the viewer.
-    analyticsTimeoutMs: 3000,
+    // Absolute budget, from handler entry, for the pre-response wait on background work
+    // (analytics emit, event recording) — in-flight calls are aborted at the deadline.
+    // Keep it well under the Lambda's configured timeout so a hung ingest/backend never
+    // turns into an error for the viewer.
+    backgroundWorkTimeoutMs: 3000,
   });
 }

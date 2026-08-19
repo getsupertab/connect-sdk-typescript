@@ -207,23 +207,4 @@ describe("CloudFront wrapper — trigger gating (viewer-request vs origin-reques
     expect(result).not.toHaveProperty("status");
   });
 
-  it("processAllRequests: true forces processing on an origin-request event", async () => {
-    const result = await SupertabConnect.cloudfrontHandleRequests(
-      makeCfEvent("origin-request"),
-      { ...enforcingOptions, processAllRequests: true }
-    );
-
-    expect(result).toHaveProperty("status");
-    expect(result).not.toHaveProperty("uri");
-  });
-
-  it("processAllRequests: false forces the gate on a viewer-request event", async () => {
-    const result = await SupertabConnect.cloudfrontHandleRequests(
-      makeCfEvent("viewer-request"),
-      { ...enforcingOptions, processAllRequests: false }
-    );
-
-    expect(result).toHaveProperty("uri", "/article");
-    expect(result).not.toHaveProperty("status");
-  });
 });
