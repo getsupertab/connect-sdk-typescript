@@ -95,8 +95,9 @@ export async function handler(
     analyticsEnabled: true,
     // Absolute budget (ms) from handler entry for the pre-response wait on background
     // work (analytics emit, event recording); in-flight calls are aborted at the
-    // deadline. Omit to await everything to completion.
-    backgroundWorkTimeoutMs: 3000,
+    // deadline. Defaults to 2000ms — omit it unless you need a different budget, or
+    // pass Infinity to await everything to completion.
+    backgroundWorkTimeoutMs: 2000,
   });
 }
 ```
@@ -116,7 +117,10 @@ running at from the event:
 
 Lambda@Edge has no `waitUntil`, so analytics emission and event recording are
 **awaited before the response returns**, bounded by `backgroundWorkTimeoutMs`
-when set. Keep the budget well under the Lambda's configured timeout.
+(default **2000ms**). Keep the budget well under the Lambda's configured timeout —
+the default leaves headroom under the viewer-request trigger's 5s ceiling, past
+which CloudFront returns a 502 to the viewer. Pass `Infinity` to opt out and await
+background work to completion.
 
 ### Manual Setup
 
@@ -204,7 +208,8 @@ the warehouse — the SDK emits raw signals only and does not label traffic.
 
 **Fail-open:** analytics emission can never alter request handling. On Cloudflare
 and Fastly it is fire-and-forget (held by the platform's `waitUntil`); on
-CloudFront it is awaited pre-response, bounded by `backgroundWorkTimeoutMs`. If
+CloudFront it is awaited pre-response, bounded by `backgroundWorkTimeoutMs`
+(2000ms by default). If
 emission fails, the error is swallowed and the request proceeds exactly as it
 would with analytics disabled. Analytics is also
 fully isolated from billing — it is sent only to the relay at `/ingest/events`.

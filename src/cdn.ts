@@ -10,6 +10,14 @@ import {
 import { CdnRequestSignals, ClientIpSource, StatusSource } from "./analytics/types";
 import { hostRSLicenseXML } from "./license";
 
+/**
+ * Default budget (ms) for the pre-response background-work wait on CloudFront, applied when
+ * `backgroundWorkTimeoutMs` is not set. Lambda@Edge has no `waitUntil`, so background work
+ * has to be awaited before the response returns; 2s leaves headroom under the viewer-request
+ * trigger's 5s ceiling, past which CloudFront returns a 502 to the viewer.
+ */
+export const DEFAULT_BACKGROUND_WORK_TIMEOUT_MS = 2000;
+
 /** Parse a CDN ASN header (e.g. "13335" or "AS13335") to a positive integer, or null. */
 export function parseAsn(raw: string | null | undefined): number | null {
   if (!raw) return null;
@@ -36,6 +44,8 @@ function toIntOrNull(value: unknown): number | null {
  * Enterprise-only JA4 stays null until a zone upgrades (defined now so the data
  * flows the day it does — it is unbackfillable). `tlsClientHelloLength` arrives
  * as a string and is parsed to an int.
+ * @param cf The Worker request's `cf` object.
+ * @returns The Capture-v2 signal set, with unexposed fields null.
  */
 export function extractCloudflareCdnSignals(cf: Record<string, any>): CdnRequestSignals {
   return {
@@ -58,6 +68,8 @@ export function extractCloudflareCdnSignals(cf: Record<string, any>): CdnRequest
  * contract. Fail-open: pure header reads, never throws. Fields CloudFront does not expose
  * as viewer headers stay null. The `cloudfront-viewer-tls` header packs version and cipher
  * as `<version>:<cipher>:<handshake>` (e.g. `TLSv1.3:TLS_AES_128_GCM_SHA256:fullHandshake`).
+ * @param headers The request headers, as forwarded to the Lambda@Edge trigger.
+ * @returns The Capture-v2 signal set, with unexposed fields null.
  */
 export function extractCloudfrontCdnSignals(headers: Headers): CdnRequestSignals {
   const tls = headers.get("cloudfront-viewer-tls");
@@ -316,8 +328,15 @@ function statusDescription(status: number): CDNStatusDescription {
  * the X-Original-Request-URL header carries the original viewer URL (the host header is the
  * origin's); at viewer-request the header is absent and the host header IS the viewer host,
  * so the fallback reconstruction below is already correct.
- * @param handler
- * @param event
+ * @param handler Request handler used to make the licensing decision for the event.
+ * @param event The CloudFront request event (viewer-request or origin-request).
+ * @param backgroundWorkTimeoutMs Absolute budget (ms), measured from entry to this function,
+ *   on the pre-response wait for background work (analytics emit + legacy event recording).
+ *   In-flight calls are aborted at the deadline. Defaults to
+ *   `DEFAULT_BACKGROUND_WORK_TIMEOUT_MS`; pass `Infinity` to await to completion instead.
+ *   Non-finite or non-positive values fall back to the default with a warning.
+ * @param debug Enable debug logging of the background-work drain (default: false).
+ * @returns The pass-through request, or a CloudFront response when the handler blocks/responds.
  */
 export async function handleCloudfrontRequest<TRequest extends Record<string, any>>(
   handler: RequestHandler,
@@ -325,12 +344,21 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
   backgroundWorkTimeoutMs?: number,
   debug: boolean = false
 ): Promise<CloudFrontRequestResult<TRequest>> {
-  if (backgroundWorkTimeoutMs !== undefined &&
-      (!Number.isFinite(backgroundWorkTimeoutMs) || backgroundWorkTimeoutMs <= 0)) {
+  // `undefined` means "caller expressed no preference" — take the default rather than
+  // waiting forever, since an unbounded wait can walk a viewer-request Lambda into its 5s
+  // ceiling (CloudFront turns that into a 502). `Infinity` is the explicit opt-out.
+  let budgetMs: number | undefined;
+  if (backgroundWorkTimeoutMs === undefined) {
+    budgetMs = DEFAULT_BACKGROUND_WORK_TIMEOUT_MS;
+  } else if (backgroundWorkTimeoutMs === Infinity) {
+    budgetMs = undefined;
+  } else if (!Number.isFinite(backgroundWorkTimeoutMs) || backgroundWorkTimeoutMs <= 0) {
     console.warn(
-      `[SupertabConnect] ignoring invalid backgroundWorkTimeoutMs: ${backgroundWorkTimeoutMs} (background work will be awaited to completion)`
+      `[SupertabConnect] ignoring invalid backgroundWorkTimeoutMs: ${backgroundWorkTimeoutMs} (falling back to the ${DEFAULT_BACKGROUND_WORK_TIMEOUT_MS}ms default)`
     );
-    backgroundWorkTimeoutMs = undefined;
+    budgetMs = DEFAULT_BACKGROUND_WORK_TIMEOUT_MS;
+  } else {
+    budgetMs = backgroundWorkTimeoutMs;
   }
 
   const cfRequest = event.Records[0].cf.request;
@@ -365,13 +393,13 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
   let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
   let controller: AbortController | undefined;
   const deadline = new Promise<void>((resolve) => {
-    if (backgroundWorkTimeoutMs === undefined) return; // never resolves — no budget
+    if (budgetMs === undefined) return; // never resolves — explicitly unbounded
     controller = new AbortController();
     deadlineTimer = setTimeout(() => {
       timedOut = true;
       controller!.abort();
       resolve();
-    }, backgroundWorkTimeoutMs);
+    }, budgetMs);
   });
   const ctx: ExecutionContext = {
     waitUntil: (promise) => { pending.push(promise); },
@@ -405,9 +433,9 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
       const elapsedMs = Date.now() - startedAt;
       console.log(
         timedOut
-          ? `[SupertabConnect] cloudfront background work: timed out after ${elapsedMs}ms (budget ${backgroundWorkTimeoutMs}ms) — in-flight calls aborted`
+          ? `[SupertabConnect] cloudfront background work: timed out after ${elapsedMs}ms (budget ${budgetMs}ms) — in-flight calls aborted`
           : `[SupertabConnect] cloudfront background work: ${pending.length} calls settled in ${elapsedMs}ms` +
-            (backgroundWorkTimeoutMs !== undefined ? ` (budget ${backgroundWorkTimeoutMs}ms)` : "")
+            (budgetMs !== undefined ? ` (budget ${budgetMs}ms)` : " (unbounded)")
       );
     }
   }

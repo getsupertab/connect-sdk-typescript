@@ -13,6 +13,8 @@ export interface StatusChallengeOpts {
  * An `aud` mismatch is the usual self-report failure (the merchant system's stored base_url
  * diverging from the origin the edge computes, typically on scheme or an explicit default
  * port), and jose names the offending claim but not the two values that disagree.
+ * @param token The challenge JWT to inspect.
+ * @returns The JSON-encoded `aud` claim, or `"<undecodable>"` when the token cannot be read.
  */
 async function describeAudience(token: string): Promise<string> {
   try {
@@ -23,6 +25,16 @@ async function describeAudience(token: string): Promise<string> {
   }
 }
 
+/**
+ * Verify the self-report status challenge JWT against the platform JWKS. Fail-closed: any
+ * verification error resolves to `false` rather than throwing.
+ * @param token The challenge JWT presented as `Authorization: Bearer ...`.
+ * @param opts Verification options.
+ * @param opts.expectedAudience Audience the challenge must carry — the origin the edge computes.
+ * @param opts.baseUrl Supertab Connect API base URL the platform JWKS is fetched from.
+ * @param opts.debug Enable debug logging of verification failures (default: false).
+ * @returns A promise resolving to whether the challenge verified.
+ */
 export async function verifyStatusChallenge(token: string, opts: StatusChallengeOpts): Promise<boolean> {
   const debug = opts.debug ?? false;
 

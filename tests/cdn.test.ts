@@ -6,6 +6,7 @@ import {
   handleFastlyRequest,
   handleCloudflareRequest,
   handleCloudfrontRequest,
+  DEFAULT_BACKGROUND_WORK_TIMEOUT_MS,
 } from "../src/cdn";
 import { HandlerAction, CloudFrontRequestEvent } from "../src/types";
 
@@ -237,14 +238,46 @@ describe("handleCloudfrontRequest", () => {
     }
   });
 
-  it("exposes an AbortSignal on ctx only when a budget is set", async () => {
+  it("exposes an AbortSignal on ctx unless the budget is explicitly Infinity", async () => {
     const withBudget = emittingHandler(Promise.resolve());
     await handleCloudfrontRequest(withBudget, event(), 1000);
     expect(withBudget.calls[0].ctx.signal).toBeInstanceOf(AbortSignal);
 
-    const withoutBudget = emittingHandler(Promise.resolve());
-    await handleCloudfrontRequest(withoutBudget, event());
-    expect(withoutBudget.calls[0].ctx.signal).toBeUndefined();
+    // Omitting the budget takes the default, which is still a budget.
+    const defaulted = emittingHandler(Promise.resolve());
+    await handleCloudfrontRequest(defaulted, event());
+    expect(defaulted.calls[0].ctx.signal).toBeInstanceOf(AbortSignal);
+
+    const unbounded = emittingHandler(Promise.resolve());
+    await handleCloudfrontRequest(unbounded, event(), Infinity);
+    expect(unbounded.calls[0].ctx.signal).toBeUndefined();
+  });
+
+  it("applies the default budget when none is given", async () => {
+    const handler = emittingHandler(Promise.resolve());
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await handleCloudfrontRequest(handler, event(), undefined, true);
+      expect(log.mock.calls[0][0]).toContain(`(budget ${DEFAULT_BACKGROUND_WORK_TIMEOUT_MS}ms)`);
+      expect(DEFAULT_BACKGROUND_WORK_TIMEOUT_MS).toBe(2000);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("awaits background work to completion when the budget is Infinity", async () => {
+    let settled = false;
+    const emit = new Promise<void>((resolve) =>
+      setTimeout(() => { settled = true; resolve(); }, 50)
+    );
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await handleCloudfrontRequest(emittingHandler(emit), event(), Infinity, true);
+      expect(settled).toBe(true);
+      expect(log.mock.calls[0][0]).toContain("(unbounded)");
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it("aborts in-flight background work at the deadline", async () => {
@@ -267,24 +300,31 @@ describe("handleCloudfrontRequest", () => {
     expect((result as any).status).toBe("200");
   });
 
-  it("ignores an invalid budget with a warning and awaits background work to completion", async () => {
+  it("falls back to the default budget on an invalid value, with a warning", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
-      for (const invalid of [0, -1, NaN]) {
+      for (const invalid of [0, -1, NaN, -Infinity]) {
         let settled = false;
         const emit = new Promise<void>((resolve) =>
           setTimeout(() => { settled = true; resolve(); }, 50)
         );
         const handler = emittingHandler(emit);
+        log.mockClear();
 
-        await handleCloudfrontRequest(handler, event(), invalid);
+        await handleCloudfrontRequest(handler, event(), invalid, true);
+        // 50ms of work under a 2s fallback budget: it still runs to completion, but the
+        // deadline is armed rather than absent.
         expect(settled).toBe(true);
-        expect(handler.calls[0].ctx.signal).toBeUndefined();
+        expect(handler.calls[0].ctx.signal).toBeInstanceOf(AbortSignal);
+        expect(log.mock.calls[0][0]).toContain(`(budget ${DEFAULT_BACKGROUND_WORK_TIMEOUT_MS}ms)`);
       }
-      expect(warn).toHaveBeenCalledTimes(3);
+      expect(warn).toHaveBeenCalledTimes(4);
       expect(warn.mock.calls[0][0]).toContain("invalid backgroundWorkTimeoutMs");
+      expect(warn.mock.calls[0][0]).toContain("2000ms default");
     } finally {
       warn.mockRestore();
+      log.mockRestore();
     }
   });
 });

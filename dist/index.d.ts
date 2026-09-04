@@ -148,8 +148,10 @@ interface CloudfrontHandlerOptions {
      * Absolute budget (ms), measured from handler entry, on the pre-response wait for
      * background work (the analytics emit and legacy event recording). At the deadline the
      * in-flight calls are ABORTED — not merely abandoned — so nothing keeps running into a
-     * frozen/reused Lambda environment. Default: no budget — everything is awaited to
-     * completion. Non-finite or non-positive values are ignored with a warning.
+     * frozen/reused Lambda environment. Defaults to `DEFAULT_BACKGROUND_WORK_TIMEOUT_MS`
+     * (2000ms), which leaves headroom under the viewer-request trigger's 5s Lambda ceiling.
+     * Pass `Infinity` to await background work to completion instead. Non-finite or
+     * non-positive values fall back to the default with a warning.
      */
     backgroundWorkTimeoutMs?: number;
 }
@@ -308,6 +310,13 @@ interface AnalyticsTransport {
     emit(event: AnalyticsEvent, ctx?: ExecutionContext): void;
 }
 
+/**
+ * Default budget (ms) for the pre-response background-work wait on CloudFront, applied when
+ * `backgroundWorkTimeoutMs` is not set. Lambda@Edge has no `waitUntil`, so background work
+ * has to be awaited before the response returns; 2s leaves headroom under the viewer-request
+ * trigger's 5s ceiling, past which CloudFront returns a 502 to the viewer.
+ */
+declare const DEFAULT_BACKGROUND_WORK_TIMEOUT_MS = 2000;
 interface HandleRequestContext {
     ctx?: ExecutionContext;
     sourceCdn?: "cloudflare" | "fastly" | "cloudfront";
@@ -334,6 +343,11 @@ declare function defaultBotDetector(request: Request): boolean;
  * SupertabConnect constructor). Returns a FastlyLogTransport when the merchant opted into
  * native bot-events logging (`logEndpoint` set) and identity can be stamped (`merchantSystemUrn`);
  * otherwise `undefined`, leaving the constructor to pick the HTTP relay / no-op.
+ * @param opts Fastly handler options relevant to transport choice.
+ * @param opts.analyticsEnabled Whether analytics emission is on at all.
+ * @param opts.logEndpoint Named Fastly logging endpoint to emit bot events to.
+ * @param opts.merchantSystemUrn Merchant system URN stamped onto emitted rows.
+ * @returns A FastlyLogTransport, or `undefined` to defer the choice to the constructor.
  */
 declare function selectFastlyAnalyticsTransport(opts: {
     analyticsEnabled?: boolean;
@@ -393,6 +407,7 @@ declare class SupertabConnect {
     static getAnalyticsBaseUrl(): string;
     /**
      * Pure token verification — verifies a license token without recording any events.
+     * @param options Verification inputs.
      * @param options.token The license token to verify
      * @param options.resourceUrl The URL of the resource being accessed
      * @param options.baseUrl Optional override for the Supertab Connect API base URL
@@ -408,6 +423,7 @@ declare class SupertabConnect {
     /**
      * Verify a license token and record an analytics event.
      * Uses the instance's apiKey for event recording.
+     * @param options Verification and event-recording inputs.
      * @param options.token The license token to verify
      * @param options.resourceUrl The URL of the resource being accessed
      * @param options.userAgent Optional user agent string for event recording
@@ -428,13 +444,33 @@ declare class SupertabConnect {
      * Handle an incoming request by extracting the license token, verifying it, and recording an analytics event.
      * When no token is present, bot detection and enforcement mode determine the response.
      * @param request The incoming HTTP request
-     * @param context CDN-supplied request context (sourceCdn, clientIp, ctx, requestId)
+     * @param context CDN-supplied request context. Omitted entirely when the SDK is invoked
+     *   directly rather than from a CDN handler.
+     * @param context.ctx Execution context whose `waitUntil` holds the runtime open for the
+     *   analytics emit and event recording.
+     * @param context.sourceCdn Which CDN handled the request; omitted when there was none.
+     * @param context.clientIp The viewer address as the CDN resolved it.
+     * @param context.clientIpSource Provenance of `clientIp`. Only whoever resolved the address
+     *   can assert this; omitting it leaves the column NULL rather than having the SDK guess.
+     * @param context.deferAnalytics Hold the ALLOW analytics event back until the caller reports
+     *   the response, so it can carry a real status code. Honoured only when `ctx` is present;
+     *   opting in means you MUST call the returned `reportResponse` from a `finally`.
+     * @param context.requestId Correlation id for the event; a UUID is generated when absent.
+     * @param context.requestCountry Viewer country from the CDN's geo lookup.
+     * @param context.requestAsn Viewer ASN from the CDN's geo lookup.
+     * @param context.tlsFingerprint Viewer JA3/JA4 TLS fingerprint, when the CDN exposes one.
+     * @param context.cdnSignals CDN plumbing not derivable from the portable `Request`.
      * @returns A promise that resolves with the handler result indicating ALLOW or BLOCK
      */
     handleRequest(request: Request, context?: HandleRequestContext): Promise<HandlerResult>;
     /**
      * The enforcement decision itself. Split out so the public entry point has one exit at
      * which to attach the response reporter — every emit() call below stays where it was.
+     * @param request The incoming HTTP request.
+     * @param context CDN-supplied request context, as passed to `handleRequest`.
+     * @param emit Reporter invoked with the decision once it is made, so the caller owns
+     *   whether the analytics event is sent eagerly or deferred until the response is known.
+     * @returns A promise that resolves with the handler result indicating ALLOW or BLOCK.
      */
     private decide;
     /**
@@ -450,6 +486,7 @@ declare class SupertabConnect {
      *   the resource URL and the customer's single Active Agreement and mints against that
      *   Agreement's pinned license snapshot. Entitlement is decided server-side, so a diverged
      *   license.xml that no longer grants the resource never vetoes the request client-side.
+     * @param options Token request inputs.
      * @param options.clientId OAuth client identifier.
      * @param options.clientSecret OAuth client secret for client_credentials flow.
      * @param options.resourceUrl Resource URL attempting to access with a License.
@@ -481,6 +518,8 @@ declare class SupertabConnect {
      *   so the Worker URL clients hit and the origin URL the Worker forwards to can differ.
      *   Production Cloudflare deployments using Workers Routes can omit this — `fetch(request)`
      *   already resolves to the origin via Cloudflare's edge.
+     * @returns The origin response for allowed traffic, or the SDK's block/challenge response.
+     *   Never throws — on an internal error the request is forwarded to the origin unchanged.
      */
     static cloudflareHandleRequests(request: Request, env: Env, ctx: ExecutionContext, options?: {
         botDetector?: BotDetector;
@@ -500,6 +539,15 @@ declare class SupertabConnect {
      * @param options.botDetector Custom bot detection function
      * @param options.enforcement Enforcement mode (default: OBSERVE)
      * @param options.analyticsEnabled Toggle relay analytics emission (default: false)
+     * @param options.merchantSystemUrn Merchant system URN stamped onto Fastly analytics rows.
+     *   Required when `enableRSL`, and for native Fastly logging alongside `logEndpoint`;
+     *   without it analytics falls back to the HTTP relay.
+     * @param options.logEndpoint Named Fastly logging endpoint to emit bot events to — must match
+     *   the endpoint configured on the Fastly service. Set it to enable native Fastly logging;
+     *   without it analytics falls back to the HTTP relay.
+     * @returns The origin response for allowed traffic, the license.xml response when `enableRSL`
+     *   and the path matches, or the SDK's block/challenge response. Never throws — on an internal
+     *   error the request is forwarded to `originBackend` unchanged.
      */
     static fastlyHandleRequests(event: FastlyFetchEvent, merchantApiKey: string, originBackend: string, options?: FastlyHandlerOptions): Promise<Response>;
     /**
@@ -510,14 +558,26 @@ declare class SupertabConnect {
      * Function stamped with `x-license-auth` (plus the status probe).
      * @param event The CloudFront request event (viewer-request or origin-request)
      * @param options Configuration including apiKey and optional botDetector/enforcement/debug fields.
+     * @param options.apiKey Merchant API key used to authenticate licensing and analytics calls.
+     * @param options.botDetector Override for the bot-detection predicate (default:
+     *   `defaultBotDetector`).
+     * @param options.enforcement Enforcement mode deciding whether unlicensed bots are blocked
+     *   or only signalled (default: the SDK's own default mode).
+     * @param options.debug Enable debug logging (default: false).
      * @param options.analyticsEnabled Toggle relay analytics emission (default: false). Lambda@Edge
-     *   has no `waitUntil`, so the emit is awaited to completion before the response returns —
+     *   has no `waitUntil`, so the emit is awaited before the response returns —
      *   see CloudfrontHandlerOptions.
+     * @param options.analyticsBaseUrl Base URL of the analytics ingest relay, for non-prod
+     *   deployments (default: the prod ingest service).
      * @param options.backgroundWorkTimeoutMs Absolute budget (ms) from handler entry for the
      *   background work (analytics emit + legacy event recording); in-flight calls are aborted
-     *   at the deadline. Default: no budget, fully awaited.
+     *   at the deadline. Default: `DEFAULT_BACKGROUND_WORK_TIMEOUT_MS` (2000ms); pass `Infinity`
+     *   to await to completion.
+     * @returns The pass-through request, or a CloudFront response when the request is blocked
+     *   or answered by the SDK (status probe, license XML). Never throws — on an internal error
+     *   the original request is returned unchanged.
      */
     static cloudfrontHandleRequests<TRequest extends Record<string, any>>(event: CloudFrontRequestEvent<TRequest>, options: CloudfrontHandlerOptions): Promise<CloudFrontRequestResult<TRequest>>;
 }
 
-export { type AnalyticsEvent, type AnalyticsTransport, type BotDetector, CDNStatusDescription, type CloudFrontRequestEvent, type CloudFrontRequestResult, type CloudfrontHandlerOptions, EnforcementMode, type Env, type ExecutionContext, type FastlyFetchEvent, type FastlyHandlerOptions, HandlerAction, type HandlerResult, LicenseTokenInvalidReason, type RSLVerificationResult, SupertabConnect, type SupertabConnectConfig, UsageType, defaultBotDetector, selectFastlyAnalyticsTransport };
+export { type AnalyticsEvent, type AnalyticsTransport, type BotDetector, CDNStatusDescription, type CloudFrontRequestEvent, type CloudFrontRequestResult, type CloudfrontHandlerOptions, DEFAULT_BACKGROUND_WORK_TIMEOUT_MS, EnforcementMode, type Env, type ExecutionContext, type FastlyFetchEvent, type FastlyHandlerOptions, HandlerAction, type HandlerResult, LicenseTokenInvalidReason, type RSLVerificationResult, SupertabConnect, type SupertabConnectConfig, UsageType, defaultBotDetector, selectFastlyAnalyticsTransport };

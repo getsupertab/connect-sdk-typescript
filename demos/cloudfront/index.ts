@@ -26,6 +26,6 @@ export async function handler(
     // (analytics emit, event recording) — in-flight calls are aborted at the deadline.
     // Keep it well under the Lambda's configured timeout so a hung ingest/backend never
     // turns into an error for the viewer.
-    backgroundWorkTimeoutMs: 3000,
+    backgroundWorkTimeoutMs: 2000,
   });
 }
