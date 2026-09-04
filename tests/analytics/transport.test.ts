@@ -93,6 +93,21 @@ describe("HttpAnalyticsTransport", () => {
     expect(waitUntil.mock.calls[0][0]).toBeInstanceOf(Promise);
   });
 
+  it("passes ctx.signal through to the fetch so a deadline can abort the emit", async () => {
+    fetchMock.mockResolvedValue(new Response("", { status: 202 }));
+    const controller = new AbortController();
+    const transport = new HttpAnalyticsTransport({
+      url: "https://relay.test/ingest/events",
+      apiKey: "t",
+    });
+
+    transport.emit(fixtureEvent, { waitUntil: () => {}, signal: controller.signal });
+    await flush();
+
+    const [, options] = fetchMock.mock.calls[0];
+    expect(options.signal).toBe(controller.signal);
+  });
+
   it("does not throw when fetch rejects", async () => {
     fetchMock.mockRejectedValue(new Error("network down"));
     const transport = new HttpAnalyticsTransport({
@@ -134,6 +149,89 @@ describe("HttpAnalyticsTransport", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("debug: logs status, accepted flag, and request_id on success", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ accepted: true }), { status: 200 })
+    );
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const transport = new HttpAnalyticsTransport({
+        url: "https://relay.test/ingest/events",
+        apiKey: "t",
+        debug: true,
+      });
+
+      transport.emit(fixtureEvent);
+      await flush();
+
+      expect(log).toHaveBeenCalledTimes(1);
+      const line = log.mock.calls[0][0] as string;
+      expect(line).toContain("status=200");
+      expect(line).toContain("accepted=true");
+      expect(line).toContain("request_id=req-1");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("debug: logs status and body detail on failure", async () => {
+    fetchMock.mockResolvedValue(new Response("nope", { status: 401 }));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const transport = new HttpAnalyticsTransport({
+        url: "https://relay.test/ingest/events",
+        apiKey: "t",
+        debug: true,
+      });
+
+      transport.emit(fixtureEvent);
+      await flush();
+
+      expect(error).toHaveBeenCalledTimes(1);
+      const line = error.mock.calls[0][0] as string;
+      expect(line).toContain("status=401");
+      expect(line).toContain("nope");
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("logs nothing when debug is off, on success or failure", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const transport = new HttpAnalyticsTransport({ url: "https://relay.test/ingest/events", apiKey: "t" });
+
+      fetchMock.mockResolvedValue(new Response(JSON.stringify({ accepted: true }), { status: 200 }));
+      transport.emit(fixtureEvent);
+      await flush();
+
+      fetchMock.mockResolvedValue(new Response("nope", { status: 401 }));
+      transport.emit(fixtureEvent);
+      await flush();
+
+      expect(log).not.toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+      error.mockRestore();
+    }
+  });
+
+  it("consumes the response body on success (releases the connection)", async () => {
+    const text = vi.fn().mockResolvedValue(JSON.stringify({ accepted: true }));
+    fetchMock.mockResolvedValue({ ok: true, status: 200, text });
+    const transport = new HttpAnalyticsTransport({
+      url: "https://relay.test/ingest/events",
+      apiKey: "t",
+    });
+
+    transport.emit(fixtureEvent);
+    await flush();
+
+    expect(text).toHaveBeenCalledTimes(1);
   });
 
   it("ANALYTICS_EVENTS_PATH targets the relay events route", () => {

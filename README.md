@@ -92,14 +92,23 @@ export async function handler(
 ): Promise<CloudFrontRequestResult> {
   return SupertabConnect.cloudfrontHandleRequests(event, {
     apiKey: "stc_live_your_api_key",
+    analyticsEnabled: true,
+    // Absolute budget (ms) from handler entry for the pre-response wait on background
+    // work (analytics emit, event recording); in-flight calls are aborted at the
+    // deadline. Omit to await everything to completion.
+    backgroundWorkTimeoutMs: 3000,
   });
 }
 ```
 
-> **Analytics is not supported on CloudFront.** The Lambda@Edge handler performs
-> verification and enforcement only — it does not emit analytics events. Relay
-> analytics is available on Cloudflare and Fastly, which emit one event per
-> request (Fastly is the primary edge target for analytics).
+Attach the Lambda at the **origin-request** trigger, behind the viewer-request
+CloudFront Function that stamps `x-license-auth`/`x-original-request-url` for
+licensed requests — the handler only processes requests carrying that header
+(plus the status probe), so analytics covers licensed/identified-bot traffic.
+
+Lambda@Edge has no `waitUntil`, so analytics emission and event recording are
+**awaited before the response returns**, bounded by `backgroundWorkTimeoutMs`
+when set. Keep the budget well under the Lambda's configured timeout.
 
 ### Manual Setup
 
@@ -154,9 +163,11 @@ const supertabConnect = new SupertabConnect({
 });
 ```
 
-The same flag is available on the Cloudflare and Fastly convenience handlers
-(`cloudflareHandleRequests`, `fastlyHandleRequests`) via their `options` object.
-Analytics is not supported on CloudFront.
+The same flag is available on the Cloudflare, Fastly, and CloudFront convenience
+handlers (`cloudflareHandleRequests`, `fastlyHandleRequests`,
+`cloudfrontHandleRequests`) via their `options` object. On CloudFront the emit is
+awaited before the response returns (see the CloudFront section above), and only
+licensed traffic reaches the handler.
 
 **No extra credentials are required.** Analytics requests are authenticated with
 your configured merchant `apiKey` using `Authorization: Bearer <apiKey>`. The
@@ -179,12 +190,14 @@ spoof-analysis in the warehouse:
   suspicious-pattern flag (the raw query string itself is never stored);
 - HTTP Message Signature headers, when present.
 
-Analytics events emit `schema_version: 2`. Classification stays query-time in
+Analytics events emit `schema_version: 3`. Classification stays query-time in
 the warehouse — the SDK emits raw signals only and does not label traffic.
 
-**Fail-open:** analytics emission is fire-and-forget and can never block, slow,
-or alter request handling. If emission fails, the error is swallowed and the
-request proceeds exactly as it would with analytics disabled. Analytics is also
+**Fail-open:** analytics emission can never alter request handling. On Cloudflare
+and Fastly it is fire-and-forget (held by the platform's `waitUntil`); on
+CloudFront it is awaited pre-response, bounded by `backgroundWorkTimeoutMs`. If
+emission fails, the error is swallowed and the request proceeds exactly as it
+would with analytics disabled. Analytics is also
 fully isolated from billing — it is sent only to the relay at `/ingest/events`.
 
 > The relay endpoint is `POST /ingest/events` on the dedicated ingest service

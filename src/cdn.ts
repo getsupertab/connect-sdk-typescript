@@ -53,6 +53,36 @@ export function extractCloudflareCdnSignals(cf: Record<string, any>): CdnRequest
   };
 }
 
+/**
+ * Map CloudFront's `cloudfront-viewer-*` request headers onto the Capture-v2 signal
+ * contract. Fail-open: pure header reads, never throws. Fields CloudFront does not expose
+ * as viewer headers stay null. The `cloudfront-viewer-tls` header packs version and cipher
+ * as `<version>:<cipher>:<handshake>` (e.g. `TLSv1.3:TLS_AES_128_GCM_SHA256:fullHandshake`).
+ */
+export function extractCloudfrontCdnSignals(headers: Headers): CdnRequestSignals {
+  const tls = headers.get("cloudfront-viewer-tls");
+  let tlsVersion: string | null = null;
+  let tlsCipher: string | null = null;
+  if (tls) {
+    const [version, cipher] = tls.split(":");
+    tlsVersion = version || null;
+    tlsCipher = cipher || null;
+  }
+  return {
+    accept_encoding: headers.get("accept-encoding"),
+    http_protocol: headers.get("cloudfront-viewer-http-version"),
+    tls_version: tlsVersion,
+    tls_cipher: tlsCipher,
+    tls_client_hello_length: null,
+    tls_client_extensions_sha1: null,
+    as_organization: headers.get("cloudfront-viewer-as-name"),
+    client_tcp_rtt: null,
+    cdn_verified_bot_category: null,
+    request_priority: null,
+    tls_fingerprint_ja4: headers.get("cloudfront-viewer-ja4-fingerprint"),
+  };
+}
+
 export interface HandleRequestContext {
   ctx?: ExecutionContext;
   // Omitted when the request did not pass through a CDN (e.g. invoked directly via the SDK).
@@ -282,14 +312,27 @@ function statusDescription(status: number): CDNStatusDescription {
 }
 
 /**
- * Handles an Origin request in CloudFront. Expects X-Original-Request-URL header to contain the original viewer request URL.
+ * Handles a CloudFront request event (viewer-request or origin-request). At origin-request
+ * the X-Original-Request-URL header carries the original viewer URL (the host header is the
+ * origin's); at viewer-request the header is absent and the host header IS the viewer host,
+ * so the fallback reconstruction below is already correct.
  * @param handler
  * @param event
  */
 export async function handleCloudfrontRequest<TRequest extends Record<string, any>>(
   handler: RequestHandler,
-  event: CloudFrontRequestEvent<TRequest>
+  event: CloudFrontRequestEvent<TRequest>,
+  backgroundWorkTimeoutMs?: number,
+  debug: boolean = false
 ): Promise<CloudFrontRequestResult<TRequest>> {
+  if (backgroundWorkTimeoutMs !== undefined &&
+      (!Number.isFinite(backgroundWorkTimeoutMs) || backgroundWorkTimeoutMs <= 0)) {
+    console.warn(
+      `[SupertabConnect] ignoring invalid backgroundWorkTimeoutMs: ${backgroundWorkTimeoutMs} (background work will be awaited to completion)`
+    );
+    backgroundWorkTimeoutMs = undefined;
+  }
+
   const cfRequest = event.Records[0].cf.request;
   const config = event.Records[0].cf.config;
 
@@ -308,8 +351,38 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
     headers: headers,
   });
 
+  // Lambda@Edge has no `waitUntil` — collect the analytics emit and legacy /events promises
+  // here and await them before returning, since a detached fetch is frozen when the handler
+  // resolves and would be dropped.
+  //
+  // backgroundWorkTimeoutMs is an absolute budget measured from HERE (so time spent in
+  // verification/JWKS counts against it, not just the drain). At the deadline the signal
+  // aborts the in-flight background fetches — merely abandoning them would leave work that
+  // can resume inside a later invocation of a reused environment.
+  const pending: Promise<void>[] = [];
+  const startedAt = Date.now();
+  let timedOut = false;
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  let controller: AbortController | undefined;
+  const deadline = new Promise<void>((resolve) => {
+    if (backgroundWorkTimeoutMs === undefined) return; // never resolves — no budget
+    controller = new AbortController();
+    deadlineTimer = setTimeout(() => {
+      timedOut = true;
+      controller!.abort();
+      resolve();
+    }, backgroundWorkTimeoutMs);
+  });
+  const ctx: ExecutionContext = {
+    waitUntil: (promise) => { pending.push(promise); },
+    signal: controller?.signal,
+  };
+
+  // These headers only exist at origin-request (CloudFront adds them after the viewer-request
+  // event, per origin request policy) — at viewer-request they degrade to null.
   const asnHeader = headers.get("cloudfront-viewer-asn");
   const result = await handler.handleRequest(webRequest, {
+    ctx,
     sourceCdn: "cloudfront",
     requestId: config?.requestId ?? undefined,
     // Lambda@Edge exposes the viewer address as an event field rather than a header, but
@@ -319,7 +392,26 @@ export async function handleCloudfrontRequest<TRequest extends Record<string, an
     requestCountry: headers.get("cloudfront-viewer-country") ?? null,
     requestAsn: parseAsn(asnHeader),
     tlsFingerprint: headers.get("cloudfront-viewer-ja3-fingerprint") ?? null,
+    cdnSignals: extractCloudfrontCdnSignals(headers),
   });
+
+  // Drain the pending calls before returning. The promises swallow their own errors, so
+  // allSettled never rejects. By default the drain is unbounded (correctness over latency);
+  // with a budget, the deadline both aborts the in-flight calls (real cancellation) and
+  // wins the race (hard return-time backstop for anything that ignores the signal).
+  if (pending.length) {
+    await Promise.race([Promise.allSettled(pending), deadline]);
+    if (debug) {
+      const elapsedMs = Date.now() - startedAt;
+      console.log(
+        timedOut
+          ? `[SupertabConnect] cloudfront background work: timed out after ${elapsedMs}ms (budget ${backgroundWorkTimeoutMs}ms) — in-flight calls aborted`
+          : `[SupertabConnect] cloudfront background work: ${pending.length} calls settled in ${elapsedMs}ms` +
+            (backgroundWorkTimeoutMs !== undefined ? ` (budget ${backgroundWorkTimeoutMs}ms)` : "")
+      );
+    }
+  }
+  clearTimeout(deadlineTimer);
 
   if (result.action === HandlerAction.BLOCK || result.action === HandlerAction.RESPOND) {
     const responseHeaders: CloudFrontHeaders = {};

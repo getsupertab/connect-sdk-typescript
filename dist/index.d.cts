@@ -5,6 +5,13 @@ declare enum EnforcementMode {
 }
 interface ExecutionContext {
     waitUntil(promise: Promise<void>): void;
+    /**
+     * Cancellation signal for background work (analytics emit, legacy event recording).
+     * Set by runtimes that must bound that work with a hard deadline (CloudFront
+     * Lambda@Edge); absent on platforms whose native context keeps work alive
+     * (Cloudflare, Fastly).
+     */
+    signal?: AbortSignal;
 }
 type BotDetector = (request: Request, ctx?: ExecutionContext) => boolean;
 interface SupertabConnectConfig {
@@ -123,6 +130,29 @@ interface CloudfrontHandlerOptions {
     apiKey: string;
     botDetector?: BotDetector;
     enforcement?: EnforcementMode;
+    /** Enable debug logging (default: false). */
+    debug?: boolean;
+    /**
+     * Toggle relay analytics emission (default: false). Lambda@Edge has no `waitUntil`
+     * keep-alive, so the emit is awaited before the response returns rather than
+     * fired-and-forgotten (bounded by `backgroundWorkTimeoutMs`). Only requests carrying
+     * an `x-license-auth` header reach this path, so the cost lands on
+     * licensed/identified-bot traffic, not human traffic.
+     */
+    analyticsEnabled?: boolean;
+    /**
+     * Base URL of the analytics ingest relay, for non-prod deployments (e.g.
+     * `https://ingest-connect.sbx.supertab.co`). Defaults to the prod ingest service.
+     */
+    analyticsBaseUrl?: string;
+    /**
+     * Absolute budget (ms), measured from handler entry, on the pre-response wait for
+     * background work (the analytics emit and legacy event recording). At the deadline the
+     * in-flight calls are ABORTED — not merely abandoned — so nothing keeps running into a
+     * frozen/reused Lambda environment. Default: no budget — everything is awaited to
+     * completion. Non-finite or non-positive values are ignored with a warning.
+     */
+    backgroundWorkTimeoutMs?: number;
 }
 type RSLVerificationResult = {
     valid: boolean;
@@ -330,10 +360,13 @@ declare class SupertabConnect {
     private static _instance;
     /**
      * Create a new SupertabConnect instance (singleton).
-     * Returns the existing instance if one exists with the same config.
+     * If an instance with the same apiKey already exists it is returned UNCHANGED —
+     * options are applied only on first construction (instances are never mutated after
+     * creation, so in-flight requests always see a consistent configuration). Use
+     * `resetInstance()` (or `reset: true`) to build one with different options.
      * @param config SDK configuration including apiKey
      * @param reset Pass true to replace an existing instance with different config
-     * @throws If an instance with different config already exists and reset is false
+     * @throws If an instance with a different apiKey already exists and reset is false
      */
     constructor(config: SupertabConnectConfig, reset?: boolean);
     private static buildAnalyticsTransport;
@@ -474,8 +507,13 @@ declare class SupertabConnect {
      * Handle incoming requests for AWS CloudFront Lambda@Edge.
      * Use as the handler for an origin-request LambdaEdge function.
      * @param event The CloudFront origin-request event
-     * @param options Configuration including apiKey and optional botDetector/enforcement fields.
-     *   Relay analytics is not supported on CloudFront — only Cloudflare and Fastly emit events.
+     * @param options Configuration including apiKey and optional botDetector/enforcement/debug fields.
+     * @param options.analyticsEnabled Toggle relay analytics emission (default: false). Lambda@Edge
+     *   has no `waitUntil`, so the emit is awaited to completion before the response returns —
+     *   see CloudfrontHandlerOptions.
+     * @param options.backgroundWorkTimeoutMs Absolute budget (ms) from handler entry for the
+     *   background work (analytics emit + legacy event recording); in-flight calls are aborted
+     *   at the deadline. Default: no budget, fully awaited.
      */
     static cloudfrontHandleRequests<TRequest extends Record<string, any>>(event: CloudFrontRequestEvent<TRequest>, options: CloudfrontHandlerOptions): Promise<CloudFrontRequestResult<TRequest>>;
 }

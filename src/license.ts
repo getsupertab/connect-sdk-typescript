@@ -385,6 +385,7 @@ export async function verifyAndRecordEvent(
     },
     licenseId: verification.licenseId,
     debug: params.debug,
+    signal: params.ctx?.signal,
   });
   if (params.ctx?.waitUntil) {
     params.ctx.waitUntil(eventPromise);

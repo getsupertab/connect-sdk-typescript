@@ -101,10 +101,13 @@ export class SupertabConnect {
 
   /**
    * Create a new SupertabConnect instance (singleton).
-   * Returns the existing instance if one exists with the same config.
+   * If an instance with the same apiKey already exists it is returned UNCHANGED —
+   * options are applied only on first construction (instances are never mutated after
+   * creation, so in-flight requests always see a consistent configuration). Use
+   * `resetInstance()` (or `reset: true`) to build one with different options.
    * @param config SDK configuration including apiKey
    * @param reset Pass true to replace an existing instance with different config
-   * @throws If an instance with different config already exists and reset is false
+   * @throws If an instance with a different apiKey already exists and reset is false
    */
   public constructor(config: SupertabConnectConfig, reset: boolean = false) {
     // Warn before any early-return so the message fires regardless of singleton state.
@@ -124,7 +127,10 @@ export class SupertabConnect {
         );
       }
 
-      // If an instance already exists and reset is not requested, just return the existing instance
+      // Same apiKey: return the existing instance unchanged. Deployed handlers pass the
+      // same static options on every invocation, so the first construction is
+      // authoritative; mutating the shared instance here would let one caller's options
+      // leak into another caller's in-flight request.
       return SupertabConnect._instance;
     }
     if (reset && SupertabConnect._instance) {
@@ -657,8 +663,13 @@ export class SupertabConnect {
    * Handle incoming requests for AWS CloudFront Lambda@Edge.
    * Use as the handler for an origin-request LambdaEdge function.
    * @param event The CloudFront origin-request event
-   * @param options Configuration including apiKey and optional botDetector/enforcement fields.
-   *   Relay analytics is not supported on CloudFront — only Cloudflare and Fastly emit events.
+   * @param options Configuration including apiKey and optional botDetector/enforcement/debug fields.
+   * @param options.analyticsEnabled Toggle relay analytics emission (default: false). Lambda@Edge
+   *   has no `waitUntil`, so the emit is awaited to completion before the response returns —
+   *   see CloudfrontHandlerOptions.
+   * @param options.backgroundWorkTimeoutMs Absolute budget (ms) from handler entry for the
+   *   background work (analytics emit + legacy event recording); in-flight calls are aborted
+   *   at the deadline. Default: no budget, fully awaited.
    */
   static async cloudfrontHandleRequests<TRequest extends Record<string, any>>(
     event: CloudFrontRequestEvent<TRequest>,
@@ -675,14 +686,23 @@ export class SupertabConnect {
         // No reasons to waste compute resources on the rest of the checks.
         return request;
       }
-      // Relay analytics is intentionally not wired for CloudFront yet (Cloudflare and Fastly only);
-      // the instance is built without analytics so it uses the no-op transport.
+      // Analytics uses the HTTP relay (no injected transport). Lambda@Edge has no waitUntil,
+      // so handleCloudfrontRequest awaits the background work before returning (bounded —
+      // and aborted at the deadline — only if backgroundWorkTimeoutMs is set).
       const instance = new SupertabConnect({
         apiKey: options.apiKey,
         botDetector: options.botDetector,
         enforcement: options.enforcement,
+        analyticsEnabled: options.analyticsEnabled,
+        analyticsBaseUrl: options.analyticsBaseUrl,
+        debug: options.debug,
       });
-      return await handleCloudfrontRequest(instance, event);
+      if (options.debug) {
+        console.log(
+          `[SupertabConnect] analytics: ${instance.analyticsEnabled ? "enabled (http)" : "disabled (noop)"}`
+        );
+      }
+      return await handleCloudfrontRequest(instance, event, options.backgroundWorkTimeoutMs, options.debug);
     } catch (err) {
       console.error("[SupertabConnect] cloudfrontHandleRequests failed:", err);
       return request;

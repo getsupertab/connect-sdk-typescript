@@ -1,11 +1,26 @@
 import type { JWTHeaderParameters } from "jose";
 import { fetchPlatformJwks, clearJwksCache, JwksKeyNotFoundError } from "./jwks";
-import { loadJwtVerify } from "./jose";
+import { loadJwtVerify, loadDecodeJwt } from "./jose";
 
 export interface StatusChallengeOpts {
   expectedAudience: string;
   baseUrl: string;
   debug?: boolean;
+}
+
+/**
+ * Best-effort read of the challenge's `aud` claim, for diagnostics only — no signature check.
+ * An `aud` mismatch is the usual self-report failure (the merchant system's stored base_url
+ * diverging from the origin the edge computes, typically on scheme or an explicit default
+ * port), and jose names the offending claim but not the two values that disagree.
+ */
+async function describeAudience(token: string): Promise<string> {
+  try {
+    const { decodeJwt } = await loadDecodeJwt();
+    return JSON.stringify(decodeJwt(token).aud ?? null);
+  } catch {
+    return "<undecodable>";
+  }
 }
 
 export async function verifyStatusChallenge(token: string, opts: StatusChallengeOpts): Promise<boolean> {
@@ -46,13 +61,19 @@ export async function verifyStatusChallenge(token: string, opts: StatusChallenge
         return await verify();
       } catch (retryError) {
         if (debug) {
-          console.error("Status challenge verification failed after JWKS refresh:", retryError);
+          console.error(
+            `Status challenge verification failed after JWKS refresh (expected aud=${opts.expectedAudience}, token aud=${await describeAudience(token)}):`,
+            retryError
+          );
         }
         return false;
       }
     }
     if (debug) {
-      console.error("Status challenge verification failed:", error);
+      console.error(
+        `Status challenge verification failed (expected aud=${opts.expectedAudience}, token aud=${await describeAudience(token)}):`,
+        error
+      );
     }
     return false;
   }

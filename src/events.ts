@@ -8,6 +8,7 @@ export async function recordEvent({
   properties,
   licenseId,
   debug = false,
+  signal,
 }: {
   apiKey: string;
   baseUrl: string;
@@ -15,6 +16,8 @@ export async function recordEvent({
   properties: Record<string, string>;
   licenseId?: string;
   debug?: boolean;
+  /** Aborts the request when the caller's background-work deadline expires. */
+  signal?: AbortSignal;
 }): Promise<void> {
   const payload: EventPayload = {
     event_name: eventName,
@@ -31,6 +34,7 @@ export async function recordEvent({
         "User-Agent": SDK_USER_AGENT,
       },
       body: JSON.stringify(payload),
+      signal,
     };
     if (globalThis.fastly) {
       options = { ...options, backend: FASTLY_BACKEND };

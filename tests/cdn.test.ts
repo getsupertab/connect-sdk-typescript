@@ -2,11 +2,12 @@ import { describe, it, expect, vi } from "vitest";
 import {
   parseAsn,
   extractCloudflareCdnSignals,
+  extractCloudfrontCdnSignals,
   handleFastlyRequest,
   handleCloudflareRequest,
   handleCloudfrontRequest,
 } from "../src/cdn";
-import { HandlerAction } from "../src/types";
+import { HandlerAction, CloudFrontRequestEvent } from "../src/types";
 
 // Records the context handed to handleRequest and short-circuits with a RESPOND
 // so no origin fetch happens during the test.
@@ -64,6 +65,227 @@ describe("extractCloudflareCdnSignals", () => {
   it("reads JA4 from botManagement when present (Enterprise)", () => {
     const signals = extractCloudflareCdnSignals({ botManagement: { ja4: "t13d1516h2_..." } });
     expect(signals.tls_fingerprint_ja4).toBe("t13d1516h2_...");
+  });
+});
+
+describe("extractCloudfrontCdnSignals", () => {
+  const h = (init: Record<string, string>) => new Headers(init);
+
+  it("maps viewer headers, splitting cloudfront-viewer-tls into version and cipher", () => {
+    const signals = extractCloudfrontCdnSignals(
+      h({
+        "accept-encoding": "gzip, br",
+        "cloudfront-viewer-http-version": "2.0",
+        "cloudfront-viewer-tls": "TLSv1.3:TLS_AES_128_GCM_SHA256:fullHandshake",
+        "cloudfront-viewer-as-name": "AMAZON-02",
+        "cloudfront-viewer-ja4-fingerprint": "t13d1516h2_...",
+      })
+    );
+
+    expect(signals.accept_encoding).toBe("gzip, br");
+    expect(signals.http_protocol).toBe("2.0");
+    expect(signals.tls_version).toBe("TLSv1.3");
+    expect(signals.tls_cipher).toBe("TLS_AES_128_GCM_SHA256");
+    expect(signals.as_organization).toBe("AMAZON-02");
+    expect(signals.tls_fingerprint_ja4).toBe("t13d1516h2_...");
+  });
+
+  it("nulls signals CloudFront does not expose, and TLS parts when the header is absent", () => {
+    const signals = extractCloudfrontCdnSignals(h({}));
+    expect(signals.tls_version).toBeNull();
+    expect(signals.tls_cipher).toBeNull();
+    expect(signals.accept_encoding).toBeNull();
+    expect(signals.tls_client_hello_length).toBeNull();
+    expect(signals.client_tcp_rtt).toBeNull();
+    expect(signals.cdn_verified_bot_category).toBeNull();
+    expect(signals.request_priority).toBeNull();
+    expect(signals.tls_fingerprint_ja4).toBeNull();
+  });
+});
+
+describe("handleCloudfrontRequest", () => {
+  const event = (): CloudFrontRequestEvent => ({
+    Records: [
+      {
+        cf: {
+          config: { requestId: "req-1" },
+          request: {
+            uri: "/article",
+            method: "GET",
+            querystring: "",
+            clientIp: "203.0.113.9",
+            headers: {
+              host: [{ key: "Host", value: "example.com" }],
+              "cloudfront-viewer-tls": [{ value: "TLSv1.3:TLS_AES_128_GCM_SHA256:fullHandshake" }],
+            },
+          },
+        },
+      },
+    ],
+  });
+
+  it("passes cloudfront source and cdnSignals into handleRequest", async () => {
+    const calls: any[] = [];
+    const handler = {
+      handleRequest: async (_req: Request, context?: any) => {
+        calls.push(context);
+        return { action: HandlerAction.RESPOND, status: 200, body: "ok", headers: {} };
+      },
+    };
+
+    await handleCloudfrontRequest(handler, event());
+
+    expect(calls[0].sourceCdn).toBe("cloudfront");
+    expect(calls[0].cdnSignals.tls_version).toBe("TLSv1.3");
+    expect(calls[0].cdnSignals.tls_cipher).toBe("TLS_AES_128_GCM_SHA256");
+  });
+
+  // Handler that emits an analytics event via ctx.waitUntil, like the real transport path.
+  function emittingHandler(emitPromise: Promise<void>) {
+    const calls: any[] = [];
+    return {
+      calls,
+      handleRequest: async (_req: Request, context?: any) => {
+        calls.push(context);
+        context?.ctx?.waitUntil(emitPromise);
+        return { action: HandlerAction.RESPOND, status: 200, body: "ok", headers: {} };
+      },
+    };
+  }
+
+  it("hands handleRequest a ctx whose waitUntil collects pending work", async () => {
+    const handler = emittingHandler(Promise.resolve());
+    await handleCloudfrontRequest(handler, event());
+    expect(typeof handler.calls[0].ctx.waitUntil).toBe("function");
+  });
+
+  it("awaits the emit before returning when it settles quickly", async () => {
+    let settled = false;
+    const emit = Promise.resolve().then(() => { settled = true; });
+    const handler = emittingHandler(emit);
+
+    await handleCloudfrontRequest(handler, event());
+    expect(settled).toBe(true);
+  });
+
+  it("awaits a slow emit fully when no timeout is given", async () => {
+    let settled = false;
+    const emit = new Promise<void>((resolve) =>
+      setTimeout(() => { settled = true; resolve(); }, 150)
+    );
+    const handler = emittingHandler(emit);
+
+    await handleCloudfrontRequest(handler, event());
+    expect(settled).toBe(true);
+  });
+
+  it("drains all pending promises (analytics emit + legacy event recording)", async () => {
+    let first = false;
+    let second = false;
+    const handler = {
+      handleRequest: async (_req: Request, context?: any) => {
+        context?.ctx?.waitUntil(new Promise<void>((r) => setTimeout(() => { first = true; r(); }, 30)));
+        context?.ctx?.waitUntil(new Promise<void>((r) => setTimeout(() => { second = true; r(); }, 60)));
+        return { action: HandlerAction.RESPOND, status: 200, body: "ok", headers: {} };
+      },
+    };
+
+    await handleCloudfrontRequest(handler, event());
+    expect(first).toBe(true);
+    expect(second).toBe(true);
+  });
+
+  it("stays silent about the drain unless debug is on", async () => {
+    const handler = emittingHandler(Promise.resolve());
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await handleCloudfrontRequest(handler, event());
+      expect(log).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("logs settled background work with the budget when debug is on", async () => {
+    const handler = emittingHandler(Promise.resolve());
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await handleCloudfrontRequest(handler, event(), 3000, true);
+      expect(log).toHaveBeenCalledTimes(1);
+      const line = log.mock.calls[0][0] as string;
+      expect(line).toContain("background work: 1 calls settled");
+      expect(line).toContain("(budget 3000ms)");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("returns at the deadline even if a signal-ignoring emit never settles, and logs timed_out", async () => {
+    const handler = emittingHandler(new Promise<void>(() => {})); // never resolves, ignores the signal
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const result = await handleCloudfrontRequest(handler, event(), 20, true);
+
+      // The RESPOND decision still produces a CloudFront response result.
+      expect((result as any).status).toBe("200");
+      const line = log.mock.calls[0][0] as string;
+      expect(line).toContain("timed out");
+      expect(line).toContain("in-flight calls aborted");
+      expect(line).not.toContain("settled");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("exposes an AbortSignal on ctx only when a budget is set", async () => {
+    const withBudget = emittingHandler(Promise.resolve());
+    await handleCloudfrontRequest(withBudget, event(), 1000);
+    expect(withBudget.calls[0].ctx.signal).toBeInstanceOf(AbortSignal);
+
+    const withoutBudget = emittingHandler(Promise.resolve());
+    await handleCloudfrontRequest(withoutBudget, event());
+    expect(withoutBudget.calls[0].ctx.signal).toBeUndefined();
+  });
+
+  it("aborts in-flight background work at the deadline", async () => {
+    let aborted = false;
+    const handler = {
+      handleRequest: async (_req: Request, context?: any) => {
+        const signal: AbortSignal = context.ctx.signal;
+        // Settles only on abort, like a fetch honoring the signal.
+        context.ctx.waitUntil(
+          new Promise<void>((resolve) => {
+            signal.addEventListener("abort", () => { aborted = true; resolve(); });
+          })
+        );
+        return { action: HandlerAction.RESPOND, status: 200, body: "ok", headers: {} };
+      },
+    };
+
+    const result = await handleCloudfrontRequest(handler, event(), 20);
+    expect(aborted).toBe(true);
+    expect((result as any).status).toBe("200");
+  });
+
+  it("ignores an invalid budget with a warning and awaits background work to completion", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      for (const invalid of [0, -1, NaN]) {
+        let settled = false;
+        const emit = new Promise<void>((resolve) =>
+          setTimeout(() => { settled = true; resolve(); }, 50)
+        );
+        const handler = emittingHandler(emit);
+
+        await handleCloudfrontRequest(handler, event(), invalid);
+        expect(settled).toBe(true);
+        expect(handler.calls[0].ctx.signal).toBeUndefined();
+      }
+      expect(warn).toHaveBeenCalledTimes(3);
+      expect(warn.mock.calls[0][0]).toContain("invalid backgroundWorkTimeoutMs");
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 
