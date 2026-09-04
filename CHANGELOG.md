@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] — 2026-09-04
+
+### Added
+
+- **CloudFront analytics on Lambda@Edge.** Lambda@Edge has no `waitUntil`, so a detached emit
+  was frozen the moment the handler resolved and never reached the relay. The wrapper now
+  collects the analytics emit and the legacy event recording and drains them before returning.
+  CloudFront also reaches parity with Cloudflare and Fastly on the CDN signal contract — viewer
+  headers are mapped onto the event, and fields CloudFront does not expose stay null rather than
+  being guessed.
+- **Viewer-request deployment.** At origin-request a cache hit never invokes the Lambda, so
+  analytics could only ever cover cache misses and licensed requests, which bust the cache on
+  their own. Attached at the viewer-request trigger the Lambda fires pre-cache on all traffic;
+  the wrapper auto-detects the trigger from `config.eventType` and drops the `x-license-auth`
+  gate there, since no CloudFront Function can sit ahead of it to set that header and the
+  `Authorization` header and URL fallback already suffice. Origin-request deployments are
+  unchanged.
+- **`backgroundWorkTimeoutMs`** bounds everything the handler holds the response for. It is an
+  absolute deadline measured from handler entry — verification time counts against it — and is
+  propagated as an `AbortSignal` into the analytics and event-recording fetches, so work
+  abandoned at the deadline cannot resume inside a reused Lambda environment. The race remains
+  as a return-time backstop for work that ignores the signal.
+
+### Changed
+
+- **Background work is now capped at 2s by default** (`DEFAULT_BACKGROUND_WORK_TIMEOUT_MS`),
+  where omitting the option previously meant an unbounded pre-response wait. At viewer-request
+  that was a viewer-facing hazard: the trigger fires on every request and Lambda@Edge kills the
+  invocation at 5s, past which CloudFront serves a 502 — so a hung ingest turned an analytics
+  hiccup into an error page, which is what the fail-open design elsewhere exists to avoid. Pass
+  `Infinity` for the old unbounded behavior; an invalid value falls back to the default rather
+  than to the riskiest mode.
+- **Emit results report the relay's verdict, not just its status.** The relay answers 200 even
+  for events it discards, so a status check alone reported those as delivered. The response body
+  is now consumed — which also releases the connection — and the accepted verdict, request id
+  and duration are surfaced. Emit logging stays behind the debug flag.
+
+### Fixed
+
+- **A failed status challenge names both audiences.** `jose` reports which claim was rejected but
+  not the values that disagree, so an `aud` mismatch — the usual self-report failure, caused by a
+  stored `base_url` diverging from the origin the edge computes — could not be told apart from
+  other rejections without decoding the token by hand.
+
 ## [2.3.0] — 2026-08-18
 
 ### Added
