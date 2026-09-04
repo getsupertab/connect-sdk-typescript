@@ -361,6 +361,21 @@ export type VerifyAndRecordEventParams = {
   requestHeaders?: Record<string, string>;
 };
 
+/**
+ * Verify a license token and record the resulting event, valid or not.
+ * @param params Verification and event-recording inputs.
+ * @param params.token The license token to verify.
+ * @param params.url The resource URL being accessed; also the audience the token must match.
+ * @param params.userAgent Client user agent, stamped onto the event.
+ * @param params.supertabBaseUrl Supertab Connect API base URL for verification and recording.
+ * @param params.debug Enable debug logging.
+ * @param params.apiKey Merchant API key used to record the event.
+ * @param params.ctx Execution context, when the runtime has one. Its `waitUntil` defers the
+ *   event recording off the request path; its `signal` aborts it at a background-work
+ *   deadline. Without it the recording is awaited inline.
+ * @param params.requestHeaders Request headers to fold into the event properties.
+ * @returns A promise resolving to the verification result (validity, reason, license id).
+ */
 export async function verifyAndRecordEvent(
   params: VerifyAndRecordEventParams
 ): Promise<LicenseTokenVerificationResult> {

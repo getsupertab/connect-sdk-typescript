@@ -95,20 +95,32 @@ export async function handler(
     analyticsEnabled: true,
     // Absolute budget (ms) from handler entry for the pre-response wait on background
     // work (analytics emit, event recording); in-flight calls are aborted at the
-    // deadline. Omit to await everything to completion.
-    backgroundWorkTimeoutMs: 3000,
+    // deadline. Defaults to 2000ms — omit it unless you need a different budget, or
+    // pass Infinity to await everything to completion.
+    backgroundWorkTimeoutMs: 2000,
   });
 }
 ```
 
-Attach the Lambda at the **origin-request** trigger, behind the viewer-request
-CloudFront Function that stamps `x-license-auth`/`x-original-request-url` for
-licensed requests — the handler only processes requests carrying that header
-(plus the status probe), so analytics covers licensed/identified-bot traffic.
+The handler supports both Lambda@Edge triggers and auto-detects which one it is
+running at from the event:
+
+- **Viewer-request** — runs pre-cache on **every** request, so analytics covers
+  all traffic. No CloudFront Function is needed (or allowed — AWS forbids a
+  CloudFront Function and a Lambda on the same viewer-request event); the SDK
+  reads `Authorization: License ...` directly. Note that the `cloudfront-viewer-*`
+  signal headers do not exist at this stage, so those analytics fields are null.
+- **Origin-request** — the classic setup: a viewer-request CloudFront Function
+  stamps `x-license-auth`/`x-original-request-url` for licensed requests, and the
+  SDK only processes requests carrying that header (cache hits never invoke the
+  Lambda, so analytics only covers licensed traffic and cache misses).
 
 Lambda@Edge has no `waitUntil`, so analytics emission and event recording are
 **awaited before the response returns**, bounded by `backgroundWorkTimeoutMs`
-when set. Keep the budget well under the Lambda's configured timeout.
+(default **2000ms**). Keep the budget well under the Lambda's configured timeout —
+the default leaves headroom under the viewer-request trigger's 5s ceiling, past
+which CloudFront returns a 502 to the viewer. Pass `Infinity` to opt out and await
+background work to completion.
 
 ### Manual Setup
 
@@ -166,8 +178,9 @@ const supertabConnect = new SupertabConnect({
 The same flag is available on the Cloudflare, Fastly, and CloudFront convenience
 handlers (`cloudflareHandleRequests`, `fastlyHandleRequests`,
 `cloudfrontHandleRequests`) via their `options` object. On CloudFront the emit is
-awaited before the response returns (see the CloudFront section above), and only
-licensed traffic reaches the handler.
+awaited before the response returns (see the CloudFront section above); coverage
+depends on the trigger — every request at viewer-request, licensed traffic and
+cache misses at origin-request.
 
 **No extra credentials are required.** Analytics requests are authenticated with
 your configured merchant `apiKey` using `Authorization: Bearer <apiKey>`. The
@@ -195,7 +208,8 @@ the warehouse — the SDK emits raw signals only and does not label traffic.
 
 **Fail-open:** analytics emission can never alter request handling. On Cloudflare
 and Fastly it is fire-and-forget (held by the platform's `waitUntil`); on
-CloudFront it is awaited pre-response, bounded by `backgroundWorkTimeoutMs`. If
+CloudFront it is awaited pre-response, bounded by `backgroundWorkTimeoutMs`
+(2000ms by default). If
 emission fails, the error is swallowed and the request proceeds exactly as it
 would with analytics disabled. Analytics is also
 fully isolated from billing — it is sent only to the relay at `/ingest/events`.

@@ -174,9 +174,8 @@ export interface CloudfrontHandlerOptions {
   /**
    * Toggle relay analytics emission (default: false). Lambda@Edge has no `waitUntil`
    * keep-alive, so the emit is awaited before the response returns rather than
-   * fired-and-forgotten (bounded by `backgroundWorkTimeoutMs`). Only requests carrying
-   * an `x-license-auth` header reach this path, so the cost lands on
-   * licensed/identified-bot traffic, not human traffic.
+   * fired-and-forgotten (bounded by `backgroundWorkTimeoutMs`). At origin-request only
+   * licensed/identified-bot traffic pays that cost; at viewer-request every request does.
    */
   analyticsEnabled?: boolean;
   /**
@@ -188,8 +187,10 @@ export interface CloudfrontHandlerOptions {
    * Absolute budget (ms), measured from handler entry, on the pre-response wait for
    * background work (the analytics emit and legacy event recording). At the deadline the
    * in-flight calls are ABORTED — not merely abandoned — so nothing keeps running into a
-   * frozen/reused Lambda environment. Default: no budget — everything is awaited to
-   * completion. Non-finite or non-positive values are ignored with a warning.
+   * frozen/reused Lambda environment. Defaults to `DEFAULT_BACKGROUND_WORK_TIMEOUT_MS`
+   * (2000ms), which leaves headroom under the viewer-request trigger's 5s Lambda ceiling.
+   * Pass `Infinity` to await background work to completion instead. Non-finite or
+   * non-positive values fall back to the default with a warning.
    */
   backgroundWorkTimeoutMs?: number;
 }

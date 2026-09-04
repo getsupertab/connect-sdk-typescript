@@ -10,17 +10,35 @@ export class NoopAnalyticsTransport implements AnalyticsTransport {
   }
 }
 
+/**
+ * Emits analytics events to the HTTP ingest relay. Fire-and-forget by default; on runtimes
+ * without `waitUntil` the caller is responsible for awaiting the emit before teardown.
+ */
 export class HttpAnalyticsTransport implements AnalyticsTransport {
   private readonly url: string;
   private readonly apiKey: string;
   private readonly debug: boolean;
 
+  /**
+   * @param opts Transport configuration.
+   * @param opts.url Full ingest endpoint URL to POST events to.
+   * @param opts.apiKey Merchant API key sent as the bearer token.
+   * @param opts.debug Log each emit's status, verdict and duration (default: false).
+   */
   constructor(opts: { url: string; apiKey: string; debug?: boolean }) {
     this.url = opts.url;
     this.apiKey = opts.apiKey;
     this.debug = opts.debug ?? false;
   }
 
+  /**
+   * Emit one analytics event. Never throws and never rejects — a failed emit is swallowed
+   * (logged only under `debug`) so analytics can never alter request handling.
+   * @param event The event to send.
+   * @param ctx Execution context, when the runtime has one. Its `waitUntil` holds the
+   *   runtime open for the emit, and its `signal` aborts the emit at a background-work
+   *   deadline (CloudFront). Without it the emit is left detached.
+   */
   emit(event: AnalyticsEvent, ctx?: ExecutionContext): void {
     const body = JSON.stringify(event);
     let options: FetchOptions = {
@@ -145,6 +163,11 @@ export class FastlyLogTransport implements AnalyticsTransport {
  * SupertabConnect constructor). Returns a FastlyLogTransport when the merchant opted into
  * native bot-events logging (`logEndpoint` set) and identity can be stamped (`merchantSystemUrn`);
  * otherwise `undefined`, leaving the constructor to pick the HTTP relay / no-op.
+ * @param opts Fastly handler options relevant to transport choice.
+ * @param opts.analyticsEnabled Whether analytics emission is on at all.
+ * @param opts.logEndpoint Named Fastly logging endpoint to emit bot events to.
+ * @param opts.merchantSystemUrn Merchant system URN stamped onto emitted rows.
+ * @returns A FastlyLogTransport, or `undefined` to defer the choice to the constructor.
  */
 export function selectFastlyAnalyticsTransport(opts: {
   analyticsEnabled?: boolean;

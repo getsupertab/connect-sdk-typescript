@@ -1,6 +1,19 @@
 import { EventPayload, FASTLY_BACKEND, FetchOptions } from "./types";
 import { SDK_USER_AGENT } from "./version";
 
+/**
+ * Record a bot/license event on the Supertab Connect backend. Fail-open: never throws — a
+ * failed call is swallowed (logged only under `debug`) so it cannot alter request handling.
+ * @param params Event inputs.
+ * @param params.apiKey Merchant API key sent as the bearer token.
+ * @param params.baseUrl Supertab Connect API base URL; the event POSTs to `{baseUrl}/events`.
+ * @param params.eventName Event name (e.g. `license_used`, or the verification failure reason).
+ * @param params.properties Flat string properties attached to the event.
+ * @param params.licenseId License id the event belongs to, when one was resolved.
+ * @param params.debug Enable debug logging of failures (default: false).
+ * @param params.signal Aborts the request when the caller's background-work deadline expires.
+ * @returns A promise that resolves once the call settles, successfully or not.
+ */
 export async function recordEvent({
   apiKey,
   baseUrl,
