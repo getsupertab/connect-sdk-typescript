@@ -46,6 +46,29 @@ jobs:
             exit 1
           fi
 
+      - name: Determine npm dist-tag
+        # npm 11 refuses to publish without --tag when the version is lower
+        # than the current latest, and would otherwise tag a prerelease as
+        # latest. Stable releases go to "latest"; prereleases go to their
+        # identifier (v2.5.0-beta.1 -> "beta"), or "next" if it is not a
+        # usable tag name.
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "${VERSION}" == *-* ]]; then
+            PRERELEASE="${VERSION#*-}"
+            PRERELEASE="${PRERELEASE%%+*}"
+            IDENTIFIER="${PRERELEASE%%.*}"
+            if [[ "${IDENTIFIER}" =~ ^[A-Za-z][0-9A-Za-z-]*$ ]]; then
+              DIST_TAG="${IDENTIFIER}"
+            else
+              DIST_TAG="next"
+            fi
+          else
+            DIST_TAG="latest"
+          fi
+          echo "Publishing ${VERSION} with dist-tag '${DIST_TAG}'"
+          echo "DIST_TAG=${DIST_TAG}" >> "${GITHUB_ENV}"
+
       - name: Install dependencies
         run: npm ci
 
@@ -53,4 +76,4 @@ jobs:
         run: npm run build
 
       - name: Publish package to npm (OIDC trusted publishing)
-        run: npm publish --access public
+        run: npm publish --access public --tag "${DIST_TAG}"
