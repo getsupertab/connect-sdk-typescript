@@ -9,6 +9,7 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch: # dry run only: verifies the OIDC exchange without publishing
 
 jobs:
   publish:
@@ -31,6 +32,7 @@ jobs:
           package-manager-cache: false
 
       - name: Validate release tag format
+        if: github.event_name == 'push'
         run: |
           if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
             echo "Tag '${GITHUB_REF_NAME}' is not valid semver (expected vX.Y.Z with optional prerelease/build metadata)"
@@ -38,6 +40,7 @@ jobs:
           fi
 
       - name: Verify tag version matches package.json
+        if: github.event_name == 'push'
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           PACKAGE_VERSION="$(node -p "require('./package.json').version")"
@@ -54,7 +57,7 @@ jobs:
         # is not a usable tag name: it must start with a letter and must not
         # be a semver range (the registry rejects tags such as v1, x, vx).
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="$(node -p "require('./package.json').version")"
           CORE="${VERSION%%+*}"  # drop build metadata before looking for a prerelease
           if [[ "${CORE}" == *-* ]]; then
             IDENTIFIER="${CORE#*-}"
@@ -77,4 +80,20 @@ jobs:
         run: npm run build
 
       - name: Publish package to npm (OIDC trusted publishing)
+        if: github.event_name == 'push'
         run: npm publish --access public --tag "${DIST_TAG}"
+
+      - name: Dry run publish (verify OIDC trusted publishing)
+        if: github.event_name == 'workflow_dispatch'
+        # npm runs the OIDC token exchange before honouring --dry-run, so this
+        # exercises the trusted publisher config without uploading anything.
+        # The exchange never fails the command on its own (npm falls back to a
+        # "requires you to be logged in (dry-run)" warning), so assert on the
+        # verbose log instead.
+        run: |
+          npm publish --access public --tag "${DIST_TAG}" --dry-run --loglevel verbose 2>&1 | tee publish.log
+          if ! grep -q "Successfully retrieved and set token" publish.log; then
+            echo "OIDC token exchange with npm failed. Check the trusted publisher config on npmjs.com."
+            grep -i "oidc" publish.log || true
+            exit 1
+          fi
