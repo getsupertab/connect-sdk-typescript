@@ -1,5 +1,10 @@
 name: Publish npm package
 
+# Publishes via npm trusted publishing (OIDC). No npm token is used: npm
+# verifies the GitHub Actions OIDC token against the trusted publisher
+# configured on npmjs.com (repo getsupertab/connect-sdk-typescript, workflow
+# publish-npm.yml, environment npm-release) and generates provenance itself.
+
 on:
   push:
     tags:
@@ -11,31 +16,24 @@ jobs:
     environment: npm-release
     permissions:
       contents: read
-      id-token: write
+      id-token: write # required for OIDC trusted publishing
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          # Trusted publishing needs npm >= 11.5.1; Node 24 bundles npm 11.x.
+          node-version: 24
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
 
       - name: Validate release tag format
         run: |
           if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
             echo "Tag '${GITHUB_REF_NAME}' is not valid semver (expected vX.Y.Z with optional prerelease/build metadata)"
-            exit 1
-          fi
-
-      - name: Ensure npm auth token is set
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "${NPM_TOKEN}" ]; then
-            echo "Missing npm auth token. Set the secret NPM_TOKEN in npm-release environment."
             exit 1
           fi
 
@@ -48,13 +46,35 @@ jobs:
             exit 1
           fi
 
+      - name: Determine npm dist-tag
+        # npm 11 refuses to publish without --tag when the version is lower
+        # than the current latest, and would otherwise tag a prerelease as
+        # latest. Stable releases go to "latest"; prereleases go to their
+        # identifier (v2.5.0-beta.1 -> "beta"), or "next" if the identifier
+        # is not a usable tag name: it must start with a letter and must not
+        # be a semver range (the registry rejects tags such as v1, x, vx).
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          CORE="${VERSION%%+*}"  # drop build metadata before looking for a prerelease
+          if [[ "${CORE}" == *-* ]]; then
+            IDENTIFIER="${CORE#*-}"
+            IDENTIFIER="${IDENTIFIER%%.*}"
+            if [[ "${IDENTIFIER}" =~ ^[A-Za-z][0-9A-Za-z-]*$ && ! "${IDENTIFIER}" =~ ^v*([0-9]+|[xX])$ ]]; then
+              DIST_TAG="${IDENTIFIER}"
+            else
+              DIST_TAG="next"
+            fi
+          else
+            DIST_TAG="latest"
+          fi
+          echo "Publishing ${VERSION} with dist-tag '${DIST_TAG}'"
+          echo "DIST_TAG=${DIST_TAG}" >> "${GITHUB_ENV}"
+
       - name: Install dependencies
         run: npm ci
 
       - name: Build package
         run: npm run build
 
-      - name: Publish package to npm
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --provenance --access public
+      - name: Publish package to npm (OIDC trusted publishing)
+        run: npm publish --access public --tag "${DIST_TAG}"
