@@ -50,15 +50,16 @@ jobs:
         # npm 11 refuses to publish without --tag when the version is lower
         # than the current latest, and would otherwise tag a prerelease as
         # latest. Stable releases go to "latest"; prereleases go to their
-        # identifier (v2.5.0-beta.1 -> "beta"), or "next" if it is not a
-        # usable tag name.
+        # identifier (v2.5.0-beta.1 -> "beta"), or "next" if the identifier
+        # is not a usable tag name: it must start with a letter and must not
+        # be a semver range (the registry rejects tags such as v1, x, vx).
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          if [[ "${VERSION}" == *-* ]]; then
-            PRERELEASE="${VERSION#*-}"
-            PRERELEASE="${PRERELEASE%%+*}"
-            IDENTIFIER="${PRERELEASE%%.*}"
-            if [[ "${IDENTIFIER}" =~ ^[A-Za-z][0-9A-Za-z-]*$ ]]; then
+          CORE="${VERSION%%+*}"  # drop build metadata before looking for a prerelease
+          if [[ "${CORE}" == *-* ]]; then
+            IDENTIFIER="${CORE#*-}"
+            IDENTIFIER="${IDENTIFIER%%.*}"
+            if [[ "${IDENTIFIER}" =~ ^[A-Za-z][0-9A-Za-z-]*$ && ! "${IDENTIFIER}" =~ ^v*([0-9]+|[xX])$ ]]; then
               DIST_TAG="${IDENTIFIER}"
             else
               DIST_TAG="next"
