@@ -1,4 +1,5 @@
-import { EventPayload, FASTLY_BACKEND, FetchOptions } from "./types";
+import { EventPayload, FetchOptions } from "./types";
+import { withFastlyBackend } from "./fastly-backend";
 import { SDK_USER_AGENT } from "./version";
 
 /**
@@ -39,7 +40,7 @@ export async function recordEvent({
   };
 
   try {
-    let options: FetchOptions = {
+    const options: FetchOptions = withFastlyBackend({
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -48,10 +49,7 @@ export async function recordEvent({
       },
       body: JSON.stringify(payload),
       signal,
-    };
-    if (globalThis.fastly) {
-      options = { ...options, backend: FASTLY_BACKEND };
-    }
+    });
     const response = await fetch(`${baseUrl}/events`, options);
 
     if (!response.ok && debug) {

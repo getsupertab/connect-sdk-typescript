@@ -243,6 +243,13 @@ interface FastlyHandlerBaseOptions {
    * to the HTTP relay.
    */
   logEndpoint?: string;
+  /**
+   * Fastly backend the SDK's own Connect-API calls (license.xml, JWKS, events, analytics)
+   * are routed through. Defaults to `stc-backend`; set it when the service names that
+   * backend differently. Distinct from the positional `originBackend`, which carries
+   * viewer traffic to the merchant origin.
+   */
+  connectBackend?: string;
 }
 
 interface FastlyHandlerWithRSL extends FastlyHandlerBaseOptions {

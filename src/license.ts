@@ -10,9 +10,9 @@ import {
   HandlerResult,
   LicenseTokenInvalidReason,
   LicenseTokenVerificationResult,
-  FASTLY_BACKEND,
   FetchOptions,
 } from "./types";
+import { connectBackend, withFastlyBackend } from "./fastly-backend";
 import { fetchPlatformJwks, clearJwksCache, JwksKeyNotFoundError } from "./jwks";
 import { recordEvent } from "./events";
 import { SDK_USER_AGENT } from "./version";
@@ -318,15 +318,8 @@ export function buildBlockResult({
   };
 }
 
-/** The backend the SDK's own Connect-API calls route through, or undefined when not on Fastly. */
-function connectBackend(): string | undefined {
-  return globalThis.fastly ? FASTLY_BACKEND : undefined;
-}
-
 function buildFetchOptions(): FetchOptions {
-  const options: FetchOptions = { method: "GET", headers: { "User-Agent": SDK_USER_AGENT } };
-  const backend = connectBackend();
-  return backend ? { ...options, backend } : options;
+  return withFastlyBackend({ method: "GET", headers: { "User-Agent": SDK_USER_AGENT } });
 }
 
 export async function hostRSLicenseXML(

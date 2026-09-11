@@ -1,4 +1,5 @@
-import { ExecutionContext, FASTLY_BACKEND, FetchOptions } from "../types";
+import { ExecutionContext, FetchOptions } from "../types";
+import { withFastlyBackend } from "../fastly-backend";
 import { SDK_USER_AGENT } from "../version";
 import { AnalyticsEvent, AnalyticsTransport } from "./types";
 
@@ -41,7 +42,7 @@ export class HttpAnalyticsTransport implements AnalyticsTransport {
    */
   emit(event: AnalyticsEvent, ctx?: ExecutionContext): void {
     const body = JSON.stringify(event);
-    let options: FetchOptions = {
+    const options: FetchOptions = withFastlyBackend({
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
@@ -52,10 +53,7 @@ export class HttpAnalyticsTransport implements AnalyticsTransport {
       // Runtimes with a background-work deadline (CloudFront) abort the emit through this;
       // undefined elsewhere.
       signal: ctx?.signal,
-    };
-    if (globalThis.fastly) {
-      options = { ...options, backend: FASTLY_BACKEND };
-    }
+    });
 
     const requestId = event.request_id;
     const promise = (async () => {
