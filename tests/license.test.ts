@@ -24,11 +24,15 @@ describe("hostRSLicenseXML", () => {
   it("names the Fastly backend in the 502 when the fetch throws on Fastly", async () => {
     // An unknown backend name is the likeliest cause, and Fastly throws rather than responding.
     vi.stubGlobal("fastly", {});
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("backend does not exist")));
+    const fetchMock = vi.fn().mockRejectedValue(new Error("backend does not exist"));
+    vi.stubGlobal("fetch", fetchMock);
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const response = await hostRSLicenseXML(BASE_URL, URN);
 
+    // Asserted on the fetch itself, not just the error text: dropping the backend option
+    // would still produce the same message while breaking the actual call.
+    expect(fetchMock.mock.calls[0][1].backend).toBe("stc-backend");
     expect(response.status).toBe(502);
     await expect(response.text()).resolves.toContain('Fastly backend "stc-backend"');
     expect(errorLog).toHaveBeenCalledWith(
