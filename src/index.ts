@@ -51,6 +51,7 @@ import {
 } from "./analytics/transport";
 import { buildAnalyticsEvent } from "./analytics/buildAnalyticsEvent";
 import { resolveFastlyClientSignals } from "./fastly-signals";
+import { getConnectBackend, setConnectBackend } from "./fastly-backend";
 
 export {
   EnforcementMode,
@@ -190,6 +191,24 @@ export class SupertabConnect {
    */
   public static getBaseUrl(): string {
     return SupertabConnect.baseUrl;
+  }
+
+  /**
+   * Override the Fastly backend carrying the SDK's own Connect-API calls — license.xml,
+   * JWKS, events, analytics (default: `stc-backend`). `fastlyHandleRequests` sets this from
+   * its `connectBackend` option; call it directly when using `verify` outside that handler.
+   * Does not cover `obtainLicenseToken`, whose token request names no backend at all.
+   * No effect off Fastly. Pass undefined to restore the default.
+   */
+  public static setConnectBackend(name: string | undefined): void {
+    setConnectBackend(name);
+  }
+
+  /**
+   * Get the Fastly backend name used for the SDK's own Connect-API calls.
+   */
+  public static getConnectBackend(): string {
+    return getConnectBackend();
   }
 
   /**
@@ -640,6 +659,9 @@ export class SupertabConnect {
    * @param options.logEndpoint Named Fastly logging endpoint to emit bot events to — must match
    *   the endpoint configured on the Fastly service. Set it to enable native Fastly logging;
    *   without it analytics falls back to the HTTP relay.
+   * @param options.connectBackend Backend carrying the SDK's own Connect-API calls — license.xml,
+   *   JWKS, events, analytics (default: `stc-backend`). Set it when the service names that backend
+   *   differently. Distinct from `originBackend`, which carries viewer traffic to your origin.
    * @returns The origin response for allowed traffic, the license.xml response when `enableRSL`
    *   and the path matches, or the SDK's block/challenge response. Never throws — on an internal
    *   error the request is forwarded to `originBackend` unchanged.
@@ -653,6 +675,9 @@ export class SupertabConnect {
     const request = event.request;
     try {
       const { botDetector, enforcement, analyticsEnabled, merchantSystemUrn, logEndpoint } = options;
+
+      // Before the instance is built, so the first Connect-API call already routes correctly.
+      setConnectBackend(options.connectBackend);
 
       // Fastly owns its transport choice here, rather than the shared constructor sniffing
       // globalThis.fastly: native bot-events logging when opted in, else the constructor's relay.

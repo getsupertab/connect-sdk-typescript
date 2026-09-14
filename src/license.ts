@@ -10,9 +10,9 @@ import {
   HandlerResult,
   LicenseTokenInvalidReason,
   LicenseTokenVerificationResult,
-  FASTLY_BACKEND,
   FetchOptions,
 } from "./types";
+import { connectBackend, withFastlyBackend } from "./fastly-backend";
 import { fetchPlatformJwks, clearJwksCache, JwksKeyNotFoundError } from "./jwks";
 import { recordEvent } from "./events";
 import { SDK_USER_AGENT } from "./version";
@@ -318,15 +318,8 @@ export function buildBlockResult({
   };
 }
 
-/** The backend the SDK's own Connect-API calls route through, or undefined when not on Fastly. */
-function connectBackend(): string | undefined {
-  return globalThis.fastly ? FASTLY_BACKEND : undefined;
-}
-
 function buildFetchOptions(): FetchOptions {
-  const options: FetchOptions = { method: "GET", headers: { "User-Agent": SDK_USER_AGENT } };
-  const backend = connectBackend();
-  return backend ? { ...options, backend } : options;
+  return withFastlyBackend({ method: "GET", headers: { "User-Agent": SDK_USER_AGENT } });
 }
 
 export async function hostRSLicenseXML(
@@ -336,7 +329,7 @@ export async function hostRSLicenseXML(
   const licenseUrl = `${supertabBaseUrl}/merchants/systems/${merchantSystemUrn}/license.xml`;
   // On Fastly an unknown backend name throws at fetch rather than returning a response, and it
   // is the likeliest thing to be misconfigured — so the name goes in the body, not just the log.
-  // Empty off Fastly, leaving the Cloudflare and CloudFront wording unchanged.
+  // Off Fastly the clause is empty: the body still names the failure, just not a backend.
   const backend = connectBackend();
   const via = backend ? ` via Fastly backend "${backend}"` : "";
 
