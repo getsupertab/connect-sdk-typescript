@@ -70,13 +70,25 @@ addEventListener("fetch", (event) =>
     const merchantApiKey = await configDict.get("MERCHANT_API_KEY");
 
     return SupertabConnect.fastlyHandleRequests(
-      event.request,
+      event,
       merchantApiKey,
       "origin-backend"
     );
   })())
 );
 ```
+
+A Fastly Compute service needs **two** backends, and they are not the same thing:
+
+- **Your content origin** — named by you, passed as the third argument (`"origin-backend"`
+  above). Carries viewer traffic.
+- **The Supertab Connect API** — `api-connect.supertab.co:443`, TLS enabled. Carries the
+  SDK's own calls: `license.xml`, JWKS, events and analytics. Name it `stc-backend` and it
+  works with no further configuration; name it anything else and pass that name as
+  `connectBackend` (see the `fastlyHandleRequests` reference below).
+
+If the Connect backend is missing or misnamed, those calls fail and `/license.xml` answers
+`502` naming the backend it tried.
 
 ### AWS CloudFront Lambda@Edge
 
@@ -232,7 +244,7 @@ your Fastly service) together with `merchantSystemUrn` to `fastlyHandleRequests`
 
 ```js
 return SupertabConnect.fastlyHandleRequests(
-  event.request,
+  event,
   merchantApiKey,
   "origin-backend",
   {
@@ -347,15 +359,21 @@ Convenience handler for Cloudflare Workers. Reads config from Worker environment
 - `env` (`Env`): Worker environment bindings
 - `ctx` (`ExecutionContext`): Worker execution context
 
-### `fastlyHandleRequests(request, merchantApiKey, originBackend, options?): Promise<Response>` (static)
+### `fastlyHandleRequests(event, merchantApiKey, originBackend, options?): Promise<Response>` (static)
 
 Convenience handler for Fastly Compute.
 
 **Parameters:**
 
-- `request` (`Request`): The incoming Fastly request
+- `event` (`FastlyFetchEvent`): The Fastly `FetchEvent` — pass it whole, not `event.request`.
+  The SDK reads `event.client` for viewer IP/geo/JA3 and `event.waitUntil` to keep
+  post-response analytics alive.
 - `merchantApiKey` (`string`): Your Supertab merchant API key
 - `originBackend` (`string`): The Fastly backend name to forward allowed requests to
+- `options.connectBackend` (`string`, optional): Backend carrying the SDK's own Connect-API
+  calls — `license.xml`, JWKS, events, analytics (default: `stc-backend`). Set it when your
+  service names that backend differently. Distinct from `originBackend`, which carries viewer
+  traffic to your origin.
 - `options.enableRSL` (`boolean`, optional): Serve `license.xml` at `/license.xml` for RSL-compliant clients (default: `false`)
 - `options.merchantSystemUrn` (`string`): Required when `enableRSL` is `true` (to fetch `license.xml`) and when using native Fastly logging (`logEndpoint`, to stamp analytics rows with merchant identity). Enforced at the type level via a discriminated union (`FastlyHandlerOptions`).
 - `options.logEndpoint` (`string`, optional): Name of a Fastly real-time logging endpoint. When set (with `merchantSystemUrn`), analytics events are delivered through native Fastly logging (→ S3 → Tinybird) instead of the HTTP relay. Omit it to use the relay.
