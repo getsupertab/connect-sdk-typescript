@@ -194,9 +194,10 @@ export class SupertabConnect {
   }
 
   /**
-   * Override the Fastly backend carrying the SDK's own Connect-API calls (default:
-   * `stc-backend`). `fastlyHandleRequests` sets this from its `connectBackend` option;
-   * call it directly when using `verify` or `obtainLicenseToken` outside that handler.
+   * Override the Fastly backend carrying the SDK's own Connect-API calls — license.xml,
+   * JWKS, events, analytics (default: `stc-backend`). `fastlyHandleRequests` sets this from
+   * its `connectBackend` option; call it directly when using `verify` outside that handler.
+   * Does not cover `obtainLicenseToken`, whose token request names no backend at all.
    * No effect off Fastly. Pass undefined to restore the default.
    */
   public static setConnectBackend(name: string | undefined): void {
