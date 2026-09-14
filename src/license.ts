@@ -329,7 +329,7 @@ export async function hostRSLicenseXML(
   const licenseUrl = `${supertabBaseUrl}/merchants/systems/${merchantSystemUrn}/license.xml`;
   // On Fastly an unknown backend name throws at fetch rather than returning a response, and it
   // is the likeliest thing to be misconfigured — so the name goes in the body, not just the log.
-  // Empty off Fastly, leaving the Cloudflare and CloudFront wording unchanged.
+  // Off Fastly the clause is empty: the body still names the failure, just not a backend.
   const backend = connectBackend();
   const via = backend ? ` via Fastly backend "${backend}"` : "";
 
