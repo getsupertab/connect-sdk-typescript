@@ -318,23 +318,34 @@ export function buildBlockResult({
   };
 }
 
+/** The backend the SDK's own Connect-API calls route through, or undefined when not on Fastly. */
+function connectBackend(): string | undefined {
+  return globalThis.fastly ? FASTLY_BACKEND : undefined;
+}
+
 function buildFetchOptions(): FetchOptions {
-  let options: FetchOptions = { method: "GET", headers: { "User-Agent": SDK_USER_AGENT } };
-  if (globalThis.fastly) {
-    options = { ...options, backend: FASTLY_BACKEND };
-  }
-  return options;
+  const options: FetchOptions = { method: "GET", headers: { "User-Agent": SDK_USER_AGENT } };
+  const backend = connectBackend();
+  return backend ? { ...options, backend } : options;
 }
 
 export async function hostRSLicenseXML(
   supertabBaseUrl: string,
   merchantSystemUrn: string
 ): Promise<Response> {
+  const licenseUrl = `${supertabBaseUrl}/merchants/systems/${merchantSystemUrn}/license.xml`;
+  // On Fastly an unknown backend name throws at fetch rather than returning a response, and it
+  // is the likeliest thing to be misconfigured — so the name goes in the body, not just the log.
+  // Empty off Fastly, leaving the Cloudflare and CloudFront wording unchanged.
+  const backend = connectBackend();
+  const via = backend ? ` via Fastly backend "${backend}"` : "";
+
   try {
-    const licenseUrl = `${supertabBaseUrl}/merchants/systems/${merchantSystemUrn}/license.xml`;
     const response = await fetch(licenseUrl, buildFetchOptions());
 
     if (!response.ok) {
+      // Unlogged, a 401 from a bad API key is indistinguishable from a missing license.
+      console.error(`[SupertabConnect] hostRSLicenseXML: ${licenseUrl} returned ${response.status}`);
       return new Response("License not found", { status: 404 });
     }
 
@@ -345,8 +356,8 @@ export async function hostRSLicenseXML(
       headers: new Headers({ "Content-Type": "application/rsl+xml" }),
     });
   } catch (err) {
-    console.error("[SupertabConnect] hostRSLicenseXML failed:", err);
-    return new Response("Bad Gateway", { status: 502 });
+    console.error(`[SupertabConnect] hostRSLicenseXML: could not fetch ${licenseUrl}${via}:`, err);
+    return new Response(`Bad Gateway: Supertab Connect API unreachable${via}.`, { status: 502 });
   }
 }
 
