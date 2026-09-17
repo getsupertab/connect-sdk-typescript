@@ -662,6 +662,11 @@ export class SupertabConnect {
    * @param options.connectBackend Backend carrying the SDK's own Connect-API calls — license.xml,
    *   JWKS, events, analytics (default: `stc-backend`). Set it when the service names that backend
    *   differently. Distinct from `originBackend`, which carries viewer traffic to your origin.
+   * @param options.originalAuthorityHeader Header carrying the viewer's authority on a VCL →
+   *   Compute chain, where `override_host` has already replaced `Host` with the Compute service's
+   *   own domain (default: `x-supertab-original-authority`). Takes precedence over the full-URL
+   *   `x-original-request-url`. The VCL service must `unset` it on ingress — the SDK trusts it
+   *   unconditionally, so a client-supplied copy would pick its own license audience.
    * @returns The origin response for allowed traffic, the license.xml response when `enableRSL`
    *   and the path matches, or the SDK's block/challenge response. Never throws — on an internal
    *   error the request is forwarded to `originBackend` unchanged.
@@ -711,7 +716,8 @@ export class SupertabConnect {
         originBackend,
         rslOptions,
         clientSignals,
-        ctx
+        ctx,
+        { originalAuthorityHeader: options.originalAuthorityHeader }
       );
     } catch (err) {
       console.error("[SupertabConnect] fastlyHandleRequests failed:", err);

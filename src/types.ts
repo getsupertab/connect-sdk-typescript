@@ -250,6 +250,17 @@ interface FastlyHandlerBaseOptions {
    * viewer traffic to the merchant origin.
    */
   connectBackend?: string;
+  /**
+   * Header carrying the viewer's authority (`host[:port]`) on a VCL → Compute chain, where
+   * the Compute backend's `override_host` has already replaced `Host` with the Compute
+   * service's `*.edgecompute.app` domain. Its value is grafted onto the path and query the
+   * Compute service observed, and takes precedence over the full-URL `x-original-request-url`.
+   * Defaults to `x-supertab-original-authority`; set it only when your VCL service names the
+   * header differently — keep the `x-supertab-` prefix so it stays out of the analytics
+   * `header_names` signal. The VCL service must `unset` the header on ingress: the SDK trusts
+   * it unconditionally, so a client-supplied copy would pick its own license audience.
+   */
+  originalAuthorityHeader?: string;
 }
 
 interface FastlyHandlerWithRSL extends FastlyHandlerBaseOptions {

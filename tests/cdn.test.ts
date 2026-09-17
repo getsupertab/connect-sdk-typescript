@@ -637,3 +637,135 @@ describe("handleFastlyRequest client signals", () => {
     expect(handler.calls[0].clientIpSource).toBe("absent");
   });
 });
+
+// Records the Request the handler was given, which is what the URL reconstruction produces.
+// Kept separate from recordingHandler() so the existing context assertions stay untouched.
+function urlRecordingHandler(action = HandlerAction.RESPOND) {
+  const requests: Request[] = [];
+  return {
+    requests,
+    handleRequest: async (request: Request) => {
+      requests.push(request);
+      return action === HandlerAction.ALLOW
+        ? { action, headers: {} }
+        : { action: HandlerAction.RESPOND, status: 200, body: "ok", headers: {} };
+    },
+  };
+}
+
+// A VCL → Compute chain: the request Compute sees is addressed to the Compute service itself,
+// because the backend's `override_host` replaced Host after VCL ran.
+const CHAIN_URL = "https://svc.edgecompute.app/article?a=1";
+function chainRequest(headers: Record<string, string> = {}) {
+  return new Request(CHAIN_URL, { headers });
+}
+
+describe("handleFastlyRequest URL reconstruction", () => {
+  it("hands the handler the viewer authority, not the compute host", async () => {
+    const handler = urlRecordingHandler();
+    await handleFastlyRequest(
+      handler as any,
+      chainRequest({ "x-supertab-original-authority": "www.example.com" }),
+      "origin"
+    );
+
+    expect(handler.requests[0].url).toBe("https://www.example.com/article?a=1");
+  });
+
+  it("uses the configured header name passed through the options argument", async () => {
+    const handler = urlRecordingHandler();
+    await handleFastlyRequest(
+      handler as any,
+      chainRequest({ "x-supertab-viewer-host": "www.example.com" }),
+      "origin",
+      undefined,
+      undefined,
+      undefined,
+      { originalAuthorityHeader: "x-supertab-viewer-host" }
+    );
+
+    expect(handler.requests[0].url).toBe("https://www.example.com/article?a=1");
+  });
+
+  it("still honours the legacy x-original-request-url header", async () => {
+    const handler = urlRecordingHandler();
+    await handleFastlyRequest(
+      handler as any,
+      chainRequest({ "x-original-request-url": "https://www.example.com/z?q=2" }),
+      "origin"
+    );
+
+    expect(handler.requests[0].url).toBe("https://www.example.com/z?q=2");
+  });
+
+  it("leaves the inbound Host header on the handler request untouched", async () => {
+    // Host is a forbidden header, so the SDK deliberately does not rewrite it to agree with
+    // the reconstructed URL. Analytics reads the URL instead.
+    const handler = urlRecordingHandler();
+    await handleFastlyRequest(
+      handler as any,
+      chainRequest({ host: "svc.edgecompute.app", "x-supertab-original-authority": "www.example.com" }),
+      "origin"
+    );
+
+    expect(handler.requests[0].headers.get("host")).toBe("svc.edgecompute.app");
+    expect(new URL(handler.requests[0].url).host).toBe("www.example.com");
+  });
+
+  it("does not fail open when x-original-request-url is malformed", async () => {
+    // This used to throw out of `new URL(originalUrl)` and skip enforcement entirely.
+    const handler = urlRecordingHandler();
+    await handleFastlyRequest(
+      handler as any,
+      chainRequest({ "x-original-request-url": "not a url" }),
+      "origin"
+    );
+
+    expect(handler.requests[0].url).toBe(CHAIN_URL);
+  });
+
+  it("resolves license.xml from the compute-observed path when an authority header is present", async () => {
+    const handler = urlRecordingHandler();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("<xml/>", { status: 200 }));
+
+    try {
+      await handleFastlyRequest(
+        handler as any,
+        new Request("https://svc.edgecompute.app/license.xml", {
+          headers: { "x-supertab-original-authority": "www.example.com" },
+        }),
+        "origin",
+        { baseUrl: "https://api.example", merchantSystemUrn: "urn:stc:merchant:system:1" }
+      );
+    } finally {
+      fetchSpy.mockRestore();
+    }
+
+    // Served from the edge, so the handler is never consulted.
+    expect(handler.requests).toHaveLength(0);
+  });
+
+  it("forwards the original request to the origin backend, not the reconstructed one", async () => {
+    const handler = urlRecordingHandler(HandlerAction.ALLOW);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("ok", { status: 200 }));
+
+    let forwarded: Request;
+    try {
+      await handleFastlyRequest(
+        handler as any,
+        chainRequest({ "x-supertab-original-authority": "www.example.com" }),
+        "origin"
+      );
+      // Read before restoring — mockRestore() clears the recorded calls.
+      forwarded = fetchSpy.mock.calls[0][0] as Request;
+    } finally {
+      fetchSpy.mockRestore();
+    }
+
+    expect(forwarded.url).toBe(CHAIN_URL);
+  });
+});

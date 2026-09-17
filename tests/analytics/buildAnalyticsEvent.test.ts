@@ -409,6 +409,20 @@ describe("buildAnalyticsEvent", () => {
       expect(event.host).toBe("pub.example.com");
     });
 
+    it("reports the reconstructed URL host when it disagrees with the Host header", () => {
+      // On a Fastly VCL → Compute chain the Host header is the hop's; the URL the Fastly
+      // handler reconstructed is the viewer's, and that is what the row must carry.
+      const event = buildAnalyticsEvent(
+        makeRequest({
+          url: "https://pub.example.com/a",
+          headers: { host: "svc.edgecompute.app" },
+        }),
+        baseDecision,
+        ctx()
+      );
+      expect(event.host).toBe("pub.example.com");
+    });
+
     it("truncates accept and sec-ch-ua to 512 chars", () => {
       const long = "a".repeat(600);
       const event = buildAnalyticsEvent(
@@ -449,6 +463,10 @@ describe("buildAnalyticsEvent", () => {
             "x-forwarded-for": "1.2.3.4",
             "x-real-ip": "1.2.3.4",
             "x-original-request-url": "https://pub.example.com/a",
+            "x-supertab-original-authority": "pub.example.com",
+            // A renamed preserved-authority header stays out via the x-supertab- prefix,
+            // since the builder never sees the configured name.
+            "x-supertab-viewer-host": "pub.example.com",
           },
         }),
         baseDecision,

@@ -9,6 +9,7 @@ import {
 } from "./types";
 import { CdnRequestSignals, ClientIpSource, StatusSource } from "./analytics/types";
 import { hostRSLicenseXML } from "./license";
+import { resolveFastlyRequestUrl } from "./fastly-url";
 
 /**
  * Default budget (ms) for the pre-response background-work wait on CloudFront, applied when
@@ -204,8 +205,17 @@ export async function handleCloudflareRequest(
   }
 }
 
+/** Per-service Fastly settings that are not request data. */
+export interface FastlyRequestOptions {
+  /** Header carrying the viewer authority; defaults to `DEFAULT_ORIGINAL_AUTHORITY_HEADER`. */
+  originalAuthorityHeader?: string;
+}
+
 /**
- * Handles an Origin request in Fastly. Expects `X-Original-Request-URL` header to contain the original viewer request URL.
+ * Handles a request in Fastly Compute. The viewer's URL is recovered by
+ * `resolveFastlyRequestUrl`: on a VCL → Compute chain the inbound `Host` is the Compute
+ * service's own domain, so the authority comes from the preserved-authority header (or the
+ * older full-URL `X-Original-Request-URL`) instead.
  * @param handler Request handler instance that inspects the request and decides whether to allow or block it.
  * @param request Fastly request to process.
  * @param originBackend Fastly backend name used when forwarding allowed requests to origin.
@@ -233,11 +243,14 @@ export async function handleFastlyRequest(
   // Wraps FetchEvent.waitUntil so post-response analytics emits stay alive until
   // they settle — the BLOCK path returns immediately, with no origin fetch to
   // incidentally keep the instance up.
-  ctx?: ExecutionContext
+  ctx?: ExecutionContext,
+  // One trailing object rather than a seventh positional: per-service Fastly knobs arrive a
+  // release at a time, and every existing call site keeps compiling as they do.
+  options?: FastlyRequestOptions
 ): Promise<Response> {
-  const originalUrl = request.headers.get("x-original-request-url") || request.url;
+  const { url: viewerUrl } = resolveFastlyRequestUrl(request, options?.originalAuthorityHeader);
 
-  if (rslOptions && new URL(originalUrl).pathname === "/license.xml") {
+  if (rslOptions && viewerUrl.pathname === "/license.xml") {
     return await hostRSLicenseXML(
       rslOptions.baseUrl,
       rslOptions.merchantSystemUrn
@@ -260,7 +273,11 @@ export async function handleFastlyRequest(
       ? "cdn_declared"
       : "absent";
 
-  const webRequest = new Request(originalUrl, {
+  // The copied `Host` header stays as Fastly delivered it — the hop's, on a chain — and so
+  // deliberately disagrees with this URL: `Host` is a forbidden header, so rewriting it is a
+  // silent no-op in some runtimes and throws in others. Nothing downstream needs it to agree;
+  // the origin forward below uses the ORIGINAL `request`, never this one.
+  const webRequest = new Request(viewerUrl.href, {
     method: request.method,
     headers: request.headers,
   });

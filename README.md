@@ -70,13 +70,50 @@ addEventListener("fetch", (event) =>
     const merchantApiKey = await configDict.get("MERCHANT_API_KEY");
 
     return SupertabConnect.fastlyHandleRequests(
-      event.request,
+      event,
       merchantApiKey,
       "origin-backend"
     );
   })())
 );
 ```
+
+#### VCL → Compute chains
+
+Most Fastly deployments put a VCL service in front of the Compute service. The VCL
+backend's **Override host** points at the Compute service's `*.edgecompute.app` domain,
+and Fastly applies it *after* VCL runs — so the request the SDK sees on Compute carries
+the Compute service's hostname, not the viewer's. Left uncorrected, that breaks license
+audience matching, the `/.well-known/supertab/status` probe, the `Link: rel="license"`
+URL, and the `host` column in analytics.
+
+Preserve the viewer's authority in the VCL service's `vcl_recv` snippet:
+
+```vcl
+# Only this service may set the Supertab edge headers: drop any client-supplied copy
+# before anything reads them, so a viewer cannot choose its own license audience.
+unset req.http.X-Supertab-Original-Authority;
+unset req.http.X-Original-Request-Url;
+
+if (req.http.Authorization ~ "^License ") {
+  set req.http.X-Supertab-Original-Authority = req.http.host;
+  set req.backend = F_supertab_compute_validator;
+  return (pass);
+}
+```
+
+The SDK resolves the viewer URL in this order: `x-supertab-original-authority` (grafted
+onto the path and query Compute observed) → the older full-URL `x-original-request-url`
+→ `request.url`. A value that is not a bare `host[:port]` is ignored rather than trusted,
+and existing `x-original-request-url` setups keep working unchanged.
+
+Rename the header with `options.originalAuthorityHeader` if it collides with something
+already on your service, and keep the `x-supertab-` prefix so it stays out of the
+analytics `header_names` signal.
+
+> The SDK trusts this header unconditionally, so the `unset` above is what makes it
+> trustworthy. On a **direct** Compute deployment (no VCL service in front) there is
+> nothing to strip a client-supplied copy — do not install the header handling there.
 
 ### AWS CloudFront Lambda@Edge
 
@@ -347,13 +384,13 @@ Convenience handler for Cloudflare Workers. Reads config from Worker environment
 - `env` (`Env`): Worker environment bindings
 - `ctx` (`ExecutionContext`): Worker execution context
 
-### `fastlyHandleRequests(request, merchantApiKey, originBackend, options?): Promise<Response>` (static)
+### `fastlyHandleRequests(event, merchantApiKey, originBackend, options?): Promise<Response>` (static)
 
 Convenience handler for Fastly Compute.
 
 **Parameters:**
 
-- `request` (`Request`): The incoming Fastly request
+- `event` (`FastlyFetchEvent`): The incoming Fastly `FetchEvent`. Viewer IP, geo and JA3 are resolved from it internally.
 - `merchantApiKey` (`string`): Your Supertab merchant API key
 - `originBackend` (`string`): The Fastly backend name to forward allowed requests to
 - `options.enableRSL` (`boolean`, optional): Serve `license.xml` at `/license.xml` for RSL-compliant clients (default: `false`)
@@ -362,6 +399,8 @@ Convenience handler for Fastly Compute.
 - `options.botDetector` (`BotDetector`, optional): Custom bot detection function
 - `options.enforcement` (`EnforcementMode`, optional): Enforcement mode (default `OBSERVE`)
 - `options.analyticsEnabled` (`boolean`, optional): Emit analytics events (default `false`)
+- `options.connectBackend` (`string`, optional): Fastly backend carrying the SDK's own Connect-API calls — `license.xml`, JWKS, events, analytics (default `stc-backend`). Distinct from the positional `originBackend`, which carries viewer traffic to your origin.
+- `options.originalAuthorityHeader` (`string`, optional): Header carrying the viewer's authority on a VCL → Compute chain (default `x-supertab-original-authority`). See [VCL → Compute chains](#vcl--compute-chains).
 
 The `options` parameter is optional. RSL hosting (`enableRSL` + `merchantSystemUrn`) is independent of analytics. For analytics, `merchantSystemUrn` is sent only on the native-logging path (where the SDK stamps it onto each row); on the HTTP relay path the backend derives merchant identity from the API key and no merchant identifier is sent.
 

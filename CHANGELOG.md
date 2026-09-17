@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`originalAuthorityHeader` — preserve the viewer's host across a Fastly VCL → Compute
+  chain.** The VCL backend's `override_host` replaces `Host` with the Compute service's
+  `*.edgecompute.app` domain *after* VCL runs, so the SDK on Compute saw the hop's authority
+  rather than the viewer's — breaking license audience matching (`insufficient_scope`), the
+  status probe's expected audience, and the `Link: rel="license"` URL. The VCL service now
+  stamps the viewer's host into a dedicated header (default `x-supertab-original-authority`)
+  and the SDK grafts it onto the path and query Compute observed. Resolution order is the
+  authority header, then the older full-URL `x-original-request-url`, then `request.url`, so
+  existing setups are unaffected. Set `originalAuthorityHeader` to rename it on a collision.
+  A value that is not a bare `host[:port]` is ignored rather than trusted — but the SDK
+  cannot tell a VCL hop from a direct caller, so the VCL service must `unset` the header on
+  ingress. See the README for the snippet.
+
+### Fixed
+
+- **Analytics `host` reported the CDN hop, not the viewer.** The field preferred the `Host`
+  header over the reconstructed URL, so rows from a Fastly chain carried the
+  `*.edgecompute.app` domain and CloudFront origin-request rows carried the origin host,
+  even when the handler had already recovered the real URL. The URL now wins, with the
+  header kept as the fallback for a URL that will not parse. Note that `URL.host` drops a
+  default `:443`/`:80`, so rows that previously carried one will no longer show it.
+- **A malformed `x-original-request-url` no longer disables enforcement.** Parsing it threw
+  out of `handleFastlyRequest` and into the fail-open path, which forwarded the request to
+  the origin unchecked. The value is now ignored and the request is enforced on its own URL.
+
 ## [2.4.0] — 2026-09-04
 
 ### Added

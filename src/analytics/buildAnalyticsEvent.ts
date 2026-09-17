@@ -37,9 +37,12 @@ const MAX_FIELD_LENGTH = 512;
 // Edge-injected headers are CDN artifacts, not client signals — strip them so
 // `header_names` reflects only what the client actually sent. Covers all three
 // CDNs: Cloudflare (`cf-*`), Fastly (`fastly-*`), CloudFront (`cloudfront-*`),
-// the shared `x-forwarded-*` / `x-real-ip`, and the SDK's own routing header
-// `x-original-request-url` (set by the Fastly/CloudFront handlers).
-const EDGE_HEADER_PREFIXES = ["cf-", "fastly-", "cloudfront-", "x-forwarded-"];
+// the shared `x-forwarded-*` / `x-real-ip`, and the SDK's own routing headers:
+// `x-original-request-url` (set by the Fastly/CloudFront handlers) and anything
+// under `x-supertab-*`. The prefix is what keeps a RENAMED preserved-authority
+// header out too — the builder never sees `originalAuthorityHeader`, so a custom
+// name only stays out of the signal by keeping the prefix.
+const EDGE_HEADER_PREFIXES = ["cf-", "fastly-", "cloudfront-", "x-forwarded-", "x-supertab-"];
 // Portable proxy/CDN artifacts (incl. Fastly service-chain hops: cdn-loop, x-varnish,
 // via) — not client-sent, so they pollute header_names. Deployment-specific injected
 // headers (e.g. x-geoip-*, x-ua-device, x-lp-*) must be stripped at the edge instead;
@@ -187,8 +190,11 @@ export function buildAnalyticsEvent(
     sec_ch_ua_mobile: headers.get("sec-ch-ua-mobile"),
     sec_ch_ua_platform: headers.get("sec-ch-ua-platform"),
     accept: truncate(headers.get("accept")),
-    // Host is a forbidden header in some runtimes; fall back to the parsed URL.
-    host: headers.get("host") ?? url?.host ?? null,
+    // The reconstructed URL is the viewer's; the Host header is the hop's wherever a CDN
+    // rewrote it before us — Fastly's `override_host` on a VCL → Compute chain, CloudFront at
+    // origin-request. Where nothing rewrote it the two agree, so preferring the URL is only
+    // ever a correction. The header stays as the fallback for a URL that would not parse.
+    host: url?.host ?? headers.get("host") ?? null,
     has_cookies: headers.has("cookie"),
     header_names: collectHeaderNames(headers),
 
