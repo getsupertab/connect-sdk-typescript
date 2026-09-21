@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] — 2026-09-21
+
+### Added
+
+- **`connectBackend` names the Fastly backend the SDK's own calls go through.** license.xml,
+  JWKS, event recording and analytics were all routed through a backend hardcoded as
+  `stc-backend`, so a Fastly service that already named that backend something else could not
+  use the SDK without renaming it — a change to shared service configuration, for a
+  constraint the SDK had no reason to impose. The Fastly handler options now accept
+  `connectBackend`, and `setConnectBackend()` sets it process-wide, mirroring how `baseUrl`
+  is a property of the deployment rather than of a request. It is distinct from the
+  positional `originBackend`, which carries viewer traffic to the merchant origin. Off
+  Fastly no backend is named at all, since every other runtime resolves the host itself.
+  The default is unchanged, so an existing service needs no edit.
+
+### Fixed
+
+- **A failed license.xml fetch names the backend it tried.** On Fastly a missing or
+  misnamed backend surfaced as a generic fetch failure, which pointed at the network or the
+  license server rather than at the service's own backend configuration — the actual cause,
+  and the one thing the error had enough information to name.
+
 ## [2.4.0] — 2026-09-04
 
 ### Added
