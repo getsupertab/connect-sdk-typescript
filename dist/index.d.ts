@@ -199,6 +199,13 @@ interface FastlyHandlerBaseOptions {
      * to the HTTP relay.
      */
     logEndpoint?: string;
+    /**
+     * Fastly backend the SDK's own Connect-API calls (license.xml, JWKS, events, analytics)
+     * are routed through. Defaults to `stc-backend`; set it when the service names that
+     * backend differently. Distinct from the positional `originBackend`, which carries
+     * viewer traffic to the merchant origin.
+     */
+    connectBackend?: string;
 }
 interface FastlyHandlerWithRSL extends FastlyHandlerBaseOptions {
     enableRSL: true;
@@ -396,6 +403,18 @@ declare class SupertabConnect {
      */
     static getBaseUrl(): string;
     /**
+     * Override the Fastly backend carrying the SDK's own Connect-API calls — license.xml,
+     * JWKS, events, analytics (default: `stc-backend`). `fastlyHandleRequests` sets this from
+     * its `connectBackend` option; call it directly when using `verify` outside that handler.
+     * Does not cover `obtainLicenseToken`, whose token request names no backend at all.
+     * No effect off Fastly. Pass undefined to restore the default.
+     */
+    static setConnectBackend(name: string | undefined): void;
+    /**
+     * Get the Fastly backend name used for the SDK's own Connect-API calls.
+     */
+    static getConnectBackend(): string;
+    /**
      * Override the base URL of the analytics ingest relay (e.g. for a non-prod environment
      * or local development). Independent of setBaseUrl — token/JWKS/verify traffic is
      * unaffected. Can also be set per-instance via the `analyticsBaseUrl` config option.
@@ -545,6 +564,9 @@ declare class SupertabConnect {
      * @param options.logEndpoint Named Fastly logging endpoint to emit bot events to — must match
      *   the endpoint configured on the Fastly service. Set it to enable native Fastly logging;
      *   without it analytics falls back to the HTTP relay.
+     * @param options.connectBackend Backend carrying the SDK's own Connect-API calls — license.xml,
+     *   JWKS, events, analytics (default: `stc-backend`). Set it when the service names that backend
+     *   differently. Distinct from `originBackend`, which carries viewer traffic to your origin.
      * @returns The origin response for allowed traffic, the license.xml response when `enableRSL`
      *   and the path matches, or the SDK's block/challenge response. Never throws — on an internal
      *   error the request is forwarded to `originBackend` unchanged.
