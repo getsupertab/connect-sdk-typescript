@@ -54,7 +54,7 @@ npm run deploy:production
 ```
 
 `env.production` carries the `*contribute.app/*` route, the prod vars above, and
-`name: supertab-sdk-worker` (the live worker), so deploys update it in place.
+`name: contribute-app-demo` (the live worker), so deploys update it in place.
 
 ### Requirements / gotchas
 

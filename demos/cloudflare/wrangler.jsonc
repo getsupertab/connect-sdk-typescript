@@ -47,7 +47,7 @@
 			}
 		},
 		"production": {
-			"name": "supertab-sdk-worker",
+			"name": "contribute-app-demo",
 			"account_id": "06de381d8b2841eb41914422b148e403",
 			"compatibility_date": "2026-06-08",
 			"compatibility_flags": ["nodejs_compat"],
