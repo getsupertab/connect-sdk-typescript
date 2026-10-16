@@ -34,12 +34,21 @@ jobs:
       - name: Checkout SDK (the PR)
         uses: actions/checkout@v4
 
+      - name: Mint conformance repo token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.CONFORMANCE_APP_ID }}
+          private-key: ${{ secrets.CONFORMANCE_APP_PRIVATE_KEY }}
+          owner: getsupertab
+          repositories: connect-sdk-conformance
+
       - name: Checkout conformance suite (pinned)
         uses: actions/checkout@v4
         with:
           repository: getsupertab/connect-sdk-conformance
           ref: v0.3.0
-          token: ${{ secrets.CONFORMANCE_REPO_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           path: _conformance
 
       - name: Setup Node.js
